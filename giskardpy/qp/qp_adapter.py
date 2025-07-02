@@ -1915,8 +1915,21 @@ class GiskardToTwoSidedNeqQPAdapter(GiskardToQPAdapter):
         free_symbols.update(eq_bounds.free_symbols())
         free_symbols.update(neq_lower_bounds.free_symbols())
         free_symbols.update(neq_upper_bounds.free_symbols())
-        free_symbols = list(free_symbols)
-        self.free_symbols = free_symbols
+        for s in itertools.chain(self.world_state_symbols,
+                                 self.task_life_cycle_symbols,
+                                 self.goal_life_cycle_symbols,
+                                 self.external_collision_symbols,
+                                 self.self_collision_symbols):
+            if s in free_symbols:
+                free_symbols.remove(s)
+        self.aux_symbols = list(free_symbols)
+
+        self.free_symbols = [self.world_state_symbols,
+                             self.task_life_cycle_symbols,
+                             self.goal_life_cycle_symbols,
+                             self.external_collision_symbols,
+                             self.self_collision_symbols,
+                             self.aux_symbols]
 
         len_lb_be_lba_end = (quadratic_weights.shape[0]
                              + box_lower_constraints.shape[0]
@@ -1935,12 +1948,12 @@ class GiskardToTwoSidedNeqQPAdapter(GiskardToQPAdapter):
                                                                           eq_bounds,
                                                                           neq_upper_bounds,
                                                                           linear_weights],
-                                                             parameters=free_symbols,
+                                                             parameters=self.free_symbols,
                                                              additional_views=[
                                                                  slice(quadratic_weights.shape[0], len_lb_be_lba_end),
                                                                  slice(len_lb_be_lba_end, len_ub_be_uba_end)])
 
-        self.neq_matrix_compiled = constraint_matrix.compile(parameters=free_symbols, sparse=self.sparse)
+        self.neq_matrix_compiled = constraint_matrix.compile(parameters=self.free_symbols, sparse=self.sparse)
 
         self.free_symbols_str = [str(x) for x in free_symbols]
 
@@ -2003,10 +2016,21 @@ class GiskardToTwoSidedNeqQPAdapter(GiskardToQPAdapter):
 
         return qp_data_filtered
 
-    def evaluate(self, symbol_manager: SymbolManager):
-        substitutions = symbol_manager.resolve_symbols(self.free_symbols)
+    def evaluate(self,
+                 world_state: np.ndarray,
+                 task_life_cycle_state: np.ndarray,
+                 goal_life_cycle_state: np.ndarray,
+                 external_collision_data: np.ndarray,
+                 self_collision_data: np.ndarray,
+                 symbol_manager: SymbolManager):
+        aux_substitutions = symbol_manager.resolve_symbols([self.aux_symbols])
 
-        neq_matrix = self.neq_matrix_compiled.fast_call(substitutions)
+        neq_matrix = self.neq_matrix_compiled.fast_call(world_state,
+                                                             task_life_cycle_state,
+                                                             goal_life_cycle_state,
+                                                             external_collision_data,
+                                                             self_collision_data,
+                                                             *aux_substitutions)
         quadratic_weights_np_raw, \
             box_lower_constraints_np_raw, \
             _, \
@@ -2016,7 +2040,12 @@ class GiskardToTwoSidedNeqQPAdapter(GiskardToQPAdapter):
             _, \
             linear_weights_np_raw, \
             box_eq_neq_lower_bounds_np_raw, \
-            box_eq_neq_upper_bounds_np_raw = self.combined_vector_f.fast_call(substitutions)
+            box_eq_neq_upper_bounds_np_raw = self.combined_vector_f.fast_call(world_state,
+                                                             task_life_cycle_state,
+                                                             goal_life_cycle_state,
+                                                             external_collision_data,
+                                                             self_collision_data,
+                                                             *aux_substitutions)
         qp_data_raw = QPData(quadratic_weights=quadratic_weights_np_raw,
                              linear_weights=linear_weights_np_raw,
                              neq_matrix=neq_matrix,

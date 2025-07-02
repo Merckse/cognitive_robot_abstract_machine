@@ -18,6 +18,7 @@ RUN sudo apt install libeigen3-dev && \
 
 # Install qpSWIFT
 RUN cd ~ && \
+    sudo pip3 install pybind && \
     git clone https://github.com/SemRoCo/qpSWIFT && \
     cd qpSWIFT && \
     cmake -S . -B build -DCMAKE_BUILD_TYPE=Release && \

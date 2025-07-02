@@ -95,9 +95,15 @@ def test_explicit_qp_format(fake_world: FakeWorld):
                                                       max_derivative=Derivatives.jerk,
                                                       horizon_weight_gain_scalar=0.1,
                                                       qp_formulation=formulation,
-                                                      sparse=True)
+                                                      sparse=True,
+                                                      world_state_symbols=[],
+                                                      task_life_cycle_symbols=[],
+                                                      goal_life_cycle_symbols=[],
+                                                      external_collision_symbols=[],
+                                                      self_collision_symbols=[])
 
-            qp_data = adapter.evaluate(symbol_manager)
+            empty = np.empty((0,0))
+            qp_data = adapter.evaluate(empty, empty, empty, empty, empty, symbol_manager)
             result = qp_solver.solver_call(qp_data)
             if last_result is not None:
                 assert np.allclose(result[:len(fake_world.dofs)], last_result[:len(fake_world.dofs)], atol=1e-3)
@@ -153,9 +159,15 @@ def test_explicit_qp_format_neq(fake_world: FakeWorld):
                                                       max_derivative=Derivatives.jerk,
                                                       horizon_weight_gain_scalar=0.1,
                                                       qp_formulation=formulation,
-                                                      sparse=True)
+                                                      sparse=True,
+                                                      world_state_symbols=[],
+                                                      task_life_cycle_symbols=[],
+                                                      goal_life_cycle_symbols=[],
+                                                      external_collision_symbols=[],
+                                                      self_collision_symbols=[])
 
-            qp_data = adapter.evaluate(symbol_manager)
+            empty = np.empty((0,0))
+            qp_data = adapter.evaluate(empty, empty, empty, empty, empty, symbol_manager)
             result = qp_solver.solver_call(qp_data)
             if last_result is not None:
                 assert np.allclose(result[:len(fake_world.dofs)], last_result[:len(fake_world.dofs)], atol=1e-3)

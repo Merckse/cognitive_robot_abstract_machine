@@ -397,7 +397,6 @@ class GiskardWrapper:
                                    inequality_constraints=neq,
                                    eq_derivative_constraints=eqd,
                                    derivative_constraints=neqd)
-        god_map.qp_controller.compile()
         god_map.debug_expression_manager.compile_debug_expressions()
         self.traj = Trajectory()
 
@@ -427,13 +426,9 @@ class GiskardWrapper:
 
         done = god_map.motion_statechart_manager.evaluate_node_states()
 
-        parameters = god_map.qp_controller.get_parameter_names()
-        total_time_start = time.time()
-        substitutions = symbol_manager.resolve_symbols(parameters)
-        parameter_time = time.time() - total_time_start
+        total_time_start = qp_time_start = time.time()
 
-        qp_time_start = time.time()
-        next_cmd = god_map.qp_controller.get_cmd(substitutions)
+        next_cmd = god_map.qp_controller.get_cmd(symbol_manager)
         qp_time = time.time() - qp_time_start
         # god_map.debug_expression_manager.eval_debug_expressions()
 
@@ -452,13 +447,13 @@ class GiskardWrapper:
         god_map.time += god_map.qp_controller.control_dt
         god_map.control_cycle_counter += 1
 
-        return total_time, parameter_time, qp_time, update_world_time, collision_time, done
+        return total_time, qp_time, update_world_time, collision_time, done
 
     def execute(self, sim_time: float = 5, plot: bool = True, plot_kwargs: dict = {}, plot_legend: bool = True) \
             -> Trajectory:
         self.compile()
         while god_map.time < sim_time:
-            total_time, parameter_time, qp_time, update_world_time, collision_time, done = self.step()
+            total_time, qp_time, update_world_time, collision_time, done = self.step()
             if done:
                 break
             # self.apply_noise(pos_noise, vel_noise, acc_noise)

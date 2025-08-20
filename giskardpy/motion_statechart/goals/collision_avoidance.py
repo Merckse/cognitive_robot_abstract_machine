@@ -65,7 +65,7 @@ class ExternalCA(Goal):
         actual_link_b_hash = self.get_link_b_hash()
         direct_children = self.world.get_directly_child_bodies_with_collision(self.connection)
 
-        buffer_zone = max(b.collision_config.buffer_zone_distance for b in direct_children)
+        buffer_zone = max(b.collision_config.buffer_zone_distance for b in direct_children if b.collision_config.buffer_zone_distance is not None)
         violated_distance = max(b.collision_config.violated_distance for b in direct_children)
         b_result_cases = []
         for body in self.world.bodies_with_enabled_collision:
@@ -341,7 +341,7 @@ class CollisionAvoidance(Goal):
     def __post_init__(self):
         if self.name is None:
             self.name = self.__class__.__name__
-        god_map.collision_scene.matrix_manager.parse_collision_requests(deepcopy(self.collision_entries))
+        god_map.collision_scene.matrix_manager.parse_collision_requests(self.collision_entries)
         self.collision_entries = god_map.collision_scene.matrix_manager.collision_requests
         if not self.collision_entries or not self.collision_entries[-1].is_allow_all_collision():
             self.add_external_collision_avoidance_constraints()

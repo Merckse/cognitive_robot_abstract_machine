@@ -533,8 +533,6 @@ class CollisionMatrixManager:
         :param collision_goals:
         :return:
         """
-        collision_checks = []
-
         for i, collision_goal in enumerate(reversed(collision_goals)):
             if collision_goal.is_avoid_all_collision():
                 # remove everything before the avoid all
@@ -551,7 +549,7 @@ class CollisionMatrixManager:
             collision_goal.distance = None
             collision_goals.insert(0, collision_goal)
 
-        self.collision_requests = collision_goals
+        self.collision_requests = list(collision_goals)
 
     def apply_world_model_updates(self) -> None:
         # self.update_self_collision_matrices_for_attached_bodies()

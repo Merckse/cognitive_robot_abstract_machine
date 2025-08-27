@@ -169,8 +169,8 @@ class CollisionMatrixManager:
                     if (robot_body, env_body) in disabled_pairs:
                         continue
                     if collision_request.distance is None:
-                        distance = max(robot_body.collision_config.buffer_zone_distance or 0.0,
-                                       env_body.collision_config.buffer_zone_distance or 0.0)
+                        distance = max(robot_body.get_collision_config().buffer_zone_distance or 0.0,
+                                       env_body.get_collision_config().buffer_zone_distance or 0.0)
                     else:
                         distance = collision_request.distance
                     if collision_request.is_allow_collision():

@@ -23,7 +23,7 @@ class BulletCollisionDetector(CollisionDetector):
 
     @profile
     def add_object(self, body: Body):
-        if not body.has_collision() or body.collision_config.disabled:
+        if not body.has_collision() or body.get_collision_config().disabled:
             return
         o = create_shape_from_link(body)
         self.kw.add_collision_object(o)

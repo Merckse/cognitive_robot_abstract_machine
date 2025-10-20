@@ -5,8 +5,9 @@ from __future__ import division
 
 from collections import defaultdict
 from copy import deepcopy
+from dataclasses import fields, dataclass
 from time import time
-from typing import Callable
+from typing import Callable, get_type_hints, get_origin, Union, get_args
 
 from functools import wraps
 from typing import Any, TypeVar
@@ -63,8 +64,8 @@ def record_time(function: T) -> T:
     @wraps(function)
     def wrapper(*args, **kwargs):
         self = args[0]
-        if not hasattr(self, '__times'):
-            setattr(self, '__times', defaultdict(list))
+        if not hasattr(self, "__times"):
+            setattr(self, "__times", defaultdict(list))
         start_time = time()
         result = function(*args, **kwargs)
         time_delta = time() - start_time
@@ -75,7 +76,7 @@ def record_time(function: T) -> T:
 
 
 def clear_memo(f):
-    if hasattr(f, 'memo'):
+    if hasattr(f, "memo"):
         f.memo.clear()
 
 
@@ -120,3 +121,102 @@ def toggle_off(state_var: str):
         return wrapper
 
     return decorator
+
+
+def _check_type(value, expected_type):
+    """Check if value matches expected_type, handling Union, List, etc."""
+    # Handle None case
+    if value is None:
+        return expected_type is type(None) or (
+            get_origin(expected_type) is Union and type(None) in get_args(expected_type)
+        )
+
+    # Get the origin and args of the type hint
+    origin = get_origin(expected_type)
+    args = get_args(expected_type)
+
+    # Handle Union types (including Optional which is Union[T, None])
+    if origin is Union:
+        return any(_check_type(value, arg) for arg in args)
+
+    # Handle List, Set, Tuple, etc.
+    if origin is list:
+        if not isinstance(value, list):
+            return False
+        if args:  # If List[SomeType] was specified
+            return all(_check_type(item, args[0]) for item in value)
+        return True
+
+    if origin is tuple:
+        if not isinstance(value, tuple):
+            return False
+        if args:
+            if len(args) == 2 and args[1] is ...:  # Tuple[int, ...]
+                return all(_check_type(item, args[0]) for item in value)
+            else:  # Tuple[int, str, float]
+                return len(value) == len(args) and all(
+                    _check_type(v, t) for v, t in zip(value, args)
+                )
+        return True
+
+    if origin is set:
+        if not isinstance(value, set):
+            return False
+        if args:
+            return all(_check_type(item, args[0]) for item in value)
+        return True
+
+    if origin is dict:
+        if not isinstance(value, dict):
+            return False
+        if len(args) == 2:  # Dict[KeyType, ValueType]
+            return all(_check_type(k, args[0]) for k in value.keys()) and all(
+                _check_type(v, args[1]) for v in value.values()
+            )
+        return True
+
+    # Handle regular types (int, str, custom classes, etc.)
+    if origin is None:
+        try:
+            return isinstance(value, expected_type)
+        except TypeError:
+            # Fallback for types that can't be used with isinstance
+            return type(value) == expected_type
+
+    # For other generic types, just check the origin
+    try:
+        return isinstance(value, origin)
+    except TypeError:
+        return False
+
+
+def validate_types(cls):
+    """Class decorator that adds type validation to dataclasses."""
+    original_post_init = getattr(cls, "__post_init__", None)
+
+    def __post_init__(self):
+        # Validate types FIRST
+        type_hints = get_type_hints(type(self))
+        for field_info in fields(self):
+            field_name = field_info.name
+            if field_name in type_hints:
+                expected_type = type_hints[field_name]
+                value = getattr(self, field_name)
+                if not _check_type(value, expected_type):
+                    expected_str = str(expected_type).replace("typing.", "")
+                    raise TypeError(
+                        f"Field '{field_name}' expected {expected_str}, "
+                        f"got {type(value).__name__} = {repr(value)}"
+                    )
+
+        # THEN call the original __post_init__ if it existed
+        if original_post_init is not None:
+            original_post_init(self)
+
+    cls.__post_init__ = __post_init__
+    return cls
+
+
+def validated_dataclass(cls):
+    """Combines @dataclass and @validate_types for convenience."""
+    return validate_types(dataclass(cls))

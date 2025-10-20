@@ -6,9 +6,11 @@ from typing import Optional, Union
 
 import semantic_world.spatial_types.spatial_types as cas
 from giskardpy.god_map import god_map
+from giskardpy.utils.decorators import validate_types
 from giskardpy.utils.utils import string_shortener, quote_node_names
 
 
+@validate_types
 @dataclass
 class MotionStatechartNode:
     name: str
@@ -23,10 +25,10 @@ class MotionStatechartNode:
     _unparsed_end_condition: Optional[str] = field(default=None, init=False)
     _unparsed_reset_condition: Optional[str] = field(default=None, init=False)
 
-    logic3_start_condition: cas.Expression = field(default=None, init=False)
-    logic3_pause_condition: cas.Expression = field(default=None, init=False)
-    logic3_end_condition: cas.Expression = field(default=None, init=False)
-    logic3_reset_condition: cas.Expression = field(default=None, init=False)
+    logic3_start_condition: Optional[cas.Expression] = field(default=None, init=False)
+    logic3_pause_condition: Optional[cas.Expression] = field(default=None, init=False)
+    logic3_end_condition: Optional[cas.Expression] = field(default=None, init=False)
+    logic3_reset_condition: Optional[cas.Expression] = field(default=None, init=False)
 
     def set_unparsed_conditions(
         self,

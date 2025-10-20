@@ -24,11 +24,11 @@ from giskardpy.qp.free_variable import FreeVariable
 from giskardpy.qp.weight_gain import QuadraticWeightGain, LinearWeightGain
 from semantic_world.spatial_types.symbol_manager import symbol_manager
 
-WEIGHT_MAX = 10000
-WEIGHT_ABOVE_CA = 2500
-WEIGHT_COLLISION_AVOIDANCE = 50
-WEIGHT_BELOW_CA = 1
-WEIGHT_MIN = 0
+WEIGHT_MAX = 10000.0
+WEIGHT_ABOVE_CA = 2500.0
+WEIGHT_COLLISION_AVOIDANCE = 50.0
+WEIGHT_BELOW_CA = 1.0
+WEIGHT_MIN = 0.0
 
 T = TypeVar(
     "T",

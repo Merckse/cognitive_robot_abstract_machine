@@ -25,10 +25,10 @@ from semantic_world.world_description.world_entity import Body
 
 @validated_dataclass
 class ExternalCA(Goal):
-    name: str = field(kw_only=True, default=None)
-    name_prefix: str = field(kw_only=True, default=None)
+    name: Optional[str] = field(kw_only=True, default=None)
+    name_prefix: Optional[str] = field(kw_only=True, default=None)
     connection: ActiveConnection = field(kw_only=True)
-    main_body: Body = field(init=False, default=None)
+    main_body: Body = field(init=False)
     max_velocity: float = field(default=0.2, kw_only=True)
     world: World = field(kw_only=True)
     idx: int = field(default=0, kw_only=True)
@@ -191,13 +191,13 @@ class ExternalCA(Goal):
 class SelfCA(Goal):
     body_a: Body = field(kw_only=True)
     body_b: Body = field(kw_only=True)
-    name: str = field(kw_only=True, default=None)
-    name_prefix: str = field(kw_only=True, default=None)
+    name: Optional[str] = field(kw_only=True, default=None)
+    name_prefix: Optional[str] = field(kw_only=True, default=None)
     max_velocity: float = field(default=0.2, kw_only=True)
     world: World = field(kw_only=True)
     idx: int = field(default=0, kw_only=True)
     max_avoided_bodies: int = field(default=1, kw_only=True)
-    buffer_zone_distance: float = field(default=None, kw_only=True)
+    buffer_zone_distance: float = field(kw_only=True)
 
     def __post_init__(self):
         self._plot = False

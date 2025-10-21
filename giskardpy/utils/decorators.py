@@ -198,6 +198,10 @@ def validate_types(cls):
         type_hints = get_type_hints(type(self))
         for field_info in fields(self):
             field_name = field_info.name
+
+            if not field_info.init:
+                continue
+
             if field_name in type_hints:
                 expected_type = type_hints[field_name]
                 if expected_type == float:

@@ -38,9 +38,10 @@ def test_condition_to_str():
     msc.add_node(end)
 
     end.start_condition = cas.trinary_logic_and(
-        node1.observation_symbol,
+        node1.observation_variable,
         cas.trinary_logic_or(
-            node2.observation_symbol, cas.trinary_logic_not(node3.observation_symbol)
+            node2.observation_variable,
+            cas.trinary_logic_not(node3.observation_variable),
         ),
     )
     a = str(end._start_condition)
@@ -55,9 +56,9 @@ def test_motion_statechart_to_dot():
     msc.add_node(node2)
     end = EndMotion(name=PrefixedName("done"))
     msc.add_node(end)
-    node1.end_condition = node2.observation_symbol
+    node1.end_condition = node2.observation_variable
     end.start_condition = cas.trinary_logic_and(
-        node1.observation_symbol, node2.observation_symbol
+        node1.observation_variable, node2.observation_variable
     )
     msc.draw()
 
@@ -80,9 +81,9 @@ def test_motion_statechart():
     msc.add_node(end)
 
     node1.start_condition = cas.trinary_logic_or(
-        node3.observation_symbol, node2.observation_symbol
+        node3.observation_variable, node2.observation_variable
     )
-    end.start_condition = node1.observation_symbol
+    end.start_condition = node1.observation_variable
     msc.compile()
 
     assert len(msc.nodes) == 4
@@ -143,7 +144,7 @@ def test_duplicate_name():
     msc = MotionStatechart(World())
 
     with pytest.raises(ValueError):
-        cas.Symbol(name=PrefixedName("muh"))
+        cas.MathVariable(name=PrefixedName("muh"))
         msc.add_node(TrueMonitor(name=PrefixedName("muh")))
         msc.add_node(TrueMonitor(name=PrefixedName("muh")))
 
@@ -160,9 +161,9 @@ def test_print():
     end = EndMotion(name=PrefixedName("done"))
     msc.add_node(end)
 
-    node1.start_condition = print_node1.observation_symbol
-    print_node2.start_condition = node1.observation_symbol
-    end.start_condition = print_node2.observation_symbol
+    node1.start_condition = print_node1.observation_variable
+    print_node2.start_condition = node1.observation_variable
+    end.start_condition = print_node2.observation_variable
     msc.compile()
 
     assert len(msc.nodes) == 4
@@ -246,7 +247,7 @@ def test_cancel_motion():
     msc.add_node(node1)
     cancel = CancelMotion(name=PrefixedName("done"), exception=Exception("test"))
     msc.add_node(cancel)
-    cancel.start_condition = node1.observation_symbol
+    cancel.start_condition = node1.observation_variable
 
     msc.compile()
     msc.tick()  # first tick, cancel motion node1 turns true
@@ -279,7 +280,7 @@ def test_joint_goal():
     msc.add_node(task1)
     end = EndMotion(name=PrefixedName("done"))
     msc.add_node(end)
-    end.start_condition = task1.observation_symbol
+    end.start_condition = task1.observation_variable
 
     msc.compile()
     msc.tick()
@@ -312,12 +313,14 @@ def test_reset():
     msc.add_node(node3)
     end = EndMotion(name=PrefixedName("done"))
     msc.add_node(end)
-    node1.reset_condition = node2.observation_symbol
-    node2.start_condition = node1.observation_symbol
-    node3.start_condition = node2.observation_symbol
-    node2.end_condition = node2.observation_symbol
+    node1.reset_condition = node2.observation_variable
+    node2.start_condition = node1.observation_variable
+    node3.start_condition = node2.observation_variable
+    node2.end_condition = node2.observation_variable
     end.start_condition = cas.trinary_logic_and(
-        node1.observation_symbol, node2.observation_symbol, node3.observation_symbol
+        node1.observation_variable,
+        node2.observation_variable,
+        node3.observation_variable,
     )
 
     msc.compile()
@@ -398,20 +401,20 @@ def test_nested_goals():
     msc.add_node(sub_node2)
     inner.add_node(sub_node1)
     inner.add_node(sub_node2)
-    sub_node1.end_condition = sub_node1.observation_symbol
-    sub_node2.start_condition = sub_node1.observation_symbol
-    inner.create_observation_expression = lambda: sub_node2.observation_symbol
+    sub_node1.end_condition = sub_node1.observation_variable
+    sub_node2.start_condition = sub_node1.observation_variable
+    inner.create_observation_expression = lambda: sub_node2.observation_variable
 
     # outer goal that contains the inner goal as a node
     outer = Goal(name=PrefixedName("outer"))
     msc.add_node(outer)
     outer.add_node(inner)
-    outer.create_observation_expression = lambda: inner.observation_symbol
-    outer.start_condition = node1.observation_symbol
+    outer.create_observation_expression = lambda: inner.observation_variable
+    outer.start_condition = node1.observation_variable
 
     end = EndMotion(name=PrefixedName("done nested"))
     msc.add_node(end)
-    end.start_condition = outer.observation_symbol
+    end.start_condition = outer.observation_variable
 
     # compile and check initial states
     msc.compile()
@@ -586,7 +589,7 @@ def test_thread_payload_monitor_integration():
     msc.add_node(mon)
     end = EndMotion(name=PrefixedName("done thread"))
     msc.add_node(end)
-    end.start_condition = mon.observation_symbol
+    end.start_condition = mon.observation_variable
 
     msc.compile()
 
@@ -627,14 +630,14 @@ def test_goal():
     goal.add_node(sub_node2)
     goal.add_node(sub_node1)
     goal.add_node(sub_node2)
-    sub_node1.end_condition = sub_node1.observation_symbol
-    sub_node2.start_condition = sub_node1.observation_symbol
-    goal.create_observation_expression = lambda: sub_node2.observation_symbol
-    goal.start_condition = node1.observation_symbol
+    sub_node1.end_condition = sub_node1.observation_variable
+    sub_node2.start_condition = sub_node1.observation_variable
+    goal.create_observation_expression = lambda: sub_node2.observation_variable
+    goal.start_condition = node1.observation_variable
 
     end = EndMotion(name=PrefixedName("done"))
     msc.add_node(end)
-    end.start_condition = goal.observation_symbol
+    end.start_condition = goal.observation_variable
 
     msc.compile()
     assert node1.observation_state == msc.observation_state.TrinaryUnknown

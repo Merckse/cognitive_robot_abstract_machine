@@ -164,8 +164,8 @@ class QPController:
         try:
             qp_data = self.qp_adapter.evaluate(
                 god_map.world.state.data,
-                god_map.motion_statechart_manager.task_state.life_cycle_symbol,
-                god_map.motion_statechart_manager.goal_state.life_cycle_symbol,
+                god_map.motion_statechart_manager.task_state.life_cycle_variable,
+                god_map.motion_statechart_manager.goal_state.life_cycle_variable,
                 god_map.collision_scene.get_external_collision_data(),
                 god_map.collision_scene.get_self_collision_data(),
                 symbol_manager,

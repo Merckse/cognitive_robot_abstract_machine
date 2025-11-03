@@ -409,8 +409,8 @@ class Task(MotionStatechartNode):
         self,
         frame_R_current: cas.RotationMatrix,
         frame_R_goal: cas.RotationMatrix,
-        reference_velocity: Union[cas.Symbol, float],
-        weight: Union[cas.Symbol, float],
+        reference_velocity: Union[cas.MathVariable, float],
+        weight: Union[cas.MathVariable, float],
         name: str = "",
     ):
         """
@@ -580,9 +580,9 @@ class Task(MotionStatechartNode):
     def add_rotational_velocity_limit(
         self,
         frame_R_current: cas.RotationMatrix,
-        max_velocity: Union[cas.Symbol, float],
-        weight: Union[cas.Symbol, float],
-        max_violation: Union[cas.Symbol, float] = 1e4,
+        max_velocity: Union[cas.MathVariable, float],
+        weight: Union[cas.MathVariable, float],
+        max_violation: Union[cas.MathVariable, float] = 1e4,
         name: str = "",
     ):
         """

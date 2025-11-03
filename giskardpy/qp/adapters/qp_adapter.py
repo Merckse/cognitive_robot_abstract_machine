@@ -300,7 +300,7 @@ class Weights(ProblemDataPart):
 
     def linear_f(
         self,
-        current_position: cas.Symbol,
+        current_position: cas.MathVariable,
         limit: float,
         target_value: float,
         a: float = 10,
@@ -491,7 +491,7 @@ class Weights(ProblemDataPart):
             return params
         return None
 
-    def get_free_variable_symbols(self, order: Derivatives) -> List[cas.Symbol]:
+    def get_free_variable_symbols(self, order: Derivatives) -> List[cas.MathVariable]:
         return self._sorter(
             {v.symbols.position: v.symbols.data[order] for v in self.free_variables}
         )[0]
@@ -991,7 +991,9 @@ class EqualityModel(ProblemDataPart):
             0
         ]
 
-    def get_free_variable_symbols(self, derivative: Derivatives) -> List[cas.Symbol]:
+    def get_free_variable_symbols(
+        self, derivative: Derivatives
+    ) -> List[cas.MathVariable]:
         return self._sorter(
             {
                 v.symbols.position.name: v.symbols.data[derivative]
@@ -1813,11 +1815,11 @@ class InequalityModel(ProblemDataPart):
 
 @dataclass
 class GiskardToQPAdapter:
-    world_state_symbols: List[cas.Symbol]
-    task_life_cycle_symbols: List[cas.Symbol]
-    goal_life_cycle_symbols: List[cas.Symbol]
-    external_collision_symbols: List[cas.Symbol]
-    self_collision_symbols: List[cas.Symbol]
+    world_state_symbols: List[cas.MathVariable]
+    task_life_cycle_symbols: List[cas.MathVariable]
+    goal_life_cycle_symbols: List[cas.MathVariable]
+    external_collision_symbols: List[cas.MathVariable]
+    self_collision_symbols: List[cas.MathVariable]
 
     free_variables: List[DegreeOfFreedom]
     equality_constraints: List[EqualityConstraint]

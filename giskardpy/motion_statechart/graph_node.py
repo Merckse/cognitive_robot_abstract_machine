@@ -86,7 +86,7 @@ class TrinaryCondition:
         self.parents = [
             x.motion_statechart_node
             for x in new_expression.free_symbols()
-            if isinstance(x, ObservationSymbol)
+            if isinstance(x, ObservationVariable)
         ]
         self.child = child
 
@@ -104,7 +104,7 @@ class TrinaryCondition:
 
 
 @dataclass(repr=False, eq=False)
-class ObservationSymbol(cas.Symbol):
+class ObservationVariable(cas.MathVariable):
     """
     A symbol representing the observation state of a node.
     """
@@ -117,7 +117,7 @@ class ObservationSymbol(cas.Symbol):
 
 
 @dataclass(repr=False, eq=False)
-class LifeCycleSymbol(cas.Symbol):
+class LifeCycleVariable(cas.MathVariable):
     """
     A symbol representing the life cycle state of a node.
     """
@@ -150,11 +150,11 @@ class MotionStatechartNode(SubclassJSONSerializer):
     The parent node of this node, if None, it is on the top layer of a motion statechart.
     """
 
-    life_cycle_symbol: LifeCycleSymbol = field(init=False)
+    life_cycle_variable: LifeCycleVariable = field(init=False)
     """
     A symbol referring to the life cycle state of this node.
     """
-    observation_symbol: ObservationSymbol = field(init=False)
+    observation_variable: ObservationVariable = field(init=False)
 
     _start_condition: TrinaryCondition = field(init=False)
     _pause_condition: TrinaryCondition = field(init=False)
@@ -167,11 +167,11 @@ class MotionStatechartNode(SubclassJSONSerializer):
     _plot_extra_boarder_styles: List[str] = field(default_factory=list, kw_only=True)
 
     def __post_init__(self):
-        self.observation_symbol = ObservationSymbol(
+        self.observation_variable = ObservationVariable(
             name=str(PrefixedName("observation", str(self.name))),
             motion_statechart_node=self,
         )
-        self.life_cycle_symbol = LifeCycleSymbol(
+        self.life_cycle_variable = LifeCycleVariable(
             name=str(PrefixedName("life_cycle", str(self.name))),
             motion_statechart_node=self,
         )
@@ -214,7 +214,7 @@ class MotionStatechartNode(SubclassJSONSerializer):
         The default implementation returns the observation symbol, which copies the last state.
         :return: The expression that computes the observation state.
         """
-        return cas.Expression(self.observation_symbol)
+        return cas.Expression(self.observation_variable)
 
     def on_start(self) -> Optional[float]:
         """
@@ -384,29 +384,29 @@ class Goal(MotionStatechartNode):
                 node.apply_goal_conditions_to_children()
 
     def apply_start_condition_to_node(self, node: MotionStatechartNode):
-        if cas.is_trinary_true_symbol(node.start_condition):
+        if cas.is_const_trinary_true(node.start_condition):
             node.start_condition = self.start_condition
 
     def apply_pause_condition_to_node(self, node: MotionStatechartNode):
-        if cas.is_trinary_false_symbol(node.pause_condition):
+        if cas.is_const_trinary_false(node.pause_condition):
             node.pause_condition = self.pause_condition
-        elif not cas.is_trinary_false_symbol(node.pause_condition):
+        elif not cas.is_const_trinary_false(node.pause_condition):
             node.pause_condition = cas.trinary_logic_or(
                 node.pause_condition, node.pause_condition
             )
 
     def apply_end_condition_to_node(self, node: MotionStatechartNode):
-        if cas.is_trinary_false_symbol(node.end_condition):
+        if cas.is_const_trinary_false(node.end_condition):
             node.end_condition = self.end_condition
-        elif not cas.is_trinary_false_symbol(self.end_condition):
+        elif not cas.is_const_trinary_false(self.end_condition):
             node.end_condition = cas.trinary_logic_or(
                 node.end_condition, self.end_condition
             )
 
     def apply_reset_condition_to_node(self, node: MotionStatechartNode):
-        if cas.is_trinary_false_symbol(node.reset_condition):
+        if cas.is_const_trinary_false(node.reset_condition):
             node.reset_condition = self.reset_condition
-        elif not cas.is_trinary_false_symbol(node.pause_condition):
+        elif not cas.is_const_trinary_false(node.pause_condition):
             node.reset_condition = cas.trinary_logic_or(
                 node.reset_condition, node.reset_condition
             )

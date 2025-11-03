@@ -15,8 +15,8 @@ from giskardpy.motion_statechart.graph_node import (
     EndMotion,
     CancelMotion,
     GenericMotionStatechartNode,
-    ObservationSymbol,
-    LifeCycleSymbol,
+    ObservationVariable,
+    LifeCycleVariable,
 )
 from giskardpy.motion_statechart.plotters.graphviz import MotionStatechartGraphviz
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
@@ -32,11 +32,11 @@ class State(MutableMapping[MotionStatechartNode, float]):
     def grow(self) -> None:
         self.data = np.append(self.data, self.default_value)
 
-    def life_cycle_symbols(self) -> List[LifeCycleSymbol]:
-        return [node.life_cycle_symbol for node in self.motion_statechart.nodes]
+    def life_cycle_symbols(self) -> List[LifeCycleVariable]:
+        return [node.life_cycle_variable for node in self.motion_statechart.nodes]
 
-    def observation_symbols(self) -> List[ObservationSymbol]:
-        return [node.observation_symbol for node in self.motion_statechart.nodes]
+    def observation_symbols(self) -> List[ObservationVariable]:
+        return [node.observation_variable for node in self.motion_statechart.nodes]
 
     def __getitem__(self, node: MotionStatechartNode) -> float:
         return float(self.data[node.index])
@@ -91,25 +91,25 @@ class LifeCycleState(State):
     def compile(self):
         state_updater = []
         for node in self.motion_statechart.nodes:
-            state_symbol = node.life_cycle_symbol
+            state_symbol = node.life_cycle_variable
 
             not_started_transitions = cas.if_else(
-                condition=cas.is_trinary_true(node.start_condition),
+                condition=node.start_condition == cas.TrinaryTrue,
                 if_result=cas.Expression(LifeCycleValues.RUNNING),
                 else_result=cas.Expression(LifeCycleValues.NOT_STARTED),
             )
             running_transitions = cas.if_cases(
                 cases=[
                     (
-                        cas.is_trinary_true(node.reset_condition),
+                        node.reset_condition == cas.TrinaryTrue,
                         cas.Expression(LifeCycleValues.NOT_STARTED),
                     ),
                     (
-                        cas.is_trinary_true(node.end_condition),
+                        node.end_condition == cas.TrinaryTrue,
                         cas.Expression(LifeCycleValues.DONE),
                     ),
                     (
-                        cas.is_trinary_true(node.pause_condition),
+                        node.pause_condition == cas.TrinaryTrue,
                         cas.Expression(LifeCycleValues.PAUSED),
                     ),
                 ],
@@ -118,22 +118,22 @@ class LifeCycleState(State):
             pause_transitions = cas.if_cases(
                 cases=[
                     (
-                        cas.is_trinary_true(node.reset_condition),
+                        node.reset_condition == cas.TrinaryTrue,
                         cas.Expression(LifeCycleValues.NOT_STARTED),
                     ),
                     (
-                        cas.is_trinary_true(node.end_condition),
+                        node.end_condition == cas.TrinaryTrue,
                         cas.Expression(LifeCycleValues.DONE),
                     ),
                     (
-                        cas.is_trinary_false(node.pause_condition),
+                        node.pause_condition == cas.TrinaryFalse,
                         cas.Expression(LifeCycleValues.RUNNING),
                     ),
                 ],
                 else_result=cas.Expression(LifeCycleValues.PAUSED),
             )
             ended_transitions = cas.if_else(
-                condition=cas.is_trinary_true(node.reset_condition),
+                condition=node.reset_condition == cas.TrinaryTrue,
                 if_result=cas.Expression(LifeCycleValues.NOT_STARTED),
                 else_result=cas.Expression(LifeCycleValues.DONE),
             )
@@ -181,7 +181,7 @@ class ObservationState(State):
         observation_state_updater = []
         for node in self.motion_statechart.nodes:
             state_f = cas.if_eq_cases(
-                a=node.life_cycle_symbol,
+                a=node.life_cycle_variable,
                 b_result_cases=[
                     (
                         int(LifeCycleValues.RUNNING),
@@ -192,7 +192,7 @@ class ObservationState(State):
                         cas.TrinaryUnknown,
                     ),
                 ],
-                else_result=cas.Expression(node.observation_symbol),
+                else_result=cas.Expression(node.observation_variable),
             )
             observation_state_updater.append(state_f)
         self._compiled_updater = cas.Expression(observation_state_updater).compile(

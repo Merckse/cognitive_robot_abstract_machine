@@ -106,7 +106,7 @@ class WiggleInsert(Task):
         angle = symbol_manager.get_expr(
             self.ref_str + angle_function,
             input_type_hint=float,
-            output_type_hint=cas.Symbol,
+            output_type_hint=cas.MathVariable,
         )
 
         tip_V_hole_normal = god_map.world.transform(

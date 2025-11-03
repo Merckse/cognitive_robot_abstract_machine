@@ -131,7 +131,7 @@ class Cutting(Goal):
 
         self.arrange_in_sequence([cut_down, cut_up, move_right])
         self.observation_expression = cas.if_else(
-            cas.is_trinary_true(move_right.observation_state_symbol),
+            move_right.observation_state_symbol == cas.TrinaryTrue,
             cas.TrinaryTrue,
             cas.TrinaryFalse,
         )

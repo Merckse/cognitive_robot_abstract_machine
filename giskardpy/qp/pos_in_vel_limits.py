@@ -141,7 +141,7 @@ def implicit_vel_profile(
 @memoize
 @profile
 def b_profile(
-    dof_symbols: DerivativeMap[cas.Symbol],
+    dof_symbols: DerivativeMap[cas.MathVariable],
     lower_limits: DerivativeMap[float],
     upper_limits: DerivativeMap[float],
     solver_class,

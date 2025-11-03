@@ -3,6 +3,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import field, dataclass
 import threading
+from enum import Enum
 
 from random_events.utils import SubclassJSONSerializer
 from typing_extensions import (
@@ -30,26 +31,48 @@ if TYPE_CHECKING:
     )
 
 
+class TransitionKind(Enum):
+    START = 1
+    PAUSE = 2
+    END = 3
+    RESET = 4
+
+
 @dataclass
 class StateTransitionCondition:
     """Encapsulates both string and expression representations of a condition."""
 
     motion_statechart: MotionStatechart
+    kind: TransitionKind
     expression: cas.Expression = cas.TrinaryUnknown
     _parents: List[MotionStatechartNode] = field(default_factory=list, init=False)
     _child: MotionStatechartNode = field(default=None, init=False)
 
     @classmethod
-    def create_true(cls, motion_statechart: MotionStatechart) -> Self:
-        return cls(expression=cas.TrinaryTrue, motion_statechart=motion_statechart)
+    def create_true(
+        cls, motion_statechart: MotionStatechart, kind: TransitionKind
+    ) -> Self:
+        return cls(
+            expression=cas.TrinaryTrue, motion_statechart=motion_statechart, kind=kind
+        )
 
     @classmethod
-    def create_false(cls, motion_statechart: MotionStatechart) -> Self:
-        return cls(expression=cas.TrinaryFalse, motion_statechart=motion_statechart)
+    def create_false(
+        cls, motion_statechart: MotionStatechart, kind: TransitionKind
+    ) -> Self:
+        return cls(
+            expression=cas.TrinaryFalse, motion_statechart=motion_statechart, kind=kind
+        )
 
     @classmethod
-    def create_unknown(cls, motion_statechart: MotionStatechart) -> Self:
-        return cls(expression=cas.TrinaryUnknown, motion_statechart=motion_statechart)
+    def create_unknown(
+        cls, motion_statechart: MotionStatechart, kind: TransitionKind
+    ) -> Self:
+        return cls(
+            expression=cas.TrinaryUnknown,
+            motion_statechart=motion_statechart,
+            kind=kind,
+        )
 
     def update_expression(
         self, new_expression: cas.Expression, child: MotionStatechartNode
@@ -79,22 +102,6 @@ class StateTransitionCondition:
         return str(self)
 
 
-@dataclass
-class StartCondition(StateTransitionCondition): ...
-
-
-@dataclass
-class PauseCondition(StateTransitionCondition): ...
-
-
-@dataclass
-class EndCondition(StateTransitionCondition): ...
-
-
-@dataclass
-class ResetCondition(StateTransitionCondition): ...
-
-
 @dataclass(repr=False, eq=False)
 class MotionStatechartNode(cas.Symbol, SubclassJSONSerializer):
     name: PrefixedName = field(kw_only=True)
@@ -120,26 +127,26 @@ class MotionStatechartNode(cas.Symbol, SubclassJSONSerializer):
     _plot_shape: str = field(kw_only=True)
     _plot_extra_boarder_styles: List[str] = field(default_factory=list, kw_only=True)
 
-    _start_condition: StartCondition = field(init=False)
-    _pause_condition: PauseCondition = field(init=False)
-    _end_condition: EndCondition = field(init=False)
-    _reset_condition: ResetCondition = field(init=False)
+    _start_condition: StateTransitionCondition = field(init=False)
+    _pause_condition: StateTransitionCondition = field(init=False)
+    _end_condition: StateTransitionCondition = field(init=False)
+    _reset_condition: StateTransitionCondition = field(init=False)
 
     def __post_init__(self):
         self.life_cycle_symbol = cas.Symbol(
             name=PrefixedName("life_cycle", str(self.name))
         )
-        self._start_condition = StartCondition.create_true(
-            motion_statechart=self.motion_statechart
+        self._start_condition = StateTransitionCondition.create_true(
+            motion_statechart=self.motion_statechart, kind=TransitionKind.START
         )
-        self._pause_condition = PauseCondition.create_false(
-            motion_statechart=self.motion_statechart
+        self._pause_condition = StateTransitionCondition.create_false(
+            motion_statechart=self.motion_statechart, kind=TransitionKind.PAUSE
         )
-        self._end_condition = EndCondition.create_false(
-            motion_statechart=self.motion_statechart
+        self._end_condition = StateTransitionCondition.create_false(
+            motion_statechart=self.motion_statechart, kind=TransitionKind.END
         )
-        self._reset_condition = ResetCondition.create_false(
-            motion_statechart=self.motion_statechart
+        self._reset_condition = StateTransitionCondition.create_false(
+            motion_statechart=self.motion_statechart, kind=TransitionKind.RESET
         )
         self.motion_statechart.add_node(self)
 

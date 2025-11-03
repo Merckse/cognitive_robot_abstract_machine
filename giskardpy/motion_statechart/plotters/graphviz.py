@@ -7,16 +7,16 @@ import pydot
 from typing_extensions import List, Dict, Optional, Union, Set, TYPE_CHECKING
 
 from giskardpy.motion_statechart.data_types import LifeCycleValues, ObservationState
-from giskardpy.motion_statechart.graph_node import Goal
+from giskardpy.motion_statechart.graph_node import (
+    Goal,
+    TransitionKind,
+    StateTransitionCondition,
+)
 
 from giskardpy.motion_statechart.graph_node import (
     EndMotion,
     CancelMotion,
     MotionStatechartNode,
-    StartCondition,
-    PauseCondition,
-    EndCondition,
-    ResetCondition,
 )
 
 if TYPE_CHECKING:
@@ -303,6 +303,7 @@ class MotionStatechartGraphviz:
         return goal_cluster
 
     def add_edges(self):
+        transition: StateTransitionCondition
         for edge_index, (
             parent_node_index,
             child_node_index,
@@ -314,13 +315,13 @@ class MotionStatechartGraphviz:
             child_node = self.motion_statechart.rx_graph.get_node_data(child_node_index)
             if not self._are_nodes_in_same_cluster(parent_node, child_node):
                 continue
-            if isinstance(transition, StartCondition):
+            if transition.kind == TransitionKind.START:
                 self.add_start_condition_edge(parent_node, child_node)
-            if isinstance(transition, PauseCondition):
+            if transition.kind == TransitionKind.PAUSE:
                 self.add_pause_condition_edge(parent_node, child_node)
-            if isinstance(transition, EndCondition):
+            if transition.kind == TransitionKind.END:
                 self.add_end_condition_edge(parent_node, child_node)
-            if isinstance(transition, ResetCondition):
+            if transition.kind == TransitionKind.RESET:
                 self.add_reset_condition_edge(parent_node, child_node)
 
     def _are_nodes_in_same_cluster(

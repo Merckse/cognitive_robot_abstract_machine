@@ -262,18 +262,28 @@ def test_joint_goal():
     with world.modify_world():
         root = Body(name=PrefixedName("root"))
         tip = Body(name=PrefixedName("tip"))
+        tip2 = Body(name=PrefixedName("tip2"))
         ul = DerivativeMap()
         ul.velocity = 1
         ll = DerivativeMap()
         ll.velocity = -1
         dof = DegreeOfFreedom(
-            name=PrefixedName("dof"), lower_limits=ll, upper_limits=ul
+            name=PrefixedName("dof", "a"), lower_limits=ll, upper_limits=ul
         )
         world.add_degree_of_freedom(dof)
         root_C_tip = RevoluteConnection(
             parent=root, child=tip, axis=cas.Vector3.Z(), dof_name=dof.name
         )
         world.add_connection(root_C_tip)
+
+        dof = DegreeOfFreedom(
+            name=PrefixedName("dof", "b"), lower_limits=ll, upper_limits=ul
+        )
+        world.add_degree_of_freedom(dof)
+        root_C_tip2 = RevoluteConnection(
+            parent=root, child=tip2, axis=cas.Vector3.Z(), dof_name=dof.name
+        )
+        world.add_connection(root_C_tip2)
 
     msc = MotionStatechart(world)
 
@@ -283,8 +293,7 @@ def test_joint_goal():
     msc.add_node(end)
     end.start_condition = task1.observation_variable
 
-    msc.compile()
-    msc._compile_qp_controller(QPControllerConfig.create_default_with_50hz())
+    msc.compile(QPControllerConfig.create_default_with_50hz())
 
     assert task1.observation_state == msc.observation_state.TrinaryUnknown
     assert end.observation_state == msc.observation_state.TrinaryUnknown

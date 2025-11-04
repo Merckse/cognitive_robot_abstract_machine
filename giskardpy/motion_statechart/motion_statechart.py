@@ -324,7 +324,6 @@ class MotionStatechart:
         """
 
         :param controller_config: If not None, the QP controller will be compiled.
-        :return:
         """
         self._apply_goal_conditions_to_their_children()
         self._build_commons_of_nodes()

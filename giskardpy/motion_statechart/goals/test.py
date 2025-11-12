@@ -1,6 +1,6 @@
 from __future__ import division
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import semantic_digital_twin.spatial_types.spatial_types as cas
 from giskardpy.god_map import god_map
@@ -15,10 +15,10 @@ from semantic_digital_twin.world_description.world_entity import Body
 
 @dataclass
 class GraspSequence(Goal):
-    tip_link: Body
-    root_link: Body
-    gripper_joint: PrefixedName
-    goal_pose: cas.TransformationMatrix
+    tip_link: Body = field(kw_only=True)
+    root_link: Body = field(kw_only=True)
+    gripper_joint: PrefixedName = field(kw_only=True)
+    goal_pose: cas.TransformationMatrix = field(kw_only=True)
     max_velocity: float = 100
     weight: float = DefaultWeights.WEIGHT_ABOVE_CA
 
@@ -72,10 +72,10 @@ class GraspSequence(Goal):
 
 @dataclass
 class Cutting(Goal):
-    tip_link: Body
-    root_link: Body
-    depth: float
-    right_shift: float
+    tip_link: Body = field(kw_only=True)
+    root_link: Body = field(kw_only=True)
+    depth: float = field(kw_only=True)
+    right_shift: float = field(kw_only=True)
     max_velocity: float = 100
     weight: float = DefaultWeights.WEIGHT_ABOVE_CA
 

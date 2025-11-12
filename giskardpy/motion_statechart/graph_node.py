@@ -247,7 +247,13 @@ class BuildContext:
 @dataclass
 class DebugExpression:
     name: str
-    expression: cas.Expression
+    expression: (
+        cas.Point3
+        | cas.Vector3
+        | cas.Quaternion
+        | cas.RotationMatrix
+        | cas.TransformationMatrix
+    )
     color: Color = field(default_factory=lambda: Color(1, 0, 0, 1))
 
 
@@ -287,7 +293,7 @@ class MotionStatechartNode(SubclassJSONSerializer):
 
     _constraint_collection: ConstraintCollection = field(init=False)
     _observation_expression: cas.Expression = field(init=False)
-    _debug_expressions: Dict[str, cas.Expression] = field(init=False)
+    _debug_expressions: List[DebugExpression] = field(default_factory=list, init=False)
 
     _start_condition: TrinaryCondition = field(init=False)
     _pause_condition: TrinaryCondition = field(init=False)

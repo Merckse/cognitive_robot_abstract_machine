@@ -1,7 +1,10 @@
 from __future__ import division
 
+from dataclasses import dataclass, field
+
 import semantic_digital_twin.spatial_types.spatial_types as cas
 from giskardpy.god_map import god_map
+from giskardpy.motion_statechart.data_types import DefaultWeights
 from giskardpy.motion_statechart.tasks.task import Task
 from semantic_digital_twin.world_description.geometry import Color
 from semantic_digital_twin.world_description.world_entity import Body
@@ -9,13 +12,13 @@ from semantic_digital_twin.world_description.world_entity import Body
 
 @dataclass
 class Pointing(Task):
-    tip_link: Body
-    goal_point: cas.Point3
-    root_link: Body
-    pointing_axis: cas.Vector3
+    tip_link: Body = field(kw_only=True)
+    goal_point: cas.Point3 = field(kw_only=True)
+    root_link: Body = field(kw_only=True)
+    pointing_axis: cas.Vector3 = field(kw_only=True)
     max_velocity: float = 0.3
     threshold: float = 0.01
-    weight: float = WEIGHT_BELOW_CA
+    weight: float = DefaultWeights.WEIGHT_BELOW_CA
 
     def __post_init__(self):
         """
@@ -73,14 +76,14 @@ class Pointing(Task):
 
 @dataclass
 class PointingCone(Task):
-    tip_link: Body
-    goal_point: cas.Point3
-    root_link: Body
-    pointing_axis: cas.Vector3
+    tip_link: Body = field(kw_only=True)
+    goal_point: cas.Point3 = field(kw_only=True)
+    root_link: Body = field(kw_only=True)
+    pointing_axis: cas.Vector3 = field(kw_only=True)
     cone_theta: float = 0.0
     max_velocity: float = 0.3
     threshold: float = 0.01
-    weight: float = WEIGHT_BELOW_CA
+    weight: float = DefaultWeights.WEIGHT_BELOW_CA
 
     def __post_init__(self):
         """

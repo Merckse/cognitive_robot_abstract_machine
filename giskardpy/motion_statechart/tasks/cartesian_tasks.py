@@ -8,6 +8,7 @@ from giskardpy.motion_statechart.data_types import DefaultWeights
 from giskardpy.motion_statechart.graph_node import (
     BuildContext,
     NodeArtifacts,
+    DebugExpression,
 )
 from giskardpy.motion_statechart.tasks.task import Task
 from semantic_digital_twin.spatial_types.derivatives import Derivatives
@@ -247,10 +248,9 @@ class CartesianPose(Task):
         goal_point = self.goal_pose.to_position()
 
         # if self.absolute:
-        root_T_goal_ref_np = context.world.compute_forward_kinematics_np(
+        root_T_goal_ref = context.world.compute_forward_kinematics(
             self.root_link, goal_ref
         )
-        root_T_goal_ref = cas.TransformationMatrix(root_T_goal_ref_np)
         root_P_goal = root_T_goal_ref @ goal_point
         root_R_goal = root_T_goal_ref @ goal_orientation
         # else:
@@ -262,9 +262,10 @@ class CartesianPose(Task):
         #     root_R_goal = root_T_x @ goal_orientation
         #     root_R_goal = self.update_expression_on_starting(root_R_goal)
 
-        r_P_c = context.world.compose_forward_kinematics_expression(
+        r_T_c = context.world.compose_forward_kinematics_expression(
             self.root_link, self.tip_link
-        ).to_position()
+        )
+        r_P_c = r_T_c.to_position()
         artifacts.constraints.add_point_goal_constraints(
             frame_P_goal=root_P_goal,
             frame_P_current=r_P_c,
@@ -274,9 +275,6 @@ class CartesianPose(Task):
 
         distance_to_goal = root_P_goal.euclidean_distance(r_P_c)
 
-        r_T_c = context.world.compose_forward_kinematics_expression(
-            self.root_link, self.tip_link
-        )
         r_R_c = r_T_c.to_rotation_matrix()
 
         artifacts.constraints.add_rotation_goal_constraints(
@@ -285,13 +283,40 @@ class CartesianPose(Task):
             reference_velocity=self.reference_angular_velocity,
             weight=self.weight,
         )
-        # debug_trans_matrix = cas.TransformationMatrix.from_point_rotation_matrix(point=goal_point,
-        #                                                                 rotation_matrix=root_R_goal)
-        # debug_current_trans_matrix = cas.TransformationMatrix.from_point_rotation_matrix(point=r_T_c.to_position(),
-        #                                                                         rotation_matrix=r_R_c)
-        # god_map.debug_expression_manager.add_debug_expression(f'{self.name}/goal_orientation', debug_trans_matrix)
-        # god_map.debug_expression_manager.add_debug_expression(f'{self.name}/current_orientation',
-        #                                                       debug_current_trans_matrix)
+
+        # artifacts.debug_expressions.append(
+        #     DebugExpression("error", expression=r_T_c.inverse() @ (root_P_goal - r_P_c))
+        # )
+        # artifacts.debug_expressions.append(
+        #     DebugExpression(
+        #         "current", expression=cas.Point3(reference_frame=self.tip_link)
+        #     )
+        # )
+        # artifacts.debug_expressions.append(
+        #     DebugExpression(
+        #         "target",
+        #         expression=r_T_c.inverse() @ root_P_goal,
+        #         color=Color(0, 1, 0, 1),
+        #     )
+        # )
+        # artifacts.debug_expressions.append(
+        #     DebugExpression(
+        #         "current_rot",
+        #         expression=cas.RotationMatrix(reference_frame=self.tip_link),
+        #     )
+        # )
+        # artifacts.debug_expressions.append(
+        #     DebugExpression("goal_rot", expression=r_T_c.inverse() @ root_R_goal)
+        # )
+        artifacts.debug_expressions.append(
+            DebugExpression(
+                "current_pose",
+                expression=cas.TransformationMatrix(reference_frame=self.tip_link),
+            )
+        )
+        artifacts.debug_expressions.append(
+            DebugExpression("goal_pose", expression=root_T_goal_ref @ self.goal_pose)
+        )
 
         rotation_error = r_R_c.rotational_error(root_R_goal)
         artifacts.observation = cas.logic_and(

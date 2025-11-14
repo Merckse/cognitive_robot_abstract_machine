@@ -524,10 +524,20 @@ def test_nested_goals():
     msc.add_node(end)
     end.start_condition = outer.observation_variable
 
-    kin_sim = Executor(motion_statechart=msc, world=World())
+    json_data = msc.to_json()
+    json_str = json.dumps(json_data)
+    new_json_data = json.loads(json_str)
+    msc_copy = MotionStatechart.from_json(new_json_data)
 
+    for node in msc.nodes:
+        assert node.index == msc_copy.get_node_by_name(node.name).index
+
+    kin_sim = Executor(motion_statechart=msc_copy, world=World())
+    node1 = msc_copy.get_nodes_by_type(TrueMonitor)[0]
+    outer = msc_copy.get_nodes_by_type(TestNestedGoal)[0]
+    end = msc_copy.get_nodes_by_type(EndMotion)[0]
     kin_sim.compile()
-    msc.draw("muh.pdf")
+    msc_copy.draw("muh.pdf")
     assert node1.observation_state == ObservationStateValues.UNKNOWN
     assert outer.inner.sub_node1.observation_state == ObservationStateValues.UNKNOWN
     assert outer.inner.sub_node2.observation_state == ObservationStateValues.UNKNOWN
@@ -541,10 +551,10 @@ def test_nested_goals():
     assert outer.inner.life_cycle_state == LifeCycleValues.NOT_STARTED
     assert outer.life_cycle_state == LifeCycleValues.NOT_STARTED
     assert end.life_cycle_state == LifeCycleValues.NOT_STARTED
-    assert not msc.is_end_motion()
+    assert not msc_copy.is_end_motion()
 
     kin_sim.tick()
-    msc.draw("muh.pdf")
+    msc_copy.draw("muh.pdf")
     assert node1.observation_state == ObservationStateValues.UNKNOWN
     assert outer.inner.sub_node1.observation_state == ObservationStateValues.UNKNOWN
     assert outer.inner.sub_node2.observation_state == ObservationStateValues.UNKNOWN
@@ -558,10 +568,10 @@ def test_nested_goals():
     assert outer.inner.life_cycle_state == LifeCycleValues.NOT_STARTED
     assert outer.life_cycle_state == LifeCycleValues.NOT_STARTED
     assert end.life_cycle_state == LifeCycleValues.NOT_STARTED
-    assert not msc.is_end_motion()
+    assert not msc_copy.is_end_motion()
 
     kin_sim.tick()
-    msc.draw("muh.pdf")
+    msc_copy.draw("muh.pdf")
     assert node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node1.observation_state == ObservationStateValues.UNKNOWN
     assert outer.inner.sub_node2.observation_state == ObservationStateValues.UNKNOWN
@@ -575,10 +585,10 @@ def test_nested_goals():
     assert outer.inner.life_cycle_state == LifeCycleValues.RUNNING
     assert outer.life_cycle_state == LifeCycleValues.RUNNING
     assert end.life_cycle_state == LifeCycleValues.NOT_STARTED
-    assert not msc.is_end_motion()
+    assert not msc_copy.is_end_motion()
 
     kin_sim.tick()
-    msc.draw("muh.pdf")
+    msc_copy.draw("muh.pdf")
     assert node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node2.observation_state == ObservationStateValues.UNKNOWN
@@ -592,10 +602,10 @@ def test_nested_goals():
     assert outer.inner.life_cycle_state == LifeCycleValues.RUNNING
     assert outer.life_cycle_state == LifeCycleValues.RUNNING
     assert end.life_cycle_state == LifeCycleValues.NOT_STARTED
-    assert not msc.is_end_motion()
+    assert not msc_copy.is_end_motion()
 
     kin_sim.tick()
-    msc.draw("muh.pdf")
+    msc_copy.draw("muh.pdf")
     assert node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node2.observation_state == ObservationStateValues.TRUE
@@ -609,10 +619,10 @@ def test_nested_goals():
     assert outer.inner.life_cycle_state == LifeCycleValues.RUNNING
     assert outer.life_cycle_state == LifeCycleValues.RUNNING
     assert end.life_cycle_state == LifeCycleValues.NOT_STARTED
-    assert not msc.is_end_motion()
+    assert not msc_copy.is_end_motion()
 
     kin_sim.tick()
-    msc.draw("muh.pdf")
+    msc_copy.draw("muh.pdf")
     assert node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node2.observation_state == ObservationStateValues.TRUE
@@ -626,10 +636,10 @@ def test_nested_goals():
     assert outer.inner.life_cycle_state == LifeCycleValues.RUNNING
     assert outer.life_cycle_state == LifeCycleValues.RUNNING
     assert end.life_cycle_state == LifeCycleValues.NOT_STARTED
-    assert not msc.is_end_motion()
+    assert not msc_copy.is_end_motion()
 
     kin_sim.tick()
-    msc.draw("muh.pdf")
+    msc_copy.draw("muh.pdf")
     assert node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node2.observation_state == ObservationStateValues.TRUE
@@ -643,10 +653,10 @@ def test_nested_goals():
     assert outer.inner.life_cycle_state == LifeCycleValues.RUNNING
     assert outer.life_cycle_state == LifeCycleValues.RUNNING
     assert end.life_cycle_state == LifeCycleValues.RUNNING
-    assert not msc.is_end_motion()
+    assert not msc_copy.is_end_motion()
 
     kin_sim.tick()
-    msc.draw("muh.pdf")
+    msc_copy.draw("muh.pdf")
     assert node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node1.observation_state == ObservationStateValues.TRUE
     assert outer.inner.sub_node2.observation_state == ObservationStateValues.TRUE
@@ -660,7 +670,7 @@ def test_nested_goals():
     assert outer.inner.life_cycle_state == LifeCycleValues.RUNNING
     assert outer.life_cycle_state == LifeCycleValues.RUNNING
     assert end.life_cycle_state == LifeCycleValues.RUNNING
-    assert msc.is_end_motion()
+    assert msc_copy.is_end_motion()
 
 
 @dataclass(eq=False, repr=False)

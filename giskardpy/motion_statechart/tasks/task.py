@@ -22,38 +22,29 @@ from semantic_digital_twin.spatial_types.derivatives import Derivatives
 from semantic_digital_twin.world_description.degree_of_freedom import DegreeOfFreedom
 
 
-@dataclass(eq=False, repr=False)
-class Task(MotionStatechartNode):
-    """
-    Tasks are a set of constraints with the same predicates.
-    """
+# quadratic_gains: List[QuadraticWeightGain] = field(default_factory=list, init=False)
+# linear_weight_gains: List[LinearWeightGain] = field(
+#     default_factory=list, init=False
+# )
 
-    _plot_style: str = field(default="filled, diagonals", init=False)
-    _plot_shape: str = field(default="rectangle", init=False)
-
-    # quadratic_gains: List[QuadraticWeightGain] = field(default_factory=list, init=False)
-    # linear_weight_gains: List[LinearWeightGain] = field(
-    #     default_factory=list, init=False
-    # )
-
-    # def get_quadratic_gains(self) -> List[QuadraticWeightGain]:
-    #     return self.quadratic_gains
-    #
-    # def get_linear_gains(self) -> List[LinearWeightGain]:
-    #     return self.linear_weight_gains
-    #
-    # def add_quadratic_weight_gain(
-    #     self,
-    #     name: str,
-    #     gains: List[DefaultDict[Derivatives, Dict[DegreeOfFreedom, float]]],
-    # ):
-    #     q_gain = QuadraticWeightGain(name=name, gains=gains)
-    #     self.quadratic_gains.append(q_gain)
-    #
-    # def add_linear_weight_gain(
-    #     self,
-    #     name: str,
-    #     gains: List[DefaultDict[Derivatives, Dict[DegreeOfFreedom, float]]],
-    # ):
-    #     q_gain = LinearWeightGain(name=name, gains=gains)
-    #     self.linear_weight_gains.append(q_gain)
+# def get_quadratic_gains(self) -> List[QuadraticWeightGain]:
+#     return self.quadratic_gains
+#
+# def get_linear_gains(self) -> List[LinearWeightGain]:
+#     return self.linear_weight_gains
+#
+# def add_quadratic_weight_gain(
+#     self,
+#     name: str,
+#     gains: List[DefaultDict[Derivatives, Dict[DegreeOfFreedom, float]]],
+# ):
+#     q_gain = QuadraticWeightGain(name=name, gains=gains)
+#     self.quadratic_gains.append(q_gain)
+#
+# def add_linear_weight_gain(
+#     self,
+#     name: str,
+#     gains: List[DefaultDict[Derivatives, Dict[DegreeOfFreedom, float]]],
+# ):
+#     q_gain = LinearWeightGain(name=name, gains=gains)
+#     self.linear_weight_gains.append(q_gain)

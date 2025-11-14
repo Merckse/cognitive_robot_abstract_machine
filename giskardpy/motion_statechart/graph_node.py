@@ -27,7 +27,6 @@ from giskardpy.motion_statechart.data_types import (
 from giskardpy.qp.constraint_collection import ConstraintCollection
 from giskardpy.utils.utils import string_shortener
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
-from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.geometry import Color
 
 if TYPE_CHECKING:
@@ -276,9 +275,9 @@ class MotionStatechartNode(SubclassJSONSerializer):
     The index of the entity in `_world.kinematic_structure`.
     """
 
-    parent_node: MotionStatechartNode = field(default=None, init=False)
+    parent_node_name: Optional[PrefixedName] = field(default=None, init=False)
     """
-    The parent node of this node, if None, it is on the top layer of a motion statechart.
+    The name of the parent node of this node, if None, it is on the top layer of a motion statechart.
     """
 
     _life_cycle_variable: LifeCycleVariable = field(init=False)
@@ -325,6 +324,20 @@ class MotionStatechartNode(SubclassJSONSerializer):
         self._reset_condition = TrinaryCondition.create_false(
             kind=TransitionKind.RESET, owner=self
         )
+
+    @property
+    def parent_node(self) -> Optional[MotionStatechartNode]:
+        try:
+            return self._motion_statechart.get_node_by_name(self.parent_node_name)
+        except StopIteration:
+            return None
+
+    @parent_node.setter
+    def parent_node(self, parent_node: Optional[MotionStatechartNode]) -> None:
+        if parent_node is None:
+            self.parent_node_name = None
+        else:
+            self.parent_node_name = parent_node.name
 
     def set_transition(self, transition: TrinaryCondition) -> None:
         match transition.kind:
@@ -457,6 +470,8 @@ class MotionStatechartNode(SubclassJSONSerializer):
             if not field_.name.startswith("_") and field_.init:
                 value = getattr(self, field_.name)
                 json_data[field_.name] = self._attribute_to_json(value)
+        if self.parent_node_name is not None:
+            json_data["parent_node_name"] = self.parent_node.name.to_json()
         return json_data
 
     def _attribute_to_json(self, value: Any) -> Any:
@@ -496,7 +511,10 @@ class MotionStatechartNode(SubclassJSONSerializer):
                     "dict parameters of MotionStatechartNode are not supported yet. Use a list instead."
                 )
             node_kwargs[field_name] = field_data
-        return cls(**node_kwargs)
+        parent_node_name = node_kwargs.pop("parent_node_name", None)
+        result = cls(**node_kwargs)
+        result.parent_node_name = parent_node_name
+        return result
 
     def formatted_name(self, quoted: bool = False) -> str:
         formatted_name = string_shortener(
@@ -527,6 +545,16 @@ GenericMotionStatechartNode = TypeVar(
 
 
 @dataclass(eq=False, repr=False)
+class Task(MotionStatechartNode):
+    """
+    Tasks are a set of constraints with the same predicates.
+    """
+
+    _plot_style: str = field(default="filled, diagonals", init=False)
+    _plot_shape: str = field(default="rectangle", init=False)
+
+
+@dataclass(eq=False, repr=False)
 class Goal(MotionStatechartNode):
     nodes: List[MotionStatechartNode] = field(default_factory=list, init=False)
     _plot_style: str = field(default="filled", init=False)
@@ -544,6 +572,23 @@ class Goal(MotionStatechartNode):
     def motion_statechart(self, motion_statechart: MotionStatechart) -> None:
         self._motion_statechart = motion_statechart
         self._link_child_nodes_with_motion_statechart()
+
+    def create_compressed_copy(self) -> Goal:
+        goal_copy = Goal(name=self.name)
+        for node in self.nodes:
+            match node:
+                case Goal():
+                    node_copy = node.create_compressed_copy()
+                case Task():
+                    node_copy = Task(name=node.name)
+                case _:
+                    node_copy = MotionStatechartNode(name=node.name)
+            goal_copy.add_node(node_copy)
+            node_copy.start_condition = node.start_condition
+            node_copy.pause_condition = node.pause_condition
+            node_copy.end_condition = node.end_condition
+            node_copy.reset_condition = node.reset_condition
+        return goal_copy
 
     def expand(self, context: BuildContext) -> None:
         """

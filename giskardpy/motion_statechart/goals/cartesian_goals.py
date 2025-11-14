@@ -2,10 +2,7 @@ from __future__ import division
 
 from dataclasses import dataclass, field
 
-import numpy as np
-
 import semantic_digital_twin.spatial_types.spatial_types as cas
-from giskardpy.god_map import god_map
 from giskardpy.motion_statechart.data_types import DefaultWeights
 from giskardpy.motion_statechart.graph_node import Goal
 from giskardpy.motion_statechart.tasks.cartesian_tasks import (
@@ -14,8 +11,6 @@ from giskardpy.motion_statechart.tasks.cartesian_tasks import (
     CartesianPositionStraight,
     CartesianPose,
 )
-from giskardpy.motion_statechart.tasks.task import Task
-from semantic_digital_twin.spatial_types.derivatives import Derivatives
 from semantic_digital_twin.world_description.world_entity import Body
 
 

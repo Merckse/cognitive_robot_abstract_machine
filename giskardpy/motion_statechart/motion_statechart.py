@@ -25,10 +25,10 @@ from giskardpy.motion_statechart.graph_node import (
     ObservationVariable,
     LifeCycleVariable,
 )
+from giskardpy.motion_statechart.graph_node import Task
 from giskardpy.motion_statechart.plotters.graphviz import MotionStatechartGraphviz
 from giskardpy.qp.constraint_collection import ConstraintCollection
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
-from semantic_digital_twin.world import World
 
 
 @dataclass(repr=False, eq=False)
@@ -358,9 +358,33 @@ class MotionStatechart(SubclassJSONSerializer):
         self.life_cycle_state = LifeCycleState(self)
         self.observation_state = ObservationState(self)
 
+    def create_compressed_copy(self) -> MotionStatechart:
+        motion_statechart_copy = MotionStatechart()
+        for node in self.top_level_nodes:
+            match node:
+                case Goal():
+                    node_copy = node.create_compressed_copy()
+                case Task():
+                    node_copy = Task(name=node.name)
+                case _:
+                    node_copy = MotionStatechartNode(name=node.name)
+            motion_statechart_copy.add_node(node_copy)
+            node_copy.start_condition = node.start_condition
+            node_copy.pause_condition = node.pause_condition
+            node_copy.end_condition = node.end_condition
+            node_copy.reset_condition = node.reset_condition
+        for node in self.nodes:
+            node_copy = motion_statechart_copy.get_node_by_name(node.name)
+            node_copy.index = node.index
+        return motion_statechart_copy
+
     @property
     def nodes(self) -> List[MotionStatechartNode]:
         return list(self.rx_graph.nodes())
+
+    @property
+    def top_level_nodes(self) -> List[MotionStatechartNode]:
+        return [node for node in self.nodes if node.parent_node is None]
 
     @property
     def edges(self) -> List[TrinaryCondition]:
@@ -540,7 +564,9 @@ class MotionStatechart(SubclassJSONSerializer):
     def to_json(self) -> Dict[str, Any]:
         self._add_transitions()
         result = super().to_json()
-        result["nodes"] = [node.to_json() for node in self.nodes]
+        result["nodes"] = [
+            node.to_json() for node in sorted(self.nodes, key=lambda n: n.index)
+        ]
         result["unique_edges"] = [edge.to_json() for edge in self.unique_edges]
         return result
 
@@ -555,4 +581,7 @@ class MotionStatechart(SubclassJSONSerializer):
                 json_data, motion_statechart=motion_statechart, **kwargs
             )
             transition.owner.set_transition(transition)
+        for node in motion_statechart.nodes:
+            if node.parent_node is not None:
+                node.parent_node.nodes.append(node)
         return motion_statechart

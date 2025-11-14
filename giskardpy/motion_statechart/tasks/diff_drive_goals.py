@@ -6,7 +6,7 @@ from typing import Optional
 import semantic_digital_twin.spatial_types.spatial_types as cas
 from giskardpy.god_map import god_map
 from giskardpy.motion_statechart.data_types import DefaultWeights
-from giskardpy.motion_statechart.tasks.task import Task
+from giskardpy.motion_statechart.graph_node import Task
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.world_description.world_entity import Body
 
@@ -105,8 +105,10 @@ class KeepHandInWorkspace(Task):
 
         weight = DefaultWeights.WEIGHT_ABOVE_CA
         base_footprint_V_pointing_axis = cas.Vector3(self.map_V_pointing_axis)
-        map_T_base_footprint = god_map.world._forward_kinematic_manager.compose_expression(
-            self.map_frame, self.base_footprint
+        map_T_base_footprint = (
+            god_map.world._forward_kinematic_manager.compose_expression(
+                self.map_frame, self.base_footprint
+            )
         )
         map_V_pointing_axis = map_T_base_footprint @ base_footprint_V_pointing_axis
         map_T_tip = god_map.world._forward_kinematic_manager.compose_expression(

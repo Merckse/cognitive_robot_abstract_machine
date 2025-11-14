@@ -15,7 +15,7 @@ from giskardpy.motion_statechart.graph_node import (
     MotionStatechartNode,
     NodeArtifacts,
 )
-from giskardpy.motion_statechart.tasks.task import (
+from giskardpy.motion_statechart.graph_node import (
     Task,
 )
 from giskardpy.qp.qp_controller_config import QPControllerConfig

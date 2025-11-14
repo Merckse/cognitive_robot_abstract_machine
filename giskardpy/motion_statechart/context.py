@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+from typing_extensions import Self
+
 from giskardpy.model.collision_world_syncer import CollisionWorldSynchronizer
 from giskardpy.motion_statechart.auxilary_variable_manager import (
     AuxiliaryVariableManager,
@@ -19,6 +21,16 @@ class BuildContext:
 
     def to_execution_context(self):
         return ExecutionContext(world=self.world)
+
+    @classmethod
+    def empty(cls) -> Self:
+        return cls(
+            world=World(),
+            auxiliary_variable_manager=None,
+            collision_scene=None,
+            qp_controller_config=None,
+            control_cycle_variable=None,
+        )
 
 
 @dataclass

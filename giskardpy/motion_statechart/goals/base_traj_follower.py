@@ -8,9 +8,7 @@ import semantic_digital_twin.spatial_types.spatial_types as cas
 from giskardpy.god_map import god_map
 from giskardpy.motion_statechart.data_types import DefaultWeights
 from giskardpy.motion_statechart.graph_node import Goal
-from giskardpy.motion_statechart.tasks.task import (
-    Task,
-)
+from giskardpy.motion_statechart.graph_node import Task
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.spatial_types.derivatives import Derivatives
 from semantic_digital_twin.world_description.connections import OmniDrive
@@ -117,8 +115,10 @@ class BaseTrajFollower(Goal):
     def add_trans_constraints(self):
         errors_x = []
         errors_y = []
-        map_T_base_footprint = god_map.world._forward_kinematic_manager.compose_expression(
-            god_map.world.root_link_name, self.base_footprint_link
+        map_T_base_footprint = (
+            god_map.world._forward_kinematic_manager.compose_expression(
+                god_map.world.root_link_name, self.base_footprint_link
+            )
         )
         for t in range(god_map.qp_controller.prediction_horizon):
             x = self.current_traj_point(

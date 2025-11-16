@@ -1,6 +1,6 @@
 import json
 
-import pytest
+import numpy as np
 
 from conftest import mini_world
 from giskardpy.executor import Executor
@@ -43,7 +43,6 @@ from semantic_digital_twin.world_description.connections import (
 )
 from semantic_digital_twin.world_description.degree_of_freedom import DegreeOfFreedom
 from semantic_digital_twin.world_description.world_entity import Body
-import numpy as np
 
 
 def test_TrueMonitor():
@@ -139,8 +138,8 @@ def test_start_condition(mini_world):
     new_json_data = json.loads(json_str)
     msc_copy = MotionStatechart.from_json(new_json_data, world=mini_world)
 
-    kin_sim = Executor(motion_statechart=msc_copy, world=mini_world)
-    kin_sim.compile()
+    kin_sim = Executor(world=mini_world)
+    kin_sim.compile(motion_statechart=msc_copy)
     for index, node in enumerate(msc.nodes):
         assert node.name == msc_copy.nodes[index].name
     assert len(msc.edges) == len(msc_copy.edges)
@@ -198,11 +197,10 @@ def test_executing_json_parsed_statechart():
     msc_copy = MotionStatechart.from_json(new_json_data, world=world)
 
     kin_sim = Executor(
-        motion_statechart=msc_copy,
         world=world,
         controller_config=QPControllerConfig.create_default_with_50hz(),
     )
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc_copy)
 
     task1_copy = msc_copy.get_node_by_name(task1.name)
     end_copy = msc_copy.get_node_by_name(end.name)
@@ -261,12 +259,11 @@ def test_cart_goal_simple(pr2_world: World):
     msc_copy = MotionStatechart.from_json(new_json_data, **kwargs)
 
     kin_sim = Executor(
-        motion_statechart=msc_copy,
         world=pr2_world,
         controller_config=QPControllerConfig.create_default_with_50hz(),
     )
 
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc_copy)
     kin_sim.tick_until_end()
 
     fk = pr2_world.compute_forward_kinematics_np(root, tip)
@@ -320,9 +317,6 @@ def test_nested_goals():
 
     msc_copy = MotionStatechart.from_json(new_json_data)
     msc_copy._add_transitions()
-
-    # kin_sim = Executor(motion_statechart=msc, world=World())
-    # kin_sim.compile()
 
     for node in msc.nodes:
         assert node.index == msc_copy.get_node_by_name(node.name).index

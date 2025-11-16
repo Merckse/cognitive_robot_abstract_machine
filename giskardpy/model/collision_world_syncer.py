@@ -99,7 +99,6 @@ class CollisionWorldSynchronizer:
     def reset_cache(self):
         self.collision_detector.reset_cache()
 
-    @lru_cache
     def get_external_collision_symbol(self) -> List[cas.FloatVariable]:
         symbols = []
         for body, max_idx in self.external_monitored_links.items():

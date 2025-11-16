@@ -159,8 +159,8 @@ def test_motion_statechart():
     )
     end.start_condition = node1.observation_variable
 
-    kin_sim = Executor(motion_statechart=msc, world=World())
-    kin_sim.compile()
+    kin_sim = Executor(world=World())
+    kin_sim.compile(motion_statechart=msc)
 
     assert len(msc.nodes) == 4
     assert len(msc.edges) == 3
@@ -254,8 +254,8 @@ def test_print():
     print_node2.start_condition = node1.observation_variable
     end.start_condition = print_node2.observation_variable
 
-    kin_sim = Executor(motion_statechart=msc, world=World())
-    kin_sim.compile()
+    kin_sim = Executor(world=World())
+    kin_sim.compile(motion_statechart=msc)
 
     assert len(msc.nodes) == 4
     assert len(msc.edges) == 3
@@ -340,8 +340,8 @@ def test_cancel_motion():
     msc.add_node(cancel)
     cancel.start_condition = node1.observation_variable
 
-    kin_sim = Executor(motion_statechart=msc, world=World())
-    kin_sim.compile()
+    kin_sim = Executor(world=World())
+    kin_sim.compile(motion_statechart=msc)
 
     kin_sim.tick()  # first tick, cancel motion node1 turns true
     kin_sim.tick()  # second tick, cancel goes into running
@@ -395,11 +395,10 @@ def test_joint_goal():
     )
 
     kin_sim = Executor(
-        motion_statechart=msc,
         world=world,
         controller_config=QPControllerConfig.create_default_with_50hz(),
     )
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
 
     assert task1.observation_state == ObservationStateValues.UNKNOWN
     assert end.observation_state == ObservationStateValues.UNKNOWN
@@ -445,8 +444,8 @@ def test_reset():
         node3.observation_variable,
     )
 
-    kin_sim = Executor(motion_statechart=msc, world=World())
-    kin_sim.compile()
+    kin_sim = Executor(world=World())
+    kin_sim.compile(motion_statechart=msc)
     msc.draw("muh.pdf")
 
     kin_sim.tick()
@@ -533,11 +532,11 @@ def test_nested_goals():
     for node in msc.nodes:
         assert node.index == msc_copy.get_node_by_name(node.name).index
 
-    kin_sim = Executor(motion_statechart=msc_copy, world=World())
+    kin_sim = Executor(world=World())
     node1 = msc_copy.get_nodes_by_type(TrueMonitor)[0]
     outer = msc_copy.get_nodes_by_type(TestNestedGoal)[0]
     end = msc_copy.get_nodes_by_type(EndMotion)[0]
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc_copy)
     msc_copy.draw("muh.pdf")
     assert node1.observation_state == ObservationStateValues.UNKNOWN
     assert outer.inner.sub_node1.observation_state == ObservationStateValues.UNKNOWN
@@ -717,9 +716,9 @@ def test_thread_payload_monitor_integration():
     msc.add_node(end)
     end.start_condition = mon.observation_variable
 
-    kin_sim = Executor(motion_statechart=msc, world=World())
+    kin_sim = Executor(world=World())
 
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
 
     # tick 1: monitor not started yet becomes RUNNING; end not started
     kin_sim.tick()
@@ -759,9 +758,9 @@ def test_goal():
     msc.add_node(end)
     end.start_condition = goal.observation_variable
 
-    kin_sim = Executor(motion_statechart=msc, world=World())
+    kin_sim = Executor(world=World())
 
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
     kin_sim.tick_until_end()
     assert len(msc.history) == 7
     # %% goal
@@ -879,8 +878,8 @@ def test_set_seed_configuration(pr2_world):
     node1.end_condition = node1.observation_variable
     end.start_condition = node1.observation_variable
 
-    kin_sim = Executor(motion_statechart=msc, world=pr2_world)
-    kin_sim.compile()
+    kin_sim = Executor(world=pr2_world)
+    kin_sim.compile(motion_statechart=msc)
 
     kin_sim.tick_until_end()
     assert node1.observation_state == ObservationStateValues.TRUE
@@ -911,8 +910,8 @@ def test_set_seed_odometry(pr2_world):
     node1.end_condition = node1.observation_variable
     end.start_condition = node1.observation_variable
 
-    kin_sim = Executor(motion_statechart=msc, world=pr2_world)
-    kin_sim.compile()
+    kin_sim = Executor(world=pr2_world)
+    kin_sim.compile(motion_statechart=msc)
 
     kin_sim.tick_until_end()
     assert node1.observation_state == ObservationStateValues.TRUE
@@ -946,11 +945,10 @@ def test_continuous_joint(pr2_world):
     end.start_condition = joint_goal.observation_variable
 
     kin_sim = Executor(
-        motion_statechart=msc,
         world=pr2_world,
         controller_config=QPControllerConfig.create_default_with_50hz(),
     )
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
     kin_sim.tick_until_end()
 
 
@@ -972,11 +970,10 @@ def test_revolute_joint(pr2_world):
     end.start_condition = joint_goal.observation_variable
 
     kin_sim = Executor(
-        motion_statechart=msc,
         world=pr2_world,
         controller_config=QPControllerConfig.create_default_with_50hz(),
     )
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
     kin_sim.tick_until_end()
 
 
@@ -998,11 +995,10 @@ def test_cart_goal_1eef(pr2_world: World):
     end.start_condition = cart_goal.observation_variable
 
     kin_sim = Executor(
-        motion_statechart=msc,
         world=pr2_world,
         controller_config=QPControllerConfig.create_default_with_50hz(),
     )
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
     kin_sim.tick_until_end()
 
 
@@ -1043,12 +1039,11 @@ def test_cart_goal_sequence_at_build(pr2_world: World):
     )
 
     kin_sim = Executor(
-        motion_statechart=msc,
         world=pr2_world,
         controller_config=QPControllerConfig.create_default_with_50hz(),
     )
 
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
     kin_sim.tick_until_end()
 
     fk = pr2_world.compute_forward_kinematics_np(root, tip)
@@ -1092,10 +1087,9 @@ def test_cart_goal_sequence_on_start(pr2_world: World):
 
     kin_sim = Executor(
         world=pr2_world,
-        motion_statechart=msc,
         controller_config=QPControllerConfig.create_default_with_50hz(),
     )
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
     kin_sim.tick_until_end()
 
     fk = pr2_world.compute_forward_kinematics_np(root, tip)
@@ -1124,11 +1118,10 @@ def test_CartesianOrientation(pr2_world: World):
     end.start_condition = cart_goal.observation_variable
 
     kin_sim = Executor(
-        motion_statechart=msc,
         world=pr2_world,
         controller_config=QPControllerConfig.create_default_with_50hz(),
     )
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
     kin_sim.tick_until_end()
 
     fk = pr2_world.compute_forward_kinematics_np(root, tip)
@@ -1157,11 +1150,10 @@ def test_pointing(pr2_world: World):
     end.start_condition = pointing.observation_variable
 
     kin_sim = Executor(
-        motion_statechart=msc,
         world=pr2_world,
         controller_config=QPControllerConfig.create_default_with_50hz(),
     )
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
     kin_sim.tick_until_end()
 
 
@@ -1194,8 +1186,8 @@ def test_transition_triggers():
     changer.end_condition = node3.observation_variable
     changer.reset_condition = node4.observation_variable
 
-    kin_sim = Executor(motion_statechart=msc, world=World())
-    kin_sim.compile()
+    kin_sim = Executor(world=World())
+    kin_sim.compile(motion_statechart=msc)
 
     assert changer.state is None
 
@@ -1266,12 +1258,11 @@ def test_collision_avoidance(box_bot_world):
     msc_copy = MotionStatechart.from_json(new_json_data, **kwargs)
 
     kin_sim = Executor(
-        motion_statechart=msc_copy,
         world=box_bot_world,
         controller_config=QPControllerConfig.create_default_with_50hz(),
         collision_checker=CollisionCheckerLib.bpb,
     )
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
 
     msc_copy.draw("muh.pdf")
     kin_sim.tick_until_end(500)
@@ -1304,10 +1295,9 @@ def test_counting():
     )
 
     kin_sim = Executor(
-        motion_statechart=msc,
         world=World(),
     )
-    kin_sim.compile()
+    kin_sim.compile(motion_statechart=msc)
 
     current_time = time.time()
 

@@ -30,12 +30,14 @@ from semantic_digital_twin.world import World
 
 @dataclass
 class Executor:
-    motion_statechart: MotionStatechart
     world: World
     controller_config: Optional[QPControllerConfig] = None
     collision_checker: InitVar[CollisionCheckerLib] = field(
         default=CollisionCheckerLib.none
     )
+
+    # %% init False
+    motion_statechart: MotionStatechart = field(init=False)
     collision_scene: Optional[CollisionWorldSynchronizer] = field(
         default=None, init=False
     )
@@ -66,7 +68,8 @@ class Executor:
             )
         )
 
-    def compile(self):
+    def compile(self, motion_statechart: MotionStatechart):
+        self.motion_statechart = motion_statechart
         self._control_cycles = -1
         self._create_control_cycles_variable()
         self.motion_statechart.compile(self.build_context)

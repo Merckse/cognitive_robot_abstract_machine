@@ -21,7 +21,6 @@ if TYPE_CHECKING:
     from giskardpy.qp.qp_controller import QPController
     from giskardpy.debug_expression_manager import DebugExpressionManager
     from giskardpy.model.collision_world_syncer import (
-        CollisionWorldSynchronizer,
         Collisions,
     )
     import semantic_digital_twin.spatial_types.spatial_types as cas
@@ -30,7 +29,6 @@ if TYPE_CHECKING:
 class GodMap:
     # %% important objects
     world: World
-    collision_scene: CollisionWorldSynchronizer
     qp_controller: QPController
 
     # %% managers

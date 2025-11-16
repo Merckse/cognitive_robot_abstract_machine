@@ -20,6 +20,9 @@ class AuxiliaryVariable(FloatVariable):
     def resolve(self) -> float:
         return float(self.provider())
 
+    def __repr__(self):
+        return str(self.name)
+
 
 def create_point(name: PrefixedName, provider: Callable[[], List[float]]):
     return Point3(

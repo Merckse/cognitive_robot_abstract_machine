@@ -43,17 +43,6 @@ class Sleep(MotionStatechartNode):
 
 
 @dataclass
-class CollisionMatrixUpdater(MotionStatechartNode):
-    new_collision_matrix: Dict[Tuple[str, str], float]
-
-    @profile
-    def __call__(self):
-        god_map.collision_scene.set_collision_matrix(self.new_collision_matrix)
-        god_map.collision_scene.reset_cache()
-        self.state = ObservationStateValues.TRUE
-
-
-@dataclass
 class PayloadAlternator(MotionStatechartNode):
     mod: int = 2
 

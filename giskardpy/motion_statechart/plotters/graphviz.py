@@ -325,25 +325,28 @@ class MotionStatechartGraphviz:
             child_node = self.motion_statechart.rx_graph.get_node_data(child_node_index)
             if not self._are_nodes_in_same_cluster(parent_node, child_node):
                 continue
-            if transition.kind == TransitionKind.START:
-                self._add_start_condition_edge(parent_node, child_node)
-            if transition.kind == TransitionKind.PAUSE:
-                self._add_pause_condition_edge(parent_node, child_node)
-            if transition.kind == TransitionKind.END:
-                self._add_end_condition_edge(parent_node, child_node)
-            if transition.kind == TransitionKind.RESET:
-                self._add_reset_condition_edge(parent_node, child_node)
+            match transition.kind:
+                case TransitionKind.START:
+                    self._add_start_condition_edge(parent_node, child_node)
+                case TransitionKind.PAUSE:
+                    self._add_pause_condition_edge(parent_node, child_node)
+                case TransitionKind.END:
+                    self._add_end_condition_edge(parent_node, child_node)
+                case TransitionKind.RESET:
+                    self._add_reset_condition_edge(parent_node, child_node)
+                case _:
+                    raise ValueError(f"Unhandled transition kind: {transition.kind}")
 
     def _are_nodes_in_same_cluster(
         self, parent_node: MotionStatechartNode, child_node: MotionStatechartNode
     ) -> bool:
-        if parent_node.parent_node is None and child_node.parent_node is None:
-            return True
-        if (parent_node.parent_node is None and child_node.parent_node is not None) or (
-            parent_node.parent_node is not None and child_node.parent_node is None
-        ):
-            return False
-        return parent_node.parent_node.unique_name == child_node.parent_node.unique_name
+        parent_node_parent = parent_node.parent_node
+        child_node_parent = child_node.parent_node
+
+        if parent_node_parent is None or child_node_parent is None:
+            return parent_node_parent is child_node_parent
+
+        return parent_node_parent.name == child_node_parent.name
 
     def _add_start_condition_edge(
         self,
@@ -351,10 +354,10 @@ class MotionStatechartGraphviz:
         child_node: MotionStatechartNode,
     ):
         graph = self._cluster_map[parent_node.parent_node]
-        destination_node = child_node
-        source_node = parent_node
-        source_node_name = str(destination_node.unique_name)
-        destination_node_name = str(source_node.unique_name)
+        destination_node = parent_node
+        source_node = child_node
+        source_node_name = str(source_node.unique_name)
+        destination_node_name = str(destination_node.unique_name)
         node_cluster = self._get_cluster_of_node(destination_node_name, graph)
         sub_node_cluster = self._get_cluster_of_node(source_node_name, graph)
         kwargs = {}

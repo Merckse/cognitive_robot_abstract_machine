@@ -9,11 +9,7 @@ from giskardpy.motion_statechart.graph_node import NodeArtifacts, DebugExpressio
 from giskardpy.motion_statechart.graph_node import Task
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.world_description.geometry import Color
-from semantic_digital_twin.world_description.world_entity import (
-    Body,
-    KinematicStructureEntity,
-)
-
+from semantic_digital_twin.world_description.world_entity import KinematicStructureEntity
 
 @dataclass
 class Pointing(Task):
@@ -81,20 +77,21 @@ class Pointing(Task):
 @dataclass
 class PointingCone(Task):
     """
-    Will orient pointing_axis at goal_point.
+    Will orient pointing_axis at goal_point with a cone-shaped tolerance region.
     """
 
-    tip_link: Body = field(kw_only=True)
+    tip_link: KinematicStructureEntity = field(kw_only=True)
     """tip link of the kinematic chain."""
+    root_link: KinematicStructureEntity = field(kw_only=True)
+    """root link of the kinematic chain."""
+
     goal_point: cas.Point3 = field(kw_only=True)
     """where to point pointing_axis at."""
-
-    root_link: Body = field(kw_only=True)
-    """root link of the kinematic chain."""
     pointing_axis: cas.Vector3 = field(kw_only=True)
     """the axis of tip_link that will be used for pointing"""
 
     cone_theta: float = 0.0
+    """Slack cone region in radians"""
     max_velocity: float = 0.3
     threshold: float = 0.01
     weight: float = DefaultWeights.WEIGHT_BELOW_CA

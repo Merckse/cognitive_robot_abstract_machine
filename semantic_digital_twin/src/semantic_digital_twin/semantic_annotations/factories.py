@@ -25,6 +25,7 @@ from typing_extensions import Generic, TypeVar
 
 from ..datastructures.prefixed_name import PrefixedName
 from ..datastructures.variables import SpatialVariables
+from ..exceptions import IncorrectScaleError
 from ..spatial_types.derivatives import DerivativeMap
 from ..spatial_types.spatial_types import (
     TransformationMatrix,
@@ -970,8 +971,19 @@ class DoorFactory(DoorLikeFactory[Door], HasHandleFactory):
 
     scale: Scale = field(default_factory=lambda: Scale(0.03, 1.0, 2.0))
     """
-    The scale of the entryway.
+    The scale of the entryway. In this case, the x scale is used to define the thickness of the door, x is the access that shows for word of the object.
     """
+
+    def __post_init__(self):
+        """
+        Validate that the door's scale is physically plausible.
+        Ensures that the X dimension is smaller than both the Y and Z
+        """
+        # Ensure scale.x is smaller than both y and z
+        if not (self.scale.x < self.scale.y and self.scale.x < self.scale.z):
+            raise IncorrectScaleError(
+                f"Invalid scale for DoorFactory: x must be smaller than y and z, got {self.scale}"
+            )
 
     def _create(self, world: World) -> World:
         """

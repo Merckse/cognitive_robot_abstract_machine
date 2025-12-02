@@ -70,6 +70,16 @@ class IncorrectWorldStateValueShapeError(ValueError):
         self.dof_id = dof_id
         super().__init__(f"Value for '{dof_id}' must be length-4 array (pos, vel, acc, jerk).")
 
+class IncorrectScaleError(ValueError):
+    """
+    An exception raised when the scale of a DoorFactory is incorrect.
+    """
+    def __init__(self, scale):
+        self.scale = scale
+        super().__init__(
+        f"Scale {scale} is invalid: x must be smaller than y and z."
+        )
+
 class MismatchingCommandLengthError(ValueError):
     """
     An exception raised when the length of a command does not match the expected length.

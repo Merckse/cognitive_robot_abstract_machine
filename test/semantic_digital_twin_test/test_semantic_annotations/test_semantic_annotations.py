@@ -134,10 +134,7 @@ def test_aggregate_bodies(kitchen_world):
 
 
 def test_handle_semantic_annotation_eql(apartment_world):
-    body = let(
-        type_=Body,
-        domain=apartment_world.bodies
-    )
+    body = let(type_=Body, domain=apartment_world.bodies)
     query = an(
         entity(inference(Handle)(body=body), in_("handle", body.name.name.lower()))
     )
@@ -260,7 +257,13 @@ def test_semantic_annotation_serde_multiple(apartment_world):
 
 def test_minimal_robot_annotation(pr2_world):
     urdf_dir = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "semantic_digital_twin", "resources", "urdf"
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        "..",
+        "..",
+        "semantic_digital_twin",
+        "resources",
+        "urdf",
     )
     pr2 = os.path.join(urdf_dir, "pr2_kinematic_tree.urdf")
     pr2_parser = URDFParser.from_file(file_path=pr2)

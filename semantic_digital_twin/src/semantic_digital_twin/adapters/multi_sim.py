@@ -46,7 +46,8 @@ from ..world_description.world_entity import (
     Body,
     KinematicStructureEntity,
     Connection,
-    WorldEntity, Actuator,
+    WorldEntity,
+    Actuator,
 )
 from ..world_description.world_modification import (
     AddKinematicStructureEntityModification,

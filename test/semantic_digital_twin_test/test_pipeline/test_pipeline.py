@@ -139,8 +139,12 @@ class PipelineTestCase(unittest.TestCase):
 
         replaced_world = procthor_factory_replace_pipeline.apply(world)
 
-        self.assertRaises(WorldEntityNotFoundError, replaced_world.get_body_by_name, "dresser_205")
-        self.assertRaises(WorldEntityNotFoundError, replaced_world.get_body_by_name, "dresser_217")
+        self.assertRaises(
+            WorldEntityNotFoundError, replaced_world.get_body_by_name, "dresser_205"
+        )
+        self.assertRaises(
+            WorldEntityNotFoundError, replaced_world.get_body_by_name, "dresser_217"
+        )
         self.assertTrue(replaced_world.semantic_annotations)
         self.assertIsNotNone(
             replaced_world.get_semantic_annotation_by_name("dresser_205")

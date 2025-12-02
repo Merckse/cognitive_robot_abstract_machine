@@ -97,6 +97,7 @@ class WorldEntity(Symbol):
     def remove_from_world(self):
         self._world = None
 
+
 @dataclass(eq=False)
 class WorldEntityWithID(WorldEntity, SubclassJSONSerializer):
     """
@@ -454,7 +455,8 @@ class Body(KinematicStructureEntity, SubclassJSONSerializer):
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
         result = cls(
             name=PrefixedName.from_json(data["name"], **kwargs),
-            id=from_json(data["id"]))
+            id=from_json(data["id"]),
+        )
         # add the new body so that the transformation matrices in the shapes can use it as reference frame.
         tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
         if not tracker.has_kinematic_structure_entity(result.id):
@@ -593,7 +595,9 @@ class Region(KinematicStructureEntity):
 
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
-        result = cls(name=PrefixedName.from_json(data["name"], id=from_json(data["id"])))
+        result = cls(
+            name=PrefixedName.from_json(data["name"], id=from_json(data["id"]))
+        )
         area = ShapeCollection.from_json(data["area"])
         for shape in area:
             shape.origin.reference_frame = result
@@ -927,12 +931,8 @@ class Connection(WorldEntity, SubclassJSONSerializer):
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
         tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
-        parent = tracker.get_kinematic_structure_entity(
-            id=from_json(data["parent_id"])
-        )
-        child = tracker.get_kinematic_structure_entity(
-            id=from_json(data["child_id"])
-        )
+        parent = tracker.get_kinematic_structure_entity(id=from_json(data["parent_id"]))
+        child = tracker.get_kinematic_structure_entity(id=from_json(data["child_id"]))
         return cls(
             name=PrefixedName.from_json(data["name"]),
             parent=parent,

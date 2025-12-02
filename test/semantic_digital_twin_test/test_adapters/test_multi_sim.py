@@ -28,10 +28,22 @@ except ImportError:
     multi_sim_found = False
 
 urdf_dir = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "semantic_digital_twin", "resources", "urdf"
+    os.path.dirname(os.path.abspath(__file__)),
+    "..",
+    "..",
+    "..",
+    "semantic_digital_twin",
+    "resources",
+    "urdf",
 )
 mjcf_dir = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "semantic_digital_twin", "resources", "mjcf"
+    os.path.dirname(os.path.abspath(__file__)),
+    "..",
+    "..",
+    "..",
+    "semantic_digital_twin",
+    "resources",
+    "mjcf",
 )
 headless = os.environ.get("CI", "false").lower() == "true"
 

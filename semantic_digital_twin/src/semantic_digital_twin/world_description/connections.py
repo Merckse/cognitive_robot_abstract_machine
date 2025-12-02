@@ -70,12 +70,8 @@ class ActiveConnection(Connection):
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
         tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
-        parent = tracker.get_kinematic_structure_entity(
-            id=from_json(data["parent_id"])
-        )
-        child = tracker.get_kinematic_structure_entity(
-            id=from_json(data["child_id"])
-        )
+        parent = tracker.get_kinematic_structure_entity(id=from_json(data["parent_id"]))
+        child = tracker.get_kinematic_structure_entity(id=from_json(data["child_id"]))
         return cls(
             name=PrefixedName.from_json(data["name"]),
             parent=parent,
@@ -160,12 +156,8 @@ class ActiveConnection1DOF(ActiveConnection, ABC):
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
         tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
-        parent = tracker.get_kinematic_structure_entity(
-            id=from_json(data["parent_id"])
-        )
-        child = tracker.get_kinematic_structure_entity(
-            id=from_json(data["child_id"])
-        )
+        parent = tracker.get_kinematic_structure_entity(id=from_json(data["parent_id"]))
+        child = tracker.get_kinematic_structure_entity(id=from_json(data["child_id"]))
         return cls(
             name=PrefixedName.from_json(data["name"]),
             parent=parent,
@@ -276,8 +268,7 @@ class ActiveConnection1DOF(ActiveConnection, ABC):
     @property
     def position(self) -> float:
         return (
-            self._world.state[self.raw_dof.id].position * self.multiplier
-            + self.offset
+            self._world.state[self.raw_dof.id].position * self.multiplier + self.offset
         )
 
     @position.setter
@@ -411,12 +402,8 @@ class Connection6DoF(Connection):
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
         tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
-        parent = tracker.get_kinematic_structure_entity(
-            id=from_json(data["parent_id"])
-        )
-        child = tracker.get_kinematic_structure_entity(
-            id=from_json(data["child_id"])
-        )
+        parent = tracker.get_kinematic_structure_entity(id=from_json(data["parent_id"]))
+        child = tracker.get_kinematic_structure_entity(id=from_json(data["child_id"]))
         return cls(
             name=PrefixedName.from_json(data["name"]),
             parent=parent,
@@ -639,12 +626,8 @@ class OmniDrive(ActiveConnection, HasUpdateState):
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
         tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
-        parent = tracker.get_kinematic_structure_entity(
-            id=from_json(data["parent_id"])
-        )
-        child = tracker.get_kinematic_structure_entity(
-            id=from_json(data["child_id"])
-        )
+        parent = tracker.get_kinematic_structure_entity(id=from_json(data["parent_id"]))
+        child = tracker.get_kinematic_structure_entity(id=from_json(data["child_id"]))
         return cls(
             name=PrefixedName.from_json(data["name"], **kwargs),
             parent=parent,

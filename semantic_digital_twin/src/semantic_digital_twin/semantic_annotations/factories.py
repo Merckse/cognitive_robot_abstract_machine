@@ -357,9 +357,7 @@ class HasDoorLikeFactories(ABC):
         other_body = let(type_=Body, domain=world.bodies)
         door_bodies = all_doors.bodies
         bodies_without_excluded_bodies_query = an(
-            entity(
-                other_body, for_all(door_bodies, not_(in_(other_body, door_bodies)))
-            )
+            entity(other_body, for_all(door_bodies, not_(in_(other_body, door_bodies))))
         )
 
         filtered_bodies = list(bodies_without_excluded_bodies_query.evaluate())
@@ -1137,9 +1135,7 @@ class DresserFactory(
                 drawers=dresser_world.get_semantic_annotations_by_type(Drawer),
                 doors=dresser_world.get_semantic_annotations_by_type(Door),
             )
-            dresser_world.add_semantic_annotation(
-                semantic_dresser_annotation
-            )
+            dresser_world.add_semantic_annotation(semantic_dresser_annotation)
             dresser_world.name = self.name.name
 
         return dresser_world

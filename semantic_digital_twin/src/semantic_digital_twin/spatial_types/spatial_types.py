@@ -1895,9 +1895,7 @@ class ReferenceFrameMixin:
         if frame_data is None:
             return None
         tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
-        return tracker.get_kinematic_structure_entity(
-            id=from_json(frame_data)
-        )
+        return tracker.get_kinematic_structure_entity(id=from_json(frame_data))
 
 
 @dataclass(eq=False)

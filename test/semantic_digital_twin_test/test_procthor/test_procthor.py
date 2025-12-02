@@ -313,7 +313,9 @@ class ProcTHORTestCase(unittest.TestCase):
         procthor_object = ProcthorObject(object_dict=objects[0], session=session)
         obj_world = procthor_object.get_world()
 
-        world = ProcTHORParser("test_house", house=self.house_json, session=session).parse()
+        world = ProcTHORParser(
+            "test_house", house=self.house_json, session=session
+        ).parse()
 
         world.merge_world(obj_world)
 

@@ -14,12 +14,14 @@ RUN apt update  \
 RUN vcs import --input https://raw.githubusercontent.com/cram2/cognitive_robot_abstract_machine/main/semantic_digital_twin/rosinstall/semantic_digital_twin-https.rosinstall
 RUN mv iai_maps /opt/ros/overlay_ws/src/iai_maps
 RUN mv iai_pr2 /opt/ros/overlay_ws/src/iai_pr2
-RUN source /opt/ros/jazzy/setup.bash && cd $OVERLAY_WS && colcon build --symlink-install
+RUN source /opt/ros/jazzy/setup.bash  \
+    && cd $OVERLAY_WS  \
+    && colcon build --symlink-install
 RUN echo "source $OVERLAY_WS/install/setup.bash" >> ~/.bashrc
 
 RUN python3 -m venv cram-env --system-site-packages  \
     && source cram-env/bin/activate  \
-    && pip install poetry \
+    && pip install poetry
 #    && cd cognitive_robot_abstract_machine \
 #    && poetry install
 #    && pip install -r krrood/requirements.txt  \
@@ -37,7 +39,9 @@ RUN python3 -m venv cram-env --system-site-packages  \
 #RUN git clone https://github.com/Multiverse-Framework/Multiverse-Parser.git
 #RUN source $OVERLAY_WS/src/semantic_digital_twin-venv/bin/activate && pip install -r Multiverse-Parser/requirements.txt && pip install pyside6 pyopengl jinja2 &&  ./Multiverse-Parser/setup.sh --usd && pip install -e Multiverse-Parser
 
-RUN source /opt/ros/jazzy/setup.bash && cd $OVERLAY_WS && colcon build --symlink-install
+RUN source /opt/ros/jazzy/setup.bash  \
+    && cd $OVERLAY_WS  \
+    && colcon build --symlink-install
 RUN echo "source $OVERLAY_WS/install/setup.bash" >> ~/.bashrc
 
 COPY entrypoint.sh /

@@ -69,7 +69,7 @@ class MeshDecomposer(Step, ABC):
         """
         new_geometry = []
         if isinstance(shape, Mesh):
-            self.apply_to_mesh(shape)
+            new_geometry = self.apply_to_mesh(shape)
         else:
             new_geometry.append(shape)
 

@@ -565,18 +565,20 @@ def test_generate_with_using_decorated_predicate(handles_and_containers_world):
     def is_handle(body_: Body):
         return body_.name.startswith("Handle")
 
-    query = an(
+    query_kwargs = an(
         entity(body := let(type_=Body, domain=world.bodies), is_handle(body_=body))
     )
+    query_args = an(
+        entity(body := let(type_=Body, domain=world.bodies), is_handle(body))
+    )
 
-    handles = list(query.evaluate())
+    handles = list(query_kwargs.evaluate())
+    assert handles == list(query_args.evaluate()), "Both queries should generate the same items."
     assert len(handles) == 3, "Should generate at least one handle."
     assert all(
         isinstance(h, Handle) for h in handles
     ), "All generated items should be of type Handle."
-
-    b = world.bodies[0]
-    assert is_handle(b) is True
+    assert is_handle(world.bodies[0])
 
 
 def test_generate_with_using_inherited_predicate(handles_and_containers_world):

@@ -1,3 +1,4 @@
+import logging
 import os
 import time
 import unittest
@@ -9,7 +10,7 @@ from semantic_digital_twin.adapters.urdf import URDFParser
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import ParsingError
 from semantic_digital_twin.spatial_types.spatial_types import TransformationMatrix
-from semantic_digital_twin.world import World
+from semantic_digital_twin.world import World, logger
 from semantic_digital_twin.world_description.connections import (
     Connection6DoF,
     FixedConnection,
@@ -46,8 +47,9 @@ mjcf_dir = os.path.join(
     "resources",
     "mjcf",
 )
-# headless = os.environ.get("CI", "false").lower() == "true"
-headless = True
+logger.setLevel(logging.DEBUG)
+headless = os.environ.get("CI", "false").lower() == "true"
+# headless = True
 
 
 @unittest.skipIf(not multi_sim_found, "multisim could not be imported.")
@@ -304,7 +306,7 @@ class MujocoSimTestCase(unittest.TestCase):
         )
         new_body.collision = ShapeCollection([box], reference_frame=new_body)
 
-        print(f"Time before adding new body: {time.time() - start_time}s")
+        logger.debug(f"Time before adding new body: {time.time() - start_time}s")
         with self.test_urdf_1_world.modify_world():
             self.test_urdf_1_world.add_connection(
                 Connection6DoF.create_with_dofs(
@@ -313,7 +315,7 @@ class MujocoSimTestCase(unittest.TestCase):
                     child=new_body,
                 )
             )
-        print(f"Time after adding new body: {time.time() - start_time}s")
+        logger.debug(f"Time after adding new body: {time.time() - start_time}s")
         self.assertIn(
             new_body.name.name, multi_sim.simulator.get_all_body_names().result
         )
@@ -333,7 +335,7 @@ class MujocoSimTestCase(unittest.TestCase):
         )
         region.area = ShapeCollection([region_box], reference_frame=region)
 
-        print(f"Time before add adding region: {time.time() - start_time}s")
+        logger.debug(f"Time before add adding region: {time.time() - start_time}s")
         with self.test_urdf_1_world.modify_world():
             self.test_urdf_1_world.add_connection(
                 FixedConnection(
@@ -344,7 +346,7 @@ class MujocoSimTestCase(unittest.TestCase):
                     ),
                 )
             )
-        print(f"Time after add adding region: {time.time() - start_time}s")
+        logger.debug(f"Time after add adding region: {time.time() - start_time}s")
         self.assertIn(region.name.name, multi_sim.simulator.get_all_body_names().result)
 
         time.sleep(0.5)
@@ -364,10 +366,10 @@ class MujocoSimTestCase(unittest.TestCase):
         dof = self.test_urdf_1_world.get_degree_of_freedom_by_name(name="r_joint_1")
         actuator.add_dof(dof=dof)
 
-        print(f"Time before adding new actuator: {time.time() - start_time}s")
+        logger.debug(f"Time before adding new actuator: {time.time() - start_time}s")
         with self.test_urdf_1_world.modify_world():
             self.test_urdf_1_world.add_actuator(actuator=actuator)
-        print(f"Time after adding new actuator: {time.time() - start_time}s")
+        logger.debug(f"Time after adding new actuator: {time.time() - start_time}s")
         self.assertIn(
             actuator.name.name, multi_sim.simulator.get_all_actuator_names().result
         )
@@ -421,7 +423,7 @@ class MujocoSimTestCase(unittest.TestCase):
         multi_sim.start_simulation()
         start_time = time.time()
         for _ in range(5):
-            print(
+            logger.debug(
                 f"Time: {multi_sim.simulator.current_simulation_time} - Objects: {multi_sim.get_read_objects()}"
             )
             time.sleep(1)

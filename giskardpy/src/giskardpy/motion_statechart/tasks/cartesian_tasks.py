@@ -377,35 +377,35 @@ class CartesianVelocityLimit(Task):
 
     def build(self, context: BuildContext) -> NodeArtifacts:
         artifacts = NodeArtifacts()
-        r_T_c = context.world.compose_forward_kinematics_expression(
+        root_T_tip = context.world.compose_forward_kinematics_expression(
             self.root_link, self.tip_link
         )
-        r_P_c = r_T_c.to_position()
-        r_R_c = r_T_c.to_rotation_matrix()
+        root_P_tip = root_T_tip.to_position()
+        root_R_tip = root_T_tip.to_rotation_matrix()
         artifacts.constraints.add_translational_velocity_limit(
-            frame_P_current=r_P_c,
+            frame_P_current=root_P_tip,
             max_velocity=self.max_linear_velocity,
             weight=self.weight,
         )
         artifacts.constraints.add_rotational_velocity_limit(
-            frame_R_current=r_R_c,
+            frame_R_current=root_R_tip,
             max_velocity=self.max_angular_velocity,
             weight=self.weight,
         )
 
-        position_variables: list[PositionVariable] = r_P_c.free_variables()
+        position_variables: list[PositionVariable] = root_P_tip.free_variables()
         velocity_variables = [p.dof.variables.velocity for p in position_variables]
-        r_P_c_dot = cas.Expression(r_P_c).total_derivative(
+        root_P_tip_dot = cas.Expression(root_P_tip).total_derivative(
             position_variables, velocity_variables
         )
 
-        axis, angle = r_R_c.to_axis_angle()
+        _, angle = root_R_tip.to_axis_angle()
         angle_vars: list[PositionVariable] = angle.free_variables()
         angle_vels = [v.dof.variables.velocity for v in angle_vars]
         angle_dot = cas.Expression(angle).total_derivative(angle_vars, angle_vels)
 
         artifacts.observation = cas.logic_and(
-            r_P_c_dot.norm() <= self.max_linear_velocity,
+            root_P_tip_dot.norm() <= self.max_linear_velocity,
             cas.abs(angle_dot) <= self.max_angular_velocity,
         )
 

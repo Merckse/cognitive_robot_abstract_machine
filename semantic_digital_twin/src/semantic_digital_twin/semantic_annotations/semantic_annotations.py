@@ -318,6 +318,46 @@ class TomatoSoup(Food):
 
 
 @dataclass(eq=False)
+class Candy(Food, IsPerceivable):
+    """
+    A candy.
+    """
+    ...
+
+
+@dataclass(eq=False)
+class Noodles(Food, IsPerceivable):
+    """
+    A container of noodles.
+    """
+    ...
+
+
+@dataclass(eq=False)
+class Cereal(Food, IsPerceivable):
+    """
+    A container of cereal.
+    """
+    ...
+
+
+@dataclass(eq=False)
+class Milk(Container, IsPerceivable):
+    """
+    A container of milk.
+    """
+    ...
+
+
+@dataclass(eq=False)
+class Salt(Container, IsPerceivable):
+    """
+    A container of salt.
+    """
+    ...
+
+
+@dataclass(eq=False)
 class Produce(Food):
     """
     In American English, produce generally refers to fresh fruits and vegetables intended to be eaten by humans.
@@ -553,8 +593,8 @@ class Knife(Cuttlery):
 class Spoon(Cuttlery, IsPerceivable): ...
 
 
-@dataclass(eq=False)
-class Milk(Cuttlery, IsPerceivable): ...
+# @dataclass(eq=False)
+# class Milk(Cuttlery, IsPerceivable): ...
 
 
 @dataclass(eq=False)

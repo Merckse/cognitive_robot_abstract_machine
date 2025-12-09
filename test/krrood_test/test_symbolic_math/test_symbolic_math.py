@@ -6,7 +6,7 @@ import scipy
 
 import krrood.symbolic_math.symbolic_math as cas
 from krrood.symbolic_math.exceptions import HasFreeVariablesError, NotScalerError
-from test_symbolic_math.reference_implementations import (
+from test.krrood_test.test_symbolic_math.reference_implementations import (
     normalize_angle_positive,
     shortest_angular_distance,
     normalize_angle,
@@ -264,7 +264,7 @@ class TestIfElse:
             float(if_result if a < b else else_result),
         )
 
-    @pytest.mark.parametrize("a", numbers)
+    @pytest.mark.parametrize("a", [1, 3, 4, -1, 0.5, -0.5, 0])
     def test_if_eq_cases(self, a):
         b_result_cases = [
             (1, cas.Expression(data=1)),
@@ -676,11 +676,11 @@ class TestExpression:
 
     def test_create(self):
         cas.Expression(data=cas.FloatVariable(name="muh"))
-        cas.Expression(data=[cas.ca.SX(1), cas.ca.SX.sym("muh")])
+        cas.Expression(data=[cas._ca.SX(1), cas._ca.SX.sym("muh")])
         m = cas.Expression(data=np.eye(4))
         m = cas.Expression(data=m)
         assert np.allclose(m, np.eye(4))
-        m = cas.Expression(cas.ca.SX(np.eye(4)))
+        m = cas.Expression(cas._ca.SX(np.eye(4)))
         assert np.allclose(m, np.eye(4))
         m = cas.Expression(data=[1, 1])
         assert np.allclose(m, np.array([1, 1]))

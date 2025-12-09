@@ -7,6 +7,7 @@ from typing_extensions import (
     Tuple,
     Union,
     TYPE_CHECKING,
+    Any,
 )
 
 if TYPE_CHECKING:
@@ -15,6 +16,18 @@ if TYPE_CHECKING:
 
 class SymbolicMathError(Exception):
     pass
+
+
+@dataclass
+class UnsupportedOperationError(SymbolicMathError, TypeError):
+    operation: str
+    arg1: Any
+    arg2: Any
+
+    def __post_init__(self):
+        super().__init__(
+            f"unsupported operand type(s) for {self.operation}: '{self.arg1.__class__.__name__}' and '{self.arg2.__class__.__name__}'"
+        )
 
 
 @dataclass

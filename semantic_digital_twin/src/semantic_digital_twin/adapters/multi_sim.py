@@ -1306,13 +1306,13 @@ class MujocoBuilder(MultiSimBuilder):
             raise MujocoEntityNotFoundError(
                 entity_name=parent_body_name, entity_type=mujoco.mjtObj.mjOBJ_BODY
             )
-        if geom_props["type"] == mujoco.mjtGeom.mjGEOM_MESH:
-            if not self._parse_geom(geom_props=geom_props):
-                raise MujocoEntityNotFoundError(
-                    entity_name=geom_props["name"],
-                    entity_type=mujoco.mjtObj.mjOBJ_MESH,
-                    action="parse",
-                )
+        if geom_props["type"] == mujoco.mjtGeom.mjGEOM_MESH and not self._parse_geom(
+            geom_props=geom_props
+        ):
+            logger.warning(
+                f"Mesh {shape.mesh} could not be parsed. Skipping geom {geom_props['name']}."
+            )
+            return
         geom_spec = parent_body_spec.add_geom(**geom_props)
         if geom_spec.type == mujoco.mjtGeom.mjGEOM_BOX and geom_spec.size[2] == 0:
             geom_spec.type = mujoco.mjtGeom.mjGEOM_PLANE

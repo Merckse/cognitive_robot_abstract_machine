@@ -7,6 +7,7 @@ from geometry_msgs.msg import PoseStamped as ROSPoseStamped
 
 from pycram.datastructures.pose import Pose
 from pycram.external_interfaces import nav2_move
+from pycram.ros_utils.text_to_image import TextToImagePublisher
 
 
 class NavigatePositions(Enum):
@@ -38,10 +39,12 @@ class NavigatePositions(Enum):
 
 def real_demo():
     rclpy.init()
+    text_pub = TextToImagePublisher()
     for pos in NavigatePositions:
         goal = ROSPoseStamped()
         goal.header.frame_id = "map"
         goal.pose = pos.value.ros_message()
+        text_pub.publish_text(f"Moving to: {pos.name}")
         nav2_move.start_nav_to_pose(goal)
     rclpy.shutdown()
 

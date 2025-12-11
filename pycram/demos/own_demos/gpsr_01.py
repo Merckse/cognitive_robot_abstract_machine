@@ -2,6 +2,8 @@ import os
 
 from absl.logging import exception
 
+from rclpy.node import Node
+
 from semantic_digital_twin.adapters.mesh import STLParser
 from semantic_digital_twin.reasoning.world_reasoner import WorldReasoner
 from semantic_digital_twin.robots.hsrb import HSRB
@@ -19,7 +21,7 @@ from pycram.robot_plans import MoveTorsoActionDescription, TransportActionDescri
 from pycram.robot_plans import ParkArmsActionDescription
 from pycram.testing import setup_world
 
-from suturo_resources import queries, suturo_map
+from suturo_resources import queries_rody as queries, suturo_map_rody as suturo_map
 
 from pycram.datastructures.dataclasses import Color
 import tempfile
@@ -36,6 +38,8 @@ from src.pycram.external_interfaces import nav2_move
 #DEBUG
 test_response = ["take", "bowl", "food", "blue", "", "", "me", "kitchen"]
 milestone1_response =["Guide", "", "", "", "", "", "", "living room"]
+
+last_affirmation = False
 
 # positions
 kitchen_placeholder = PoseStamped.from_list([1,1,1], [0,0,0,1])
@@ -93,6 +97,7 @@ Processes the NLP module output and dispatches the correct action.
 """
 # response = [intent, item, item_entity, item_property, item_action, item_number, to_who, location]
 def process_response(lst: list[Any]):
+    global last_affirmation
     if len(lst) != 8:
         print("check if nlp_gpsr.response was changed, otherwise something went wrong" + str(len(lst)))
     else:
@@ -101,9 +106,13 @@ def process_response(lst: list[Any]):
                 print("case take")
                 take_obj_from_plcmt(lst[7], lst[1]),
             # MILESTONE 1
-            case "Guide":
-                print("case guide")
+            case "Navigation":
+                print("case navigation")
                 driveTo(lst[7])
+            case "affirm":
+                last_affirmation = True
+            case "deny":
+                last_affirmation = False
             case _:
                 print("No function for this intent")  # Default case
 
@@ -171,12 +180,22 @@ Converts a location keyword into a PoseStamped placeholder.
 """
 def _location_from_string(location: String):
     match location:
-        case "kitchen":
-            return kitchen_placeholder
         case "living room":
             liv_room = queries.query_living_room_area(world2)
             liv_pose = PoseStamped().from_list(position=liv_room)
             return liv_pose #living_room_placeholder
+        case "office":
+            off_room = queries.query_office_area(world2)
+            off_pose = PoseStamped().from_list(position=off_room)
+            return off_pose
+        case "kitchen":
+            kit_room = queries.query_kitchen_area(world2)
+            kit_pose = PoseStamped().from_list(position=kit_room)
+            return kit_pose
+        case "bedroom":
+            bed_room =queries.query_bed_room_area(world2)
+            bed_pose = PoseStamped().from_list(position=bed_room)
+            return bed_pose
         case _:
             exception("unknown location")
             # return PoseStamped.from_list([0,0,0], [0,0,0,1])
@@ -240,6 +259,29 @@ def start_nav(pos_x: float, pos_y: float):
     nav2_move.start_nav_to_pose(pos_stamped)
 
 
+def check_affirm(sentence, nlp_node : nlp_gpsr.NLP_GPSR) :
+    """
+    gets nlp input and asks if its correct
+    """
+    if not isinstance(sentence, list):
+        print("no response yet")
+        return False
+
+    sleep(2)
+    print("Did I understand correctly? You want me to " + sentence.__str__())
+    affirmation = nlp_node.talk_nlp()
+
+    process_response(affirmation)
+
+    sleep(1)
+
+    print("affirmation: " + last_affirmation.__str__())
+    return last_affirmation
+
+
+
+
+
 #-----------------------------------------------------------------------------------------------------------------------
 
 # MAIN CODE
@@ -253,10 +295,9 @@ Main execution loop:
 if __name__ == '__main__':
     #rclpy.init() # rausgenommen weil das schon in knowledge existiert TODO: testen ob nlp noch klappt
 
-    process_response(milestone1_response)
+    #process_response(milestone1_response)
 
     # start_nav(3, 3)
-    """
     sleep(3)
 
     node = nlp_gpsr.NLP_GPSR()
@@ -264,19 +305,13 @@ if __name__ == '__main__':
         object_name_iteration = 0
         wait = True
         resp = node.talk_nlp()
+        print("Got response in gpsr_01.py: ", resp)
+        process_response(resp)
+        sleep(10)
+        """
+        if check_affirm(resp, node):
+            print("Got response in gpsr_01.py: ", resp)
+            process_response(resp)
+            sleep(10)
+        """
 
-
-        while wait:
-            #process_response(test_response)
-            #sleep(7)
-            if resp:
-                print("Got response in gpsr_01.py: ", resp)
-                process_response(resp)
-                wait = False
-                resp = []
-            else:
-                print("no response yet")
-                wait = False
-
-
-    """

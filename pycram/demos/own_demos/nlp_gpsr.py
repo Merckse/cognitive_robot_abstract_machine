@@ -165,11 +165,13 @@ class NLP_GPSR(Node):
         executor.add_node(self)
 
         start_time = time.time()
-        while not self.callback and (time.time() - start_time < timeout):
+        while not self.response and (time.time() - start_time < timeout):
             executor.spin_once(timeout_sec=0.1)
         if self.callback:
             print("Received response:", self.response)
-            return self.response
+            resp = self.response
+            self.response = None
+            return resp
         else:
             print("No response received within timeout")
             return None

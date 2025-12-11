@@ -9,10 +9,12 @@ from pycram.worlds.bullet_world import BulletWorld
 from pycram.worlds.multiverse import Multiverse
 from pycrap.ontologies import PhysicalObject
 
-import semantic_digital_twin.semantic_annotations.semantic_annotations
 from pycram.datastructures.dataclasses import Color
 from pycram.process_module import with_simulated_robot, real_robot
 from pycram.robot_plans import *
+from semantic_digital_twin.semantic_annotations.semantic_annotations import (
+    MilkContainer,
+)
 from ..tf_transformations import quaternion_from_euler
 
 
@@ -52,7 +54,7 @@ WorldStateUpdater(
 apartment = Object("apartment", pycrap.Apartment, f"apartment.urdf")
 milk = Object(
     "milk",
-    semantic_digital_twin.semantic_annotations.semantic_annotations.MilkContainer,
+    MilkContainer,
     milk_path,
     pose=PoseStamped.from_list([0.4, 2.6, 1.34], [1, 0, 0, 0]),
     color=Color(1, 0, 0, 1),

@@ -2,12 +2,15 @@ from pycram.object_descriptors.urdf import ObjectDescription
 from pycram.world_concepts.world_object import Object
 from pycram.worlds.multiverse import Multiverse
 
-import semantic_digital_twin.semantic_annotations.semantic_annotations
 from pycram.datastructures.dataclasses import Color
 from pycram.designators.location_designator import AccessingLocation
 from pycram.designators.object_designator import ObjectPart
 from pycram.process_module import simulated_robot
 from pycram.robot_plans import *
+from semantic_digital_twin.semantic_annotations.semantic_annotations import (
+    MilkContainer,
+    Spoon,
+)
 
 world = Multiverse()
 extension = ObjectDescription.get_file_extension()
@@ -18,7 +21,7 @@ apartment = Object("apartment", pycrap.Apartment, f"apartment{extension}")
 
 milk = Object(
     "milk",
-    semantic_digital_twin.semantic_annotations.semantic_annotations.MilkContainer,
+    MilkContainer,
     f"milk.xml",
     pose=PoseStamped.from_list([2.4, 2, 1.02]),
     color=Color(1, 0, 0, 1),
@@ -26,7 +29,7 @@ milk = Object(
 
 spoon = Object(
     "spoon",
-    semantic_digital_twin.semantic_annotations.semantic_annotations.Spoon,
+    Spoon,
     "spoon.xml",
     pose=PoseStamped.from_list([2.5, 2.2, 0.85]),
     color=Color(0, 0, 1, 1),
@@ -51,11 +54,7 @@ with simulated_robot:
     milk_desig = (
         DetectAction(
             DetectionTechnique.TYPES,
-            object_designator_description=BelieveObject(
-                types=[
-                    semantic_digital_twin.semantic_annotations.semantic_annotations.MilkContainer
-                ]
-            ),
+            object_designator_description=BelieveObject(types=[MilkContainer]),
         )
         .resolve()
         .perform()[0]
@@ -93,11 +92,7 @@ with simulated_robot:
     spoon_desig = (
         DetectAction(
             DetectionTechnique.TYPES,
-            object_designator_description=BelieveObject(
-                types=[
-                    semantic_digital_twin.semantic_annotations.semantic_annotations.Spoon
-                ]
-            ),
+            object_designator_description=BelieveObject(types=[Spoon]),
         )
         .resolve()
         .perform()[0]

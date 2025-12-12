@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 import rclpy
-from tmc_voice_msgs.msg import Voice
+from tmc_voice.tmc_voice_msgs.msg import *
 from ..ros.ros2.publisher import create_publisher
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 

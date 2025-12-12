@@ -3,11 +3,14 @@ import rclpy
 import nlp_gpsr
 from semantic_digital_twin.robots.hsrb import HSRB
 
+from pycram.robot_plans.actions.core.navigation import LookAtAction
+
 from std_msgs.msg import String
 
 tts = tmc.TextToSpeechPublisher()
 nlp_node = nlp_gpsr.NLP_GPSR()
 nlp_node.talk_nlp()
+
 
 """
 This is a demo for the TextToSpeechPublisher
@@ -19,7 +22,8 @@ The process step is structured as follows:
 3. talk back that it now reached its goal
 4. Talk back, that she will now go back to its starting point
 
-param
+:param process_step: The current step of the process
+:param voice_input: The voice input from the user
 """
 def talking_process(process_step : int = 0, voice_input : str = ""):
     if process_step == 0:
@@ -37,7 +41,12 @@ def talking_process(process_step : int = 0, voice_input : str = ""):
         tts.say("I´m sorry, I did not properly understand your request.")
         # Here it should also be published to the Screen
 
+"""
+This is a sequence for getting affirmation from the user
+
+:param voice_input: The voice input from the user
+"""
 def affirmation_process(voice_input : str = ""):
     tts.say(voice_input)
     tts.say("Did I understand you correctly?")
-    nlp_node.parse_json_string() # where do i extract the yess here lol
+    nlp_node.parse_json_string() # TODO: where do i extract the yess here lol

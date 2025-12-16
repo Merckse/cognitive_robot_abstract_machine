@@ -206,7 +206,6 @@ class HasBody(SemanticAnnotation, ABC):
         return [self.body]
 
     @classmethod
-    @abstractmethod
     def create_with_new_body_in_world(
         cls,
         name: PrefixedName,
@@ -214,7 +213,37 @@ class HasBody(SemanticAnnotation, ABC):
         parent: KinematicStructureEntity,
         parent_T_self: Optional[TransformationMatrix] = None,
         **kwargs,
-    ) -> Self: ...
+    ) -> Self:
+        """
+        Create a new semantic annotation with a new body in the given world.
+        If you need more parameters for your subclass, please override this method similar.
+        If you override this method, to ensure its LSP compliant, copy the arguments ofthis method, namely
+        name, world, parent, parent_T_self, then add a *, to force all your additional arguments to be keyword arguments,
+        and give those default values.
+
+        An example of this can be seen in the HasCase subclass that takes a scale and wall_thickness as well, which
+        has a signature similar to this:
+
+        ----
+        @classmethod
+        def create_with_new_body_in_world(
+            cls,
+            name: PrefixedName,
+            world: World,
+            parent: KinematicStructureEntity,
+            parent_T_self: Optional[TransformationMatrix] = None,
+            *,
+            scale: Scale = Scale(),
+            wall_thickness: float = 0.01,
+        ) -> Self:
+        ----
+
+        """
+        slider_body = Body(name=name)
+
+        return cls._create_with_fixed_connection_in_world(
+            name, world, slider_body, parent, parent_T_self
+        )
 
     @classmethod
     def _create_with_fixed_connection_in_world(
@@ -282,40 +311,6 @@ class HasActiveConnection(ABC):
 
 @dataclass(eq=False)
 class HasRevoluteConnection(HasActiveConnection):
-
-    @classmethod
-    def _create_with_revolute_connection_in_world(
-        cls, world: World, body: Body, parent, parent_T_self
-    ):
-        parent = parent if parent is not None else world.root
-        parent_world = parent._world if parent is not None else world
-
-        if connection_limits is not None:
-            if connection_limits[0].position <= connection_limits[1].position:
-                raise ValueError("Upper limit must be greater than lower limit.")
-        else:
-            connection_limits = cls.create_default_upper_lower_limits(
-                parent_T_self, opening_axis
-            )
-
-        dof = DegreeOfFreedom(
-            name=PrefixedName(f"{body.name.name}_hinge_dof", body.name.prefix),
-            upper_limits=connection_limits[0],
-            lower_limits=connection_limits[1],
-        )
-
-        world.add_degree_of_freedom(dof)
-        parent_C_hinge = RevoluteConnection(
-            parent=world.root,
-            child=hinge_body,
-            parent_T_connection_expression=parent_T_self,
-            multiplier=connection_multiplier,
-            offset=connection_offset,
-            axis=opening_axis,
-            dof_id=dof.id,
-        )
-
-        parent_world.add_connection(parent_C_hinge)
 
     @classmethod
     def create_default_upper_lower_limits(
@@ -434,25 +429,27 @@ class HasHinge(HasRevoluteConnection, SemanticAssociation, ABC):
             )
 
             parent_C_hinge = hinge.body.parent_connection
-            world.remove_connection(parent_C_hinge)
+            if not isinstance(parent_C_hinge, RevoluteConnection):
+                world.remove_connection(parent_C_hinge)
 
-            dof = DegreeOfFreedom(
-                name=PrefixedName(f"{self.name.name}_hinge_dof", self.name.prefix),
-                upper_limits=connection_limits[0],
-                lower_limits=connection_limits[1],
-            )
-            world.add_degree_of_freedom(dof)
+                dof = DegreeOfFreedom(
+                    name=PrefixedName(f"{self.name.name}_hinge_dof", self.name.prefix),
+                    upper_limits=connection_limits[0],
+                    lower_limits=connection_limits[1],
+                )
+                world.add_degree_of_freedom(dof)
 
-            hinge_C_hinge = RevoluteConnection(
-                parent=new_hinge_parent,
-                child=hinge.body,
-                parent_T_connection_expression=new_parent_T_hinge,
-                multiplier=connection_multiplier,
-                offset=connection_offset,
-                axis=opening_axis,
-                dof_id=dof.id,
-            )
-            world.add_connection(hinge_C_hinge)
+                parent_C_hinge = RevoluteConnection(
+                    parent=new_hinge_parent,
+                    child=hinge.body,
+                    parent_T_connection_expression=new_parent_T_hinge,
+                    multiplier=connection_multiplier,
+                    offset=connection_offset,
+                    axis=opening_axis,
+                    dof_id=dof.id,
+                )
+                world.add_connection(parent_C_hinge)
+            self.hinge = hinge
 
 
 @dataclass(eq=False)
@@ -630,6 +627,26 @@ class HasLeftRightDoor(HasDoors):
         self._add_door(door, parent)
         self.left_door = door
 
+    @classmethod
+    def create_with_left_right_door_in_world(
+        cls, left_door: Door, right_door: Door
+    ) -> Self:
+        """
+        Create a DoubleDoor semantic annotation with the given left and right doors.
+
+        :param left_door: The left door of the double door.
+        :param right_door: The right door of the double door.
+        :returns: A DoubleDoor semantic annotation.
+        """
+        if left_door._world != right_door._world:
+            raise ValueError("Left and right door must be part of the same world.")
+        double_door = cls(left_door=left_door, right_door=right_door)
+        world = left_door._world
+        with world.modify_world():
+            world.add_semantic_annotation(double_door)
+
+        return double_door
+
 
 HandlePosition = Union[SemanticPositionDescription, TransformationMatrix]
 
@@ -670,6 +687,7 @@ class HasHandle(SemanticAssociation, ABC):
                 parent_T_connection_expression=self_T_handle,
             )
             world.add_connection(self_C_handle)
+            self.handle = handle
 
 
 @dataclass(eq=False)
@@ -759,7 +777,7 @@ class HasSupportingSurface(HasBody, ABC):
 
 
 @dataclass(eq=False)
-class HasCabinet(HasSupportingSurface, ABC):
+class HasCase(HasSupportingSurface, ABC):
 
     @classproperty
     @abstractmethod

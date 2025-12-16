@@ -20,7 +20,7 @@ from .mixins import (
     HasDrawers,
     HasDoors,
     HasHandle,
-    HasCabinet,
+    HasCase,
     HasHinge,
     HasActiveConnection,
     HasRevoluteConnection,
@@ -119,7 +119,7 @@ class Handle(HasBody):
 
 @dataclass(eq=False)
 class Fridge(
-    HasCabinet,
+    HasCase,
     HasDoors,
 ):
     """
@@ -145,20 +145,12 @@ class Hinge(HasBody):
     A hinge is a physical entity that connects two bodies and allows one to rotate around a fixed axis.
     """
 
-    @classmethod
-    def create_with_new_body_in_world(
-        cls,
-        name: PrefixedName,
-        world: World,
-        parent: KinematicStructureEntity,
-        parent_T_self: Optional[TransformationMatrix] = None,
-        **kwargs,
-    ) -> Self:
-        hinge_body = Body(name=name)
 
-        return cls._create_with_fixed_connection_in_world(
-            name, world, hinge_body, parent, parent_T_self
-        )
+@dataclass(eq=False)
+class Slider(HasBody):
+    """
+    A Slider is a physical entity that connects two bodies and allows one to linearly translate along a fixed axis.
+    """
 
 
 @dataclass(eq=False)
@@ -199,29 +191,9 @@ class DoubleDoor(SemanticAnnotation, HasLeftRightDoor):
     A semantic annotation that represents a double door with left and right doors.
     """
 
-    @classmethod
-    def create_with_left_right_door_in_world(
-        cls, left_door: Door, right_door: Door
-    ) -> Self:
-        """
-        Create a DoubleDoor semantic annotation with the given left and right doors.
-
-        :param left_door: The left door of the double door.
-        :param right_door: The right door of the double door.
-        :returns: A DoubleDoor semantic annotation.
-        """
-        if left_door._world != right_door._world:
-            raise ValueError("Left and right door must be part of the same world.")
-        double_door = cls(left_door=left_door, right_door=right_door)
-        world = left_door._world
-        with world.modify_world():
-            world.add_semantic_annotation(double_door)
-
-        return double_door
-
 
 @dataclass(eq=False)
-class Drawer(HasCabinet, HasHandle):
+class Drawer(HasCase, HasHandle):
 
     @property
     def opening_direction(self) -> Direction:
@@ -259,28 +231,28 @@ class Table(Furniture, HasBody):
 
 
 @dataclass(eq=False)
-class Cabinet(HasCabinet, Furniture, HasDrawers, HasDoors):
+class Cabinet(HasCase, Furniture, HasDrawers, HasDoors):
     @property
     def opening_direction(self) -> Direction:
         return Direction.NEGATIVE_X
 
 
 @dataclass(eq=False)
-class Dresser(HasCabinet, Furniture, HasDrawers, HasDoors):
+class Dresser(HasCase, Furniture, HasDrawers, HasDoors):
     @property
     def opening_direction(self) -> Direction:
         return Direction.NEGATIVE_X
 
 
 @dataclass(eq=False)
-class Cupboard(HasCabinet, Furniture, HasDoors):
+class Cupboard(HasCase, Furniture, HasDoors):
     @property
     def opening_direction(self) -> Direction:
         return Direction.NEGATIVE_X
 
 
 @dataclass(eq=False)
-class Wardrobe(HasCabinet, Furniture, HasDrawers, HasDoors):
+class Wardrobe(HasCase, Furniture, HasDrawers, HasDoors):
     @property
     def opening_direction(self) -> Direction:
         return Direction.NEGATIVE_X

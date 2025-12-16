@@ -390,7 +390,7 @@ class AttributeMatch(AbstractMatchExpression[T]):
 
 
 def match(
-    type_: Union[Type[T], Selectable[T]],
+    type_: Optional[Union[Type[T], Selectable[T]]] = None,
 ) -> Union[Type[T], CanBehaveLikeAVariable[T], Match[T]]:
     """
     Create a symbolic variable matching the type and the provided keyword arguments. This is used for easy variable

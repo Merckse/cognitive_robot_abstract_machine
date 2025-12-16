@@ -7,8 +7,8 @@ import numpy as np
 from probabilistic_model.probabilistic_circuit.rx.helper import uniform_measure_of_event
 from typing_extensions import List
 
-from krrood.entity_query_language.entity import entity, let
-from krrood.entity_query_language.quantify_entity import an
+from krrood.entity_query_language.entity import entity, variable
+from krrood.entity_query_language.entity_result_processors import an
 from .mixins import (
     HasBody,
     HasSupportingSurface,
@@ -156,8 +156,10 @@ class Wall(SemanticAnnotation):
 
     @property
     def doors(self) -> Iterable[Door]:
-        door = let(Door, self._world.semantic_annotations)
-        query = an(entity(door), InsideOf(self.body, door.entry_way.region)() > 0.1)
+        door = variable(Door, self._world.semantic_annotations)
+        query = an(
+            entity(door).where(InsideOf(self.body, door.entry_way.region)() > 0.1)
+        )
         return query.evaluate()
 
 

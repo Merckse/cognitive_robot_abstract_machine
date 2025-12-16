@@ -159,3 +159,19 @@ class Wall(SemanticAnnotation):
         door = let(Door, self._world.semantic_annotations)
         query = an(entity(door), InsideOf(self.body, door.entry_way.region)() > 0.1)
         return query.evaluate()
+
+
+class Drink(SemanticAnnotation):
+    """
+    A Semantic annotation representing a drink item.
+    """
+    body: Body
+
+# %% Subclasses of GasDrink
+@dataclass(eq=False)
+class Cola(Drink):
+    ...
+
+@dataclass(eq=False)
+class Fanta(Drink):
+    ...

@@ -102,12 +102,12 @@ class UsageError(LogicalError):
 
 
 @dataclass
-class InvalidDoorDimensions(UsageError):
+class InvalidPlaneDimensions(UsageError):
 
     scale: Scale
 
     def __post_init__(self):
-        msg = f"The depth of a door must be less than its width or height. This doesnt hold for your door with dimensions {self.scale}"
+        msg = f"The depth of a plane must be less than its width or height. This doesnt hold for your door with dimensions {self.scale}"
         super().__init__(msg)
 
 

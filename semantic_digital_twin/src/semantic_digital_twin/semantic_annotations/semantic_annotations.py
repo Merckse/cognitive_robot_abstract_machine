@@ -29,7 +29,7 @@ from .mixins import (
 )
 from ..datastructures.prefixed_name import PrefixedName
 from ..datastructures.variables import SpatialVariables
-from ..exceptions import InvalidDoorDimensions
+from ..exceptions import InvalidPlaneDimensions
 from ..reasoning.predicates import InsideOf
 from ..spatial_types import Point3, TransformationMatrix, Vector3
 from ..spatial_types.derivatives import DerivativeMap
@@ -38,7 +38,7 @@ from ..world import World
 from ..world_description.connections import FixedConnection, RevoluteConnection
 from ..world_description.degree_of_freedom import DegreeOfFreedom
 from ..world_description.geometry import Scale
-from ..world_description.shape_collection import BoundingBoxCollection
+from ..world_description.shape_collection import BoundingBoxCollection, ShapeCollection
 from ..world_description.world_entity import (
     SemanticAnnotation,
     Body,
@@ -171,7 +171,7 @@ class Door(HasBody, HasHandle, HasHinge):
         scale: Scale = Scale(0.03, 1, 2),
     ) -> Self:
         if not (scale.x < scale.y and scale.x < scale.z):
-            raise InvalidDoorDimensions(scale)
+            raise InvalidPlaneDimensions(scale)
 
         door_event = scale.to_simple_event().as_composite_set()
         door_body = Body(name=name)
@@ -318,10 +318,19 @@ class Wall(HasBody):
 
     @classmethod
     def create_with_new_body_in_world(
-        cls, name: PrefixedName, scale: Scale, *args, **kwargs
+        cls,
+        name: PrefixedName,
+        world: World,
+        parent: KinematicStructureEntity,
+        parent_T_self: Optional[TransformationMatrix] = None,
+        *,
+        scale: Scale = Scale(),
     ) -> Self:
+        if not (scale.x < scale.y and scale.x < scale.z):
+            raise InvalidPlaneDimensions(scale)
+
         wall_body = Body(name=name)
-        wall_event = cls._create_wall_event(scale)
+        wall_event = cls._create_wall_event(scale).as_composite_set()
         wall_collision = BoundingBoxCollection.from_event(
             wall_body, wall_event
         ).as_shapes()
@@ -329,7 +338,9 @@ class Wall(HasBody):
         wall_body.collision = wall_collision
         wall_body.visual = wall_collision
 
-        return cls(body=wall_body, *args, **kwargs)
+        return cls._create_with_fixed_connection_in_world(
+            name, world, wall_body, parent, parent_T_self
+        )
 
     @property
     def doors(self) -> Iterable[Door]:
@@ -338,19 +349,20 @@ class Wall(HasBody):
         return query.evaluate()
 
     @classmethod
-    def _create_wall_event(cls, scale: Scale) -> Event:
+    def _create_wall_event(cls, scale: Scale) -> SimpleEvent:
         """
-        Return a wall event created from its scale. The height origin is on the ground, not in the center of the wall.
+        Return the collision shapes for the wall. A wall event is created based on the scale of the wall, and
+        doors are removed from the wall event. The resulting bounding box collection is converted to shapes.
         """
+
         x_interval = closed(-scale.x / 2, scale.x / 2)
         y_interval = closed(-scale.y / 2, scale.y / 2)
         z_interval = closed(0, scale.z)
 
-        wall_event = SimpleEvent(
+        return SimpleEvent(
             {
                 SpatialVariables.x.value: x_interval,
                 SpatialVariables.y.value: y_interval,
                 SpatialVariables.z.value: z_interval,
             }
         )
-        return wall_event.as_composite_set()

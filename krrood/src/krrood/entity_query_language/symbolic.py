@@ -1346,7 +1346,8 @@ class Literal(Variable[T]):
         self, data: Any, name: Optional[str] = None, type_: Optional[Type] = None
     ):
         original_data = data
-        data = [data]
+        if not isinstance(data, CanBehaveLikeAVariable):
+            data = [data]
         if not type_:
             original_data_lst = make_list(original_data)
             first_value = original_data_lst[0] if len(original_data_lst) > 0 else None
@@ -1355,7 +1356,10 @@ class Literal(Variable[T]):
             if type_:
                 name = type_.__name__
             else:
-                name = type(original_data).__name__
+                if isinstance(data, CanBehaveLikeAVariable):
+                    name = data._name_
+                else:
+                    name = type(original_data).__name__
         super().__init__(_name__=name, _type_=type_, _domain_source_=data)
 
     @property

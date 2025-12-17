@@ -110,6 +110,16 @@ def variable(
     return result
 
 
+def variable_from(
+    domain: DomainType,
+    name: Optional[str] = None,
+) -> Union[T, Selectable[T]]:
+    """
+    Similar to `variable` but constructed from a domain directly wihout specifying its type.
+    """
+    return Literal(data=domain, name=name)
+
+
 def _get_domain_source_from_domain_and_type_values(
     domain: DomainType, type_: Type
 ) -> Optional[DomainType]:

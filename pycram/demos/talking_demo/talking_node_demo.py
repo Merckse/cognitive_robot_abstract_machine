@@ -11,7 +11,6 @@ tts = tmc.TextToSpeechPublisher()
 nlp_node = nlp_gpsr.NLP_GPSR()
 nlp_node.talk_nlp()
 
-
 """
 This is a demo for the TextToSpeechPublisher
 

@@ -50,3 +50,6 @@ def affirmation_process(voice_input : str = ""):
     tts.say(voice_input)
     tts.say("Did I understand you correctly?")
     nlp_node.parse_json_string() # TODO: where do i extract the yess here lol
+
+if __name__ == '__main__':
+    pass

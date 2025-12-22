@@ -474,10 +474,10 @@ class MotionStatechartNode(SubclassJSONSerializer):
     def create_lifecycle_transitions(
         self,
     ) -> Tuple[
-        sm.GenericSymbolicType,
-        sm.GenericSymbolicType,
-        sm.GenericSymbolicType,
-        sm.GenericSymbolicType,
+        sm.Scalar,
+        sm.Scalar,
+        sm.Scalar,
+        sm.Scalar,
     ]:
         """
         Create the life cycle transitions for this node.
@@ -553,10 +553,9 @@ class MotionStatechartNode(SubclassJSONSerializer):
 
     def _create_ended_transitions(
         self, any_reset_condition_true: sm.Scalar
-    ) -> sm.GenericSymbolicType:
+    ) -> sm.Scalar:
         """
         Create the ended transitions of the LifeCycleState for this node.
-        :param self: The node to create the transitions for.
         :param any_reset_condition_true: The combined reset condition for this node and its parents. Combined using trinary_logic_or.
         :return: The LifeCycleState transitions for the DONE state.
         """
@@ -570,10 +569,9 @@ class MotionStatechartNode(SubclassJSONSerializer):
         self,
         any_end_condition_true: sm.Scalar,
         any_reset_condition_true: sm.Scalar,
-    ) -> sm.GenericSymbolicType:
+    ) -> sm.Scalar:
         """
         Create the pause transitions of the LifeCycleState for this node.
-        :param self: The node to create the transitions for.
         :param any_end_condition_true: The combined end condition for this node and its parents. Combined using trinary_logic_or.
         :param any_reset_condition_true: The combined reset condition for this node and its parents. Combined using trinary_logic_or.
         :return: The LifeCycleState transitions for the PAUSED state.
@@ -607,15 +605,16 @@ class MotionStatechartNode(SubclassJSONSerializer):
         self,
         any_end_condition_true: sm.Scalar,
         any_reset_condition_true: sm.Scalar,
-    ) -> sm.GenericSymbolicType:
+    ) -> sm.Scalar:
         """
         Create the running transitions of the LifeCycleState for this node.
-        :param self: The node to create the transitions for.
         :param any_end_condition_true: The combined end condition for this node and its parents. Combined using trinary_logic_or.
         :param any_reset_condition_true: The combined reset condition for this node and its parents. Combined using trinary_logic_or.
         :return: The LifeCycleState transitions for the RUNNING state.
         """
-        pause_or_chain = self._create_any_ancestor_condition_true(TransitionKind.PAUSE)
+        any_pause_condition = self._create_any_ancestor_condition_true(
+            TransitionKind.PAUSE
+        )
         return sm.if_cases(
             cases=[
                 (
@@ -623,15 +622,14 @@ class MotionStatechartNode(SubclassJSONSerializer):
                     sm.Scalar(LifeCycleValues.NOT_STARTED),
                 ),
                 (any_end_condition_true, sm.Scalar(LifeCycleValues.DONE)),
-                (pause_or_chain, sm.Scalar(LifeCycleValues.PAUSED)),
+                (any_pause_condition, sm.Scalar(LifeCycleValues.PAUSED)),
             ],
             else_result=sm.Scalar(LifeCycleValues.RUNNING),
         )
 
-    def _create_not_started_transitions(self) -> sm.GenericSymbolicType:
+    def _create_not_started_transitions(self) -> sm.Scalar:
         """
         Create the not started transitions of the LifeCycleState for this node.
-        :param self: The node to create the transitions for.
         :return: The LifeCycleState transitions for the NOT_STARTED state.
         """
         start_condition = sm.Scalar(self.start_condition == sm.Scalar.const_true())

@@ -50,6 +50,11 @@ class SpatialType:
 
     """
 
+    casadi_sx: ca.SX
+    """
+    Implement Symbolic Math protocol
+    """
+
     reference_frame: Optional[KinematicStructureEntity] = field(
         kw_only=True, default=None
     )
@@ -123,6 +128,17 @@ class SpatialType:
         result.reference_frame = self.reference_frame
         return result
 
+    def __copy__(self, memo) -> Self:
+        """
+        Even in a deep copy, we don't want to copy the reference and child frame, just the matrix itself,
+        because are just references to kinematic structure entities.
+        """
+        if id(self) in memo:
+            return memo[id(self)]
+        result = type(self).from_casadi_sx(copy(self.casadi_sx))
+        result.reference_frame = self.reference_frame
+        return result
+
 
 @dataclass(eq=False, init=False)
 class HomogeneousTransformationMatrix(
@@ -157,7 +173,12 @@ class HomogeneousTransformationMatrix(
         if data is None:
             self._casadi_sx = ca.SX.eye(4)
             return
-        self.casadi_sx = sm.to_sx(data)
+        if isinstance(data, SpatialType):
+            # create a copy if data is a spatial type, because they are often still being used
+            casadi_sx = copy(data.casadi_sx)
+        else:
+            casadi_sx = sm.to_sx(data)
+        self.casadi_sx = casadi_sx
 
     def _verify_type(self):
         if self.shape != (4, 4):
@@ -1663,7 +1684,7 @@ class Pose(sm.SymbolicMathType, SpatialType, SubclassJSONSerializer):
                 point=position, rotation_matrix=orientation.to_rotation_matrix()
             )
         )
-        self.casadi_sx = sm.to_sx(transformation_matrix)
+        self._casadi_sx = transformation_matrix._casadi_sx
         self.reference_frame = reference_frame
 
     def _verify_type(self):

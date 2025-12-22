@@ -39,7 +39,7 @@ from ....robot_plans.actions.base import ActionDescription
 '''
 @has_parameters
 @dataclass
-class GuideToAction(ActionDescription):
+class Describe(ActionDescription):
     def execute(self) -> None:
         '''
         Eine Describe action besteht aus einer Navigation und einer detail analysis,
@@ -48,13 +48,32 @@ class GuideToAction(ActionDescription):
             - Pose
             - Type
             - Size
-        and then based on the info build a description
+        and then based on the info build a description.
+        And talk back
+
 
         '''
 
         raise NotImplementedError("This feature is not implemented yet")
 
-    def Perception(self):
-        raise NotImplementedError("This feature is not implemented yet")
+def descriptionBuilder(self)-> str:
+    raise NotImplementedError("This feature is not implemented yet")
+    # Query something to perception and then see if it is sure its the percieved val.
+    # build to be spoken text, thats the return
 
+    return "This is still under implementation"
+
+'''
+Describes a Object of class x in place y and talks back to referee.
+
+    :param Object
+    :param Location, where it is found
+
+'''
+def describe(self):
+    # Navigate2
+    self.descriptionBuilder()
+
+
+    raise NotImplementedError("This feature is not implemented yet")
 

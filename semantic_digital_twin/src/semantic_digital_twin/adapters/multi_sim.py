@@ -1091,13 +1091,20 @@ class MultiSimBuilder(ABC):
         """
         self._world = world
         self._asset_folder_path = os.path.join(os.path.dirname(file_path), "assets")
+
+        root = Body(name=PrefixedName("world"))
+
         if not os.path.exists(self.asset_folder_path):
             os.makedirs(self.asset_folder_path)
         if len(self.world.bodies) == 0:
             with self.world.modify_world():
-                root = Body(name=PrefixedName("world"))
                 self.world.add_body(root)
-        elif self.world.root.name.name != "world":
+        elif self.world.root != root:
+            # search for all Connection6DoF joints that are connected to the non "world" root
+            # to change their parent to the new "world" root later.
+            # Mujoco identifies all Connection6DoF joints as free joints.
+            # Free joints in Mujoco need to be attached to the top level link
+            # and the top level link needs the name "world"
             free_joint_bodies = [
                 body
                 for body in self.world.bodies
@@ -1109,7 +1116,6 @@ class MultiSimBuilder(ABC):
                 root_bodies = [
                     body for body in self.world.bodies if body.parent_connection is None
                 ]
-                root = Body(name=PrefixedName("world"))
                 self.world.add_body(root)
                 for root_body in root_bodies:
                     connection = FixedConnection(parent=root, child=root_body)

@@ -57,7 +57,7 @@ logger.addHandler(handler)
 logger.setLevel(logging.DEBUG)
 headless = os.environ.get("CI", "false").lower() == "true"
 # headless = True
-only_run_test_in_CI = os.environ.get("CI", "false").lower() == "true"
+only_run_test_in_CI = os.environ.get("CI", "false").lower() == "false"
 
 
 @unittest.skipIf(
@@ -619,7 +619,7 @@ class MujocoSimTestCase(unittest.TestCase):
         )
         stl_parser = STLParser(milk_path)
         mesh_world = stl_parser.parse()
-        transformation = TransformationMatrix.from_xyz_rpy(
+        transformation = HomogeneousTransformationMatrix.from_xyz_rpy(
             x=0.5, reference_frame=self.test_urdf_1_world.root
         )
         with self.test_urdf_1_world.modify_world():

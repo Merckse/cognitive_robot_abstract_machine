@@ -64,6 +64,7 @@ from .utils import (
     make_list,
     make_set,
     T,
+    chain_stages,
 )
 from ..class_diagrams import ClassRelation
 from ..class_diagrams.class_diagram import Association, WrappedClass
@@ -1083,12 +1084,16 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         :param sources: The current bindings.
         :return: An Iterable of OperationResults for each combination of values.
         """
-        var_val_gen = {
-            var: var._evaluate__(copy(sources), parent=self)
+        var_val_gen = [
+            (
+                lambda bindings, var=var: (
+                    v.bindings for v in var._evaluate__(copy(bindings), parent=self)
+                )
+            )
             for var in self._selected_variables
-        }
-        for sol in generate_combinations(var_val_gen):
-            yield {var._id_: sol[var][var._id_] for var in self._selected_variables}
+        ]
+
+        yield from chain_stages(var_val_gen, sources)
 
     def _apply_results_mapping(
         self, results: Iterable[Dict[int, Any]]

@@ -12,25 +12,27 @@ from pycram.datastructures.pose import PoseStamped
 from pycram.robot_plans import NavigateActionDescription
 from pycram.testing import ApartmentWorldTestCase
 
+arm_park = {
+    "l_shoulder_pan_joint": 1.712,
+    "l_shoulder_lift_joint": -0.264,
+    "l_upper_arm_roll_joint": 1.38,
+    "l_elbow_flex_joint": -2.12,
+    "l_forearm_roll_joint": 16.996,
+    "l_wrist_flex_joint": -0.073,
+    "l_wrist_roll_joint": 0.0,
+    "r_shoulder_pan_joint": -1.712,
+    "r_shoulder_lift_joint": -0.256,
+    "r_upper_arm_roll_joint": -1.463,
+    "r_elbow_flex_joint": -2.12,
+    "r_forearm_roll_joint": 1.766,
+    "r_wrist_flex_joint": -0.07,
+    "r_wrist_roll_joint": 0.051,
+}
+
 
 def test_reachability_costmap_location(immutable_simple_pr2_world):
     world, robot, context = immutable_simple_pr2_world
-    arm_park = {
-        "l_shoulder_pan_joint": 1.712,
-        "l_shoulder_lift_joint": -0.264,
-        "l_upper_arm_roll_joint": 1.38,
-        "l_elbow_flex_joint": -2.12,
-        "l_forearm_roll_joint": 16.996,
-        "l_wrist_flex_joint": -0.073,
-        "l_wrist_roll_joint": 0.0,
-        "r_shoulder_pan_joint": -1.712,
-        "r_shoulder_lift_joint": -0.256,
-        "r_upper_arm_roll_joint": -1.463,
-        "r_elbow_flex_joint": -2.12,
-        "r_forearm_roll_joint": 1.766,
-        "r_wrist_flex_joint": -0.07,
-        "r_wrist_roll_joint": 0.051,
-    }
+
     for name, state in arm_park.items():
         world.state[world.get_degree_of_freedom_by_name(name).id].position = state
     world.state[world.get_degree_of_freedom_by_name("torso_lift_joint").id].position = (
@@ -50,22 +52,6 @@ def test_reachability_costmap_location(immutable_simple_pr2_world):
 
 def test_reachability_pose_costmap_location(immutable_simple_pr2_world):
     world, robot_view, context = immutable_simple_pr2_world
-    arm_park = {
-        "l_shoulder_pan_joint": 1.712,
-        "l_shoulder_lift_joint": -0.264,
-        "l_upper_arm_roll_joint": 1.38,
-        "l_elbow_flex_joint": -2.12,
-        "l_forearm_roll_joint": 16.996,
-        "l_wrist_flex_joint": -0.073,
-        "l_wrist_roll_joint": 0.0,
-        "r_shoulder_pan_joint": -1.712,
-        "r_shoulder_lift_joint": -0.256,
-        "r_upper_arm_roll_joint": -1.463,
-        "r_elbow_flex_joint": -2.12,
-        "r_forearm_roll_joint": 1.766,
-        "r_wrist_flex_joint": -0.07,
-        "r_wrist_roll_joint": 0.051,
-    }
     for name, state in arm_park.items():
         world.state[world.get_degree_of_freedom_by_name(name).id].position = state
     world.notify_state_change()
@@ -81,22 +67,6 @@ def test_reachability_pose_costmap_location(immutable_simple_pr2_world):
 
 def test_visibility_costmap_location(immutable_simple_pr2_world):
     world, robot_view, context = immutable_simple_pr2_world
-    arm_park = {
-        "l_shoulder_pan_joint": 1.712,
-        "l_shoulder_lift_joint": -0.264,
-        "l_upper_arm_roll_joint": 1.38,
-        "l_elbow_flex_joint": -2.12,
-        "l_forearm_roll_joint": 16.996,
-        "l_wrist_flex_joint": -0.073,
-        "l_wrist_roll_joint": 0.0,
-        "r_shoulder_pan_joint": -1.712,
-        "r_shoulder_lift_joint": -0.256,
-        "r_upper_arm_roll_joint": -1.463,
-        "r_elbow_flex_joint": -2.12,
-        "r_forearm_roll_joint": 1.766,
-        "r_wrist_flex_joint": -0.07,
-        "r_wrist_roll_joint": 0.051,
-    }
     for name, state in arm_park.items():
         world.state[world.get_degree_of_freedom_by_name(name).id].position = state
     world.notify_state_change()
@@ -111,22 +81,6 @@ def test_visibility_costmap_location(immutable_simple_pr2_world):
 
 def test_visibility_pose_costmap_location(immutable_simple_pr2_world):
     world, robot_view, context = immutable_simple_pr2_world
-    arm_park = {
-        "l_shoulder_pan_joint": 1.712,
-        "l_shoulder_lift_joint": -0.264,
-        "l_upper_arm_roll_joint": 1.38,
-        "l_elbow_flex_joint": -2.12,
-        "l_forearm_roll_joint": 16.996,
-        "l_wrist_flex_joint": -0.073,
-        "l_wrist_roll_joint": 0.0,
-        "r_shoulder_pan_joint": -1.712,
-        "r_shoulder_lift_joint": -0.256,
-        "r_upper_arm_roll_joint": -1.463,
-        "r_elbow_flex_joint": -2.12,
-        "r_forearm_roll_joint": 1.766,
-        "r_wrist_flex_joint": -0.07,
-        "r_wrist_roll_joint": 0.051,
-    }
     for name, state in arm_park.items():
         world.state[world.get_degree_of_freedom_by_name(name).id].position = state
     world.notify_state_change()
@@ -142,22 +96,6 @@ def test_visibility_pose_costmap_location(immutable_simple_pr2_world):
 
 def test_reachability_and_visibility_costmap_location(immutable_simple_pr2_world):
     world, robot_view, context = immutable_simple_pr2_world
-    arm_park = {
-        "l_shoulder_pan_joint": 1.712,
-        "l_shoulder_lift_joint": -0.264,
-        "l_upper_arm_roll_joint": 1.38,
-        "l_elbow_flex_joint": -2.12,
-        "l_forearm_roll_joint": 16.996,
-        "l_wrist_flex_joint": -0.073,
-        "l_wrist_roll_joint": 0.0,
-        "r_shoulder_pan_joint": -1.712,
-        "r_shoulder_lift_joint": -0.256,
-        "r_upper_arm_roll_joint": -1.463,
-        "r_elbow_flex_joint": -2.12,
-        "r_forearm_roll_joint": 1.766,
-        "r_wrist_flex_joint": -0.07,
-        "r_wrist_roll_joint": 0.051,
-    }
     for name, state in arm_park.items():
         world.state[world.get_degree_of_freedom_by_name(name).id].position = state
     world.state[world.get_degree_of_freedom_by_name("torso_lift_joint").id].position = (
@@ -177,22 +115,6 @@ def test_reachability_and_visibility_costmap_location(immutable_simple_pr2_world
 
 def test_reachability_probabilistic_costmap_location(immutable_simple_pr2_world):
     world, robot_view, context = immutable_simple_pr2_world
-    arm_park = {
-        "l_shoulder_pan_joint": 1.712,
-        "l_shoulder_lift_joint": -0.264,
-        "l_upper_arm_roll_joint": 1.38,
-        "l_elbow_flex_joint": -2.12,
-        "l_forearm_roll_joint": 16.996,
-        "l_wrist_flex_joint": -0.073,
-        "l_wrist_roll_joint": 0.0,
-        "r_shoulder_pan_joint": -1.712,
-        "r_shoulder_lift_joint": -0.256,
-        "r_upper_arm_roll_joint": -1.463,
-        "r_elbow_flex_joint": -2.12,
-        "r_forearm_roll_joint": 1.766,
-        "r_wrist_flex_joint": -0.07,
-        "r_wrist_roll_joint": 0.051,
-    }
     for name, state in arm_park.items():
         world.state[world.get_degree_of_freedom_by_name(name).id].position = state
     world.state[world.get_degree_of_freedom_by_name("torso_lift_joint").id].position = (
@@ -211,22 +133,6 @@ def test_reachability_probabilistic_costmap_location(immutable_simple_pr2_world)
 
 def test_reachability_pose_probabilistic_costmap_location(immutable_simple_pr2_world):
     world, robot_view, context = immutable_simple_pr2_world
-    arm_park = {
-        "l_shoulder_pan_joint": 1.712,
-        "l_shoulder_lift_joint": -0.264,
-        "l_upper_arm_roll_joint": 1.38,
-        "l_elbow_flex_joint": -2.12,
-        "l_forearm_roll_joint": 16.996,
-        "l_wrist_flex_joint": -0.073,
-        "l_wrist_roll_joint": 0.0,
-        "r_shoulder_pan_joint": -1.712,
-        "r_shoulder_lift_joint": -0.256,
-        "r_upper_arm_roll_joint": -1.463,
-        "r_elbow_flex_joint": -2.12,
-        "r_forearm_roll_joint": 1.766,
-        "r_wrist_flex_joint": -0.07,
-        "r_wrist_roll_joint": 0.051,
-    }
     for name, state in arm_park.items():
         world.state[world.get_degree_of_freedom_by_name(name).id].position = state
     location_desig = ProbabilisticCostmapLocation(
@@ -242,22 +148,6 @@ def test_reachability_pose_probabilistic_costmap_location(immutable_simple_pr2_w
 
 def test_visibility_probabilistic_costmap_location(immutable_simple_pr2_world):
     world, robot_view, context = immutable_simple_pr2_world
-    arm_park = {
-        "l_shoulder_pan_joint": 1.712,
-        "l_shoulder_lift_joint": -0.264,
-        "l_upper_arm_roll_joint": 1.38,
-        "l_elbow_flex_joint": -2.12,
-        "l_forearm_roll_joint": 16.996,
-        "l_wrist_flex_joint": -0.073,
-        "l_wrist_roll_joint": 0.0,
-        "r_shoulder_pan_joint": -1.712,
-        "r_shoulder_lift_joint": -0.256,
-        "r_upper_arm_roll_joint": -1.463,
-        "r_elbow_flex_joint": -2.12,
-        "r_forearm_roll_joint": 1.766,
-        "r_wrist_flex_joint": -0.07,
-        "r_wrist_roll_joint": 0.051,
-    }
     for name, state in arm_park.items():
         world.state[world.get_degree_of_freedom_by_name(name).id].position = state
     location_desig = ProbabilisticCostmapLocation(
@@ -271,22 +161,6 @@ def test_visibility_probabilistic_costmap_location(immutable_simple_pr2_world):
 
 def test_visibility_pose_probabilistic_costmap_location(immutable_simple_pr2_world):
     world, robot_view, context = immutable_simple_pr2_world
-    arm_park = {
-        "l_shoulder_pan_joint": 1.712,
-        "l_shoulder_lift_joint": -0.264,
-        "l_upper_arm_roll_joint": 1.38,
-        "l_elbow_flex_joint": -2.12,
-        "l_forearm_roll_joint": 16.996,
-        "l_wrist_flex_joint": -0.073,
-        "l_wrist_roll_joint": 0.0,
-        "r_shoulder_pan_joint": -1.712,
-        "r_shoulder_lift_joint": -0.256,
-        "r_upper_arm_roll_joint": -1.463,
-        "r_elbow_flex_joint": -2.12,
-        "r_forearm_roll_joint": 1.766,
-        "r_wrist_flex_joint": -0.07,
-        "r_wrist_roll_joint": 0.051,
-    }
     for name, state in arm_park.items():
         world.state[world.get_degree_of_freedom_by_name(name).id].position = state
     location_desig = ProbabilisticCostmapLocation(
@@ -303,22 +177,6 @@ def test_reachability_and_visibility_probabilistic_costmap_location(
     immutable_simple_pr2_world,
 ):
     world, robot_view, context = immutable_simple_pr2_world
-    arm_park = {
-        "l_shoulder_pan_joint": 1.712,
-        "l_shoulder_lift_joint": -0.264,
-        "l_upper_arm_roll_joint": 1.38,
-        "l_elbow_flex_joint": -2.12,
-        "l_forearm_roll_joint": 16.996,
-        "l_wrist_flex_joint": -0.073,
-        "l_wrist_roll_joint": 0.0,
-        "r_shoulder_pan_joint": -1.712,
-        "r_shoulder_lift_joint": -0.256,
-        "r_upper_arm_roll_joint": -1.463,
-        "r_elbow_flex_joint": -2.12,
-        "r_forearm_roll_joint": 1.766,
-        "r_wrist_flex_joint": -0.07,
-        "r_wrist_roll_joint": 0.051,
-    }
     for name, state in arm_park.items():
         world.state[world.get_degree_of_freedom_by_name(name).id].position = state
     world.state[world.get_degree_of_freedom_by_name("torso_lift_joint").id].position = (

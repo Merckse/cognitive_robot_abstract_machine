@@ -177,10 +177,6 @@ class Costmap:
     An optional orientatoin generator to use to generate the orientation for a sampled pose
     """
 
-    # @property
-    # def size(self) -> Tuple[int, int]:
-    #     return self.height, self.width
-
     def visualize(self) -> None:
         """
         Visualizes a costmap in the BulletWorld, the visualisation works by

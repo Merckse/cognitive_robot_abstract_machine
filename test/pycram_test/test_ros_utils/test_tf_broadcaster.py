@@ -1,4 +1,3 @@
-import unittest
 from itertools import chain, repeat
 
 from unittest.mock import patch, MagicMock
@@ -7,19 +6,6 @@ import rclpy.publisher
 from tf2_msgs.msg import TFMessage
 from pycram.datastructures.enums import ExecutionType
 from pycram.ros_utils.tf_broadcaster import TFBroadcaster
-from pycram.testing import ApartmentWorldTestCase
-
-
-# class TestTFBroadcaster(ApartmentWorldTestCase):
-#     @classmethod
-#     def setUpClass(cls):
-#         super().setUpClass()
-#         cls.node = rclpy.create_node("tf_broadcaster_test_node")
-#         cls.mock_publisher = MagicMock()
-#
-#     @classmethod
-#     def tearDownClass(cls):
-#         patch.stopall()
 
 
 def test_initialization(immutable_model_world, rclpy_node):

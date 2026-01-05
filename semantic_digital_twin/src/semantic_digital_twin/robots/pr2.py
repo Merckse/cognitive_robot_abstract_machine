@@ -21,6 +21,7 @@ from ..robots.abstract_robot import (
     FieldOfView,
     Torso,
     AbstractRobot,
+    Base,
 )
 from ..spatial_types import Quaternion, Vector3
 from ..world import World
@@ -225,6 +226,16 @@ class PR2(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
                 _world=world,
             )
             robot.add_torso(torso)
+
+            # Create the robot base
+            base = Base(
+                name=PrefixedName("base", prefix=robot.name.name),
+                root=world.get_body_by_name("base_link"),
+                tip=world.get_body_by_name("base_link"),
+                _world=world,
+            )
+
+            robot.add_base(base)
 
             world.add_semantic_annotation(robot)
 

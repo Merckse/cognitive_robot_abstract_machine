@@ -6,6 +6,7 @@ import numpy as np
 import rclpy
 import rustworkx as rx
 from box import Box
+from polytope import bounding_box
 from probabilistic_model.distributions import (
     DiracDeltaDistribution,
     GaussianDistribution,
@@ -276,8 +277,10 @@ class CostmapLocation(LocationDesignatorDescription):
         ground_pose = deepcopy(target)
         ground_pose.position.z = 0
 
+        base_bb = self.robot_view.base.bounding_box
+
         occupancy = OccupancyCostmap(
-            distance_to_obstacle=0.3,
+            distance_to_obstacle=(base_bb.depth / 2 + base_bb.width / 2) / 2,
             world=self.world,
             robot_view=self.robot_view,
             width=200,
@@ -527,9 +530,11 @@ class AccessingLocation(LocationDesignatorDescription):
         """
         ground_pose = PoseStamped.from_spatial_type(handle.global_pose)
         ground_pose.position.z = 0
+
+        base_bb = self.robot_view.base.bounding_box
         occupancy = OccupancyCostmap(
             robot_view=self.robot_view,
-            distance_to_obstacle=0.25,
+            distance_to_obstacle=(base_bb.depth / 2 + base_bb.width / 2) / 2,
             width=200,
             height=200,
             resolution=0.02,
@@ -1623,6 +1628,9 @@ class GiskardLocation(LocationDesignatorDescription):
     """
 
     grasp_description: Optional[GraspDescription] = None
+    """
+    The grasp description which should be used to grasp the target pose, used if there is a body at the pose
+    """
 
     threshold: float = field(default=0.02)
     """
@@ -1652,6 +1660,9 @@ class GiskardLocation(LocationDesignatorDescription):
         """
         ground_pose = deepcopy(pose)
         ground_pose.position.z = 0.0
+
+        base_bb = self.robot_view.base.bounding_box
+
         occupancy_map = OccupancyCostmap(
             resolution=0.02,
             height=200,
@@ -1659,7 +1670,7 @@ class GiskardLocation(LocationDesignatorDescription):
             world=self.world,
             robot_view=self.robot_view,
             origin=ground_pose,
-            distance_to_obstacle=0.3,
+            distance_to_obstacle=(base_bb.width / 2 + base_bb.depth / 2) / 2,
         )
         gaussian_map = GaussianCostmap(
             resolution=0.02,

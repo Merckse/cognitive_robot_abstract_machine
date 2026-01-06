@@ -77,14 +77,12 @@ class RestaurantDemoListener(Node):
         intent, order = response
 
         if order:
-            # Bestätigungssatz mit allen Items
             item_strings = [f"{amount}x {item}" for item, amount in order]
             items_text = "and ".join(item_strings)
             print(f"So you would like to {intent}: {items_text}")
+            print("?")
         else:
             print("no items found")
-
-        print("?")  # Bestätigungsfrage
 
     def start_listening(self):
         """sends 'start listening' message"""

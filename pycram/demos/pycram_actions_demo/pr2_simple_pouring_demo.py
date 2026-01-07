@@ -8,7 +8,7 @@ from pycram.process_module import simulated_robot
 from pycram.object_descriptors.urdf import ObjectDescription
 from pycram.world_concepts.world_object import Object
 from pycram.ros_utils.viz_marker_publisher import VizMarkerPublisher
-from pycram.robot_plans *
+from pycram.robot_plans import *
 
 
 extension = ObjectDescription.get_file_extension()

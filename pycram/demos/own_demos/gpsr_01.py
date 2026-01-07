@@ -1,6 +1,9 @@
 import os
+from xml.etree.ElementTree import tostring
 
 from absl.logging import exception
+from breezy.switch import switch
+from mercurial.repoview import newtype
 
 from rclpy.node import Node
 
@@ -21,7 +24,9 @@ from pycram.robot_plans import MoveTorsoActionDescription, TransportActionDescri
 from pycram.robot_plans import ParkArmsActionDescription
 from pycram.testing import setup_world
 
-from suturo_resources import queries_rody as queries, suturo_map_rody as suturo_map
+from pycram.external_interfaces import tmc
+
+# from suturo_resources import queries_rody as queries, suturo_map_rody as suturo_map TODO: Implement mit rodys shit
 
 from pycram.datastructures.dataclasses import Color
 import tempfile
@@ -33,7 +38,9 @@ import rclpy
 from std_msgs.msg import String
 from geometry_msgs.msg import Pose, Point, PoseStamped as PoseSta
 import nlp_gpsr
-from src.pycram.external_interfaces import nav2_move
+from pycram.external_interfaces import nav2_move
+
+from typing import Optional
 
 #DEBUG
 test_response = ["take", "bowl", "food", "blue", "", "", "me", "kitchen"]
@@ -55,6 +62,9 @@ world2 = suturo_map.load_environment()
 # test objects
 spoon = STLParser(os.path.join(os.path.dirname(__file__), "..", "..", "resources", "objects", "spoon.stl")).parse()
 bowl = STLParser(os.path.join(os.path.dirname(__file__), "..", "..", "resources", "objects", "bowl.stl")).parse()
+
+# Can from there on be used with a normal tts_pub.say("bliblo")
+tts_pub = tmc.TextToSpeechPublisher()
 
 """
 The following block shows how objects can be merged into the world model and connected
@@ -178,7 +188,7 @@ Converts a location keyword into a PoseStamped placeholder.
     Raises:
         Logs an exception for unknown locations.
 """
-def _location_from_string(location: String):
+def _location_from_string(location: String) -> PoseStamped:
     match location:
         case "living room":
             liv_room = queries.query_living_room_area(world2)
@@ -199,6 +209,23 @@ def _location_from_string(location: String):
         case _:
             exception("unknown location")
             # return PoseStamped.from_list([0,0,0], [0,0,0,1])
+
+def _objectlocation_from_string(object: String = "") -> PoseStamped:
+    object_pose = PoseStamped.from_list(position=(queries.query_object(suturo_map))) # TODO THIS METHOD DOES NOT EXIST, IT NEEDS TO BE FIXED, ELSE SWITCH CASE
+
+    obj_pose = PoseStamped.from_list([0, 0, 0], [0, 0, 0, 1])
+    match object:
+        case "bowl":
+            obj_pose = PoseStamped.from_list(position=(suturo_map.query_bowl()))
+        case "milk":
+            obj_pose = PoseStamped.from_list(position=(suturo_map.query_milk()))
+        case "spoon":
+            obj_pose = PoseStamped.from_list(position=(suturo_map.query_spoon()))
+        case _:
+            obj_pose = PoseStamped.from_list(position=(suturo_map.query_bowl()))
+    return obj_pose
+
+    return _find_class_from_string(obj)
 
 """
 helper method
@@ -258,6 +285,31 @@ def start_nav(pos_x: float, pos_y: float):
     pos_stamped.pose = pos
     nav2_move.start_nav_to_pose(pos_stamped)
 
+# TODO REFEREE interaction implementation
+def referee_interaction() -> None:
+    tts_pub.say("Hello, I am Toya. Nice to meet you. How may I help you today?")
+
+    # TODO NLP pipeline here
+    talkback_response = "" # ADD HERE NLP RESPONSE
+
+    # retrieve task from the message type
+    task = "" # for example describe
+
+    # retrieve all other needed items
+    obj_name = "" # if contains
+    location = String() # if contains, else blank or empty string
+
+
+    match task:
+        case "describe":
+            describing(obj_name, location)
+        case "find":
+            raise NotImplementedError("This feature is not implemented yet")
+        case "tell":
+            raise NotImplementedError("This feature is not implemented yet")
+        case _:
+            tts_pub.say("Sorry, I did not understand your request. Please try again.")
+
 
 def check_affirm(sentence, nlp_node : nlp_gpsr.NLP_GPSR) :
     """
@@ -279,6 +331,68 @@ def check_affirm(sentence, nlp_node : nlp_gpsr.NLP_GPSR) :
     return last_affirmation
 
 
+"""
+The base workflow is:
+1. Navigate to desired location
+2. Talk to human
+3. Execute action
+4. Talk back to human
+
+What i need:
+    Navigation [X]
+        NavigateActionDescription or MoveTCPActionDescription for robot movement
+        PoseStamped object with target coordinates and reference frame
+        Environment/map knowledge for path planning
+        Collision avoidance or world model setup
+
+    Talk to Human (Initial)
+        [X] Speech synthesis system or TTS (Text-to-Speech) interface
+        TalkingMotionDescription or custom speech action
+        Predefined message or dynamic text content
+        Audio output device/speaker on robot
+
+    Execute Action
+        Task-specific action descriptions:
+            PickUpActionDescription for grasping
+            PlaceActionDescription for placing
+            TransportActionDescription for moving objects
+            OpenActionDescription/CloseActionDescription for containers
+        Arms enum to specify which arm(s) to use
+        Object designators for manipulation targets
+        Motion planning and execution capabilities
+
+    Talk Back to Human
+        TTS system (same as initial talking)
+        Feedback message content (success/failure/status)
+        TalkingMotionDescription or speech interface
+        Audio confirmation output
+
+    Overall System Requirements
+        Context for execution state management
+        SequentialPlan to orchestrate all steps
+        simulated_robot context manager for testing
+        Error handling and recovery behaviors
+        World setup using setup_world() or equivalent
+"""
+# TODO: Describtion implementation. Curr.
+def describing(obj_name, room: Optional[String] = "") -> Description:
+
+    if room != "":
+        findWithoutRoom(obj_name)
+    else:
+        findWithoutRoom(obj_name, room)
+    pass
+
+def findWithoutRoom(obj_name):
+    raise NotImplementedError("This feature is not implemented yet")
+
+def requestObjectPosition(obj_name):
+    raise NotImplementedError("This feature is not implemented yet")
+
+
+def findWithRoom(obj_name, room: Optional[String] = ""):
+    tts_pub.say("I will now go to " + str(room))
+    driveTo(room)
 
 
 

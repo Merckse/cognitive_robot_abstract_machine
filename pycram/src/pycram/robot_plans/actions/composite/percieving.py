@@ -36,7 +36,6 @@ class DescribingAction(ActionDescription):
         raise NotImplementedError("This feature is not implemented yet")
 
     def filterByEntity(self, entity, unfilteredQuery : list[str] = "") -> list[str]:
-        raise NotImplementedError("This feature is not implemented yet")
 
     def perceiveResult(self, entity) -> list[str]:
         someQuery = ""
@@ -49,6 +48,20 @@ class DescribingAction(ActionDescription):
         return resultArray
 
     raise NotImplementedError("This feature is not implemented yet")
+
+@classmethod
+def description(
+        cls,
+        target_object: Union[Iterable[ObjectDesignatorDescription], ObjectDesignatorDescription],
+        detection_technique: Union[Iterable[DetectionTechnique], DetectionTechnique] = DetectionTechnique.HUMAN,
+        observation_distance: Union[Iterable[float], float] = 1.0,
+) -> PartialDesignator[Type[ObserveObjectAction]]:
+    return PartialDesignator(
+        ObserveObjectAction,
+        target_object=target_object,
+        detection_technique=detection_technique,
+        observation_distance=observation_distance
+    )
 
 class GuidingAction(ActionDescription):
 

@@ -828,15 +828,6 @@ class RootedSemanticAnnotation(SemanticAnnotation):
             if body.has_collision() and not body.get_collision_config().disabled
         )
 
-# @dataclass(eq=False)
-# class Favorit_Drink(SemanticAnnotation):
-#     """
-#     Represents a semantic annotation that is rooted in a specific KinematicStructureEntity.
-#     """
-#
-#     fav_drink: Body = field(default=None)
-
-
 @dataclass(eq=False)
 class Agent(RootedSemanticAnnotation):
     """

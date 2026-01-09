@@ -122,17 +122,38 @@ def send_query(
 
 
 @init_robokudo_interface
-def query_human() -> "PointStamped":
+def query_human() -> PoseStamped:
     """Query RoboKudo for human detection and return the detected human's pose."""
     result = send_query(obj_type="human")
-    if result:
-        return result  # Assuming result is of type PointStamped or similar.
-    return None
+    posi = None
+    if result is None:
+        return None
+    else:
+        for r in result.res:
+            for p in r.pose:
+                if posi is None or p.pose > posi:
+                    posi = p.pose
+    return posi
 
 
 @init_robokudo_interface
 def query_all_objects() -> dict:
     return send_query()
+
+
+@init_robokudo_interface
+def query_postion_closest_object() -> PoseStamped:
+    result = send_query()
+    posi = None
+    if result is None:
+        return None
+    else:
+        for r in result.res:
+            print(r.type)
+            for p in r.pose:
+                if posi is None or p.pose > posi:
+                    posi = p.pose
+    return posi
 
 
 @init_robokudo_interface

@@ -47,14 +47,14 @@ class TestFactories(unittest.TestCase):
         self.assertEqual(len(semantic_handle_annotations), 1)
         self.assertTrue(
             isinstance(
-                semantic_handle_annotations[0].body.parent_connection, FixedConnection
+                semantic_handle_annotations[0].root.parent_connection, FixedConnection
             )
         )
 
         queried_handle: Handle = semantic_handle_annotations[0]
         self.assertEqual(returned_handle, queried_handle)
         self.assertEqual(
-            world.root, queried_handle.body.parent_kinematic_structure_entity
+            world.root, queried_handle.root.parent_kinematic_structure_entity
         )
 
     def test_basic_has_body_factory(self):
@@ -76,14 +76,14 @@ class TestFactories(unittest.TestCase):
         queried_hinge: Hinge = semantic_hinge_annotations[0]
         self.assertEqual(returned_hinge, queried_hinge)
         self.assertEqual(
-            world.root, queried_hinge.body.parent_kinematic_structure_entity
+            world.root, queried_hinge.root.parent_kinematic_structure_entity
         )
         semantic_slider_annotations = world.get_semantic_annotations_by_type(Slider)
         self.assertEqual(len(semantic_slider_annotations), 1)
         queried_slider: Slider = semantic_slider_annotations[0]
         self.assertEqual(returned_slider, queried_slider)
         self.assertEqual(
-            world.root, queried_slider.body.parent_kinematic_structure_entity
+            world.root, queried_slider.root.parent_kinematic_structure_entity
         )
 
     def test_door_factory(self):
@@ -98,14 +98,14 @@ class TestFactories(unittest.TestCase):
         self.assertEqual(len(semantic_door_annotations), 1)
         self.assertTrue(
             isinstance(
-                semantic_door_annotations[0].body.parent_connection, FixedConnection
+                semantic_door_annotations[0].root.parent_connection, FixedConnection
             )
         )
 
         queried_door: Door = semantic_door_annotations[0]
         self.assertEqual(returned_door, queried_door)
         self.assertEqual(
-            world.root, queried_door.body.parent_kinematic_structure_entity
+            world.root, queried_door.root.parent_kinematic_structure_entity
         )
 
     def test_door_factory_invalid(self):
@@ -139,13 +139,13 @@ class TestFactories(unittest.TestCase):
             name=PrefixedName("hinge"), world=world
         )
         assert len(world.kinematic_structure_entities) == 3
-        assert isinstance(hinge.body.parent_connection, RevoluteConnection)
-        assert root == hinge.body.parent_kinematic_structure_entity
-        assert root == door.body.parent_kinematic_structure_entity
+        assert isinstance(hinge.root.parent_connection, RevoluteConnection)
+        assert root == hinge.root.parent_kinematic_structure_entity
+        assert root == door.root.parent_kinematic_structure_entity
 
         door.add_hinge(hinge)
-        assert isinstance(hinge.body.parent_connection, RevoluteConnection)
-        assert door.body.parent_kinematic_structure_entity == hinge.body
+        assert isinstance(hinge.root.parent_connection, RevoluteConnection)
+        assert door.root.parent_kinematic_structure_entity == hinge.root
         assert door.hinge == hinge
 
     def test_has_handle_factory(self):
@@ -166,32 +166,12 @@ class TestFactories(unittest.TestCase):
         )
         assert len(world.kinematic_structure_entities) == 3
 
-        assert root == handle.body.parent_kinematic_structure_entity
+        assert root == handle.root.parent_kinematic_structure_entity
 
         door.add_handle(handle)
 
-        assert door.body == handle.body.parent_kinematic_structure_entity
+        assert door.root == handle.root.parent_kinematic_structure_entity
         assert door.handle == handle
-
-    def test_double_door_factory(self):
-        world = World()
-        root = Body(name=PrefixedName("root"))
-        with world.modify_world():
-            world.add_body(root)
-        left_door = Door.create_with_new_body_in_world(
-            name=PrefixedName("left_door"), world=world
-        )
-        right_door = Door.create_with_new_body_in_world(
-            name=PrefixedName("right_door"), world=world
-        )
-        double_door = DoubleDoor.create_with_left_right_door_in_world(
-            left_door, right_door
-        )
-        semantic_double_door_annotations = world.get_semantic_annotations_by_type(
-            DoubleDoor
-        )
-
-        self.assertEqual(len(semantic_double_door_annotations), 1)
 
     def test_case_factory(self):
         world = World()
@@ -242,8 +222,8 @@ class TestFactories(unittest.TestCase):
 
         drawer.add_slider(slider)
 
-        assert drawer.body.parent_kinematic_structure_entity == slider.body
-        assert isinstance(slider.body.parent_connection, PrismaticConnection)
+        assert drawer.root.parent_kinematic_structure_entity == slider.root
+        assert isinstance(slider.root.parent_connection, PrismaticConnection)
         assert drawer.slider == slider
 
     def test_has_drawer_factory(self):
@@ -337,7 +317,7 @@ class TestFactories(unittest.TestCase):
         aperture = Aperture.create_with_new_region_in_world_from_body(
             name=PrefixedName("wall"),
             world=world,
-            body=door.body,
+            body=door.root,
         )
         semantic_aperture_annotations = world.get_semantic_annotations_by_type(Aperture)
         self.assertEqual(len(semantic_aperture_annotations), 1)
@@ -360,12 +340,12 @@ class TestFactories(unittest.TestCase):
         aperture = Aperture.create_with_new_region_in_world_from_body(
             name=PrefixedName("wall"),
             world=world,
-            body=door.body,
+            body=door.root,
         )
         wall.add_aperture(aperture)
 
         assert wall.apertures[0] == aperture
-        assert aperture.region.parent_kinematic_structure_entity == wall.body
+        assert aperture.root.parent_kinematic_structure_entity == wall.root
 
 
 if __name__ == "__main__":

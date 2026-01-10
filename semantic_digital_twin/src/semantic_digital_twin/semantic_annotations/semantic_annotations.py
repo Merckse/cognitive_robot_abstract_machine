@@ -49,18 +49,11 @@ from ..world_description.world_entity import (
 
 
 @dataclass(eq=False)
-class Furniture(HasCaseAsRootBody, ABC):
-    @classproperty
-    def _parent_connection_type(self) -> Type[Connection]:
-        return FixedConnection
+class Furniture(HasCaseAsRootBody, ABC): ...
 
 
 @dataclass(eq=False)
 class Handle(HasRootBody):
-
-    @classproperty
-    def _parent_connection_type(self) -> Type[Connection]:
-        return FixedConnection
 
     @classmethod
     def create_with_new_body_in_world(
@@ -133,10 +126,6 @@ class Fridge(
     """
 
     @classproperty
-    def _parent_connection_type(self) -> Type[Connection]:
-        return FixedConnection
-
-    @classproperty
     def opening_direction(self) -> Direction:
         return Direction.NEGATIVE_X
 
@@ -154,6 +143,10 @@ class Aperture(HasRootRegion):
         name: PrefixedName,
         world: World,
         world_root_T_self: Optional[HomogeneousTransformationMatrix] = None,
+        connection_limits: Optional[DegreeOfFreedomLimits] = None,
+        active_axis: Vector3 = Vector3.Z(),
+        connection_multiplier: float = 1.0,
+        connection_offset: float = 0.0,
         *,
         scale: Scale = Scale(),
     ) -> Self:
@@ -168,8 +161,8 @@ class Aperture(HasRootRegion):
         ).as_shapes()
         aperture_region.area = aperture_geometry
 
-        return cls._create_with_fixed_connection_in_world(
-            name, world, aperture_region, world_root_T_self
+        return cls._create_with_connection_in_world(
+            cls._parent_connection_type, name, world, aperture_region, world_root_T_self
         )
 
     @classmethod
@@ -248,10 +241,13 @@ class Door(HasRootBody, HasHandle, HasHinge):
 
 
 @dataclass(eq=False)
-class DoubleDoor(SemanticAnnotation, HasLeftRightDoor):
+class DoubleDoor(SemanticAnnotation):
     """
     A semantic annotation that represents a double door with left and right doors.
     """
+
+    left_door: Door
+    right_door: Door
 
 
 @dataclass(eq=False)
@@ -303,10 +299,6 @@ class Wardrobe(Furniture, HasDrawers, HasDoors):
 @dataclass(eq=False)
 class Floor(HasSupportingSurface):
 
-    @classproperty
-    def _parent_connection_type(self) -> Type[Connection]:
-        return FixedConnection
-
     @classmethod
     def create_with_new_body_in_world(
         cls,
@@ -331,7 +323,7 @@ class Floor(HasSupportingSurface):
             name=name, floor_polytope=polytope
         )
         self._create_with_connection_in_world(
-            cls._parent_connection_type, name, world, self.body, world_root_T_self
+            cls._parent_connection_type, name, world, self.root, world_root_T_self
         )
         return self
 
@@ -346,7 +338,7 @@ class Floor(HasSupportingSurface):
         :param floor_polytope: A list of 3D points defining the floor poly
         """
         room_body = Body.from_3d_points(name=name, points_3d=floor_polytope)
-        return cls(body=room_body)
+        return cls(root=room_body)
 
 
 @dataclass(eq=False)
@@ -362,11 +354,7 @@ class Room(SemanticAnnotation):
 
 
 @dataclass(eq=False)
-class Wall(HasRootBody, HasApertures):
-
-    @classproperty
-    def _parent_connection_type(self) -> Type[Connection]:
-        return FixedConnection
+class Wall(HasApertures):
 
     @classmethod
     def create_with_new_body_in_world(
@@ -401,7 +389,7 @@ class Wall(HasRootBody, HasApertures):
     def doors(self) -> Iterable[Door]:
         door = variable(Door, self._world.semantic_annotations)
         query = an(
-            entity(door).where(InsideOf(self.body, door.entry_way.region)() > 0.1)
+            entity(door).where(InsideOf(self.root, door.entry_way.region)() > 0.1)
         )
         return query.evaluate()
 

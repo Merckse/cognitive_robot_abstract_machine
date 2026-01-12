@@ -25,26 +25,25 @@ class NlpInterface(ABC):
     - A confirmation mechanism for user commands
     - An abstract method for filtering NLP responses
     """
-
-    """
-    stores the last NLP output
-    """
-    last_output = []
-
-    """
-    Stores the last confirmation result 
-    (affirm / deny)
-    """
-    last_confirmation = []
-
-    """
-    Timeout (in seconds) for waiting for NLP responses, default: 15
-    """
-    timeout : int = 15
-
     def __init__(self):
         # Initialize the ROS2 NLP node
         self.node = NlpNode()
+
+        """
+        stores the last NLP output
+        """
+        self.last_output = []
+
+        """
+        Stores the last confirmation result 
+        (affirm / deny)
+        """
+        self.last_confirmation = []
+
+        """
+        Timeout (in seconds) for waiting for NLP responses, default: 15
+        """
+        self.timeout: int = 15
 
     # TODO: write functions for all challenges
     """
@@ -93,10 +92,10 @@ class NlpInterface(ABC):
         """ draft start
         match challenge:
             case "GPSR":
-                NotImplemented()
+                raise NotImplementedError()
             """
 
-        NotImplemented()
+        raise NotImplementedError()
 
 
     def input_confirmation_loop(self, tries : int):
@@ -144,7 +143,8 @@ class NlpInterface(ABC):
         """
         Starts the NLP process and stores the result in last_output.
         """
-        self.last_output = NlpNode.talk_nlp(self.node, timeout=self.timeout)
+        self.last_output = self.node.talk_nlp(timeout=self.timeout)
+
 
     def confirm_last_response(self):
         """
@@ -230,9 +230,14 @@ class NlpNode(Node):
         self.get_logger().info(f"NLP output: {data}")
         try:
             return json.loads(data)
-        except:
-            rclpy.logwarn("Failed to parse NLP")
-            return None
+        except json.JSONDecodeError as e:
+            self.get_logger().warning(f"decode failed: {e}")
+        except KeyError as e:
+            self.get_logger().warning(f"missing key: {e}")
+        except TypeError as e:
+            self.get_logger().warning(f"Invalid type while parsing: {e}")
+
+        return None
 
     def _data_callback(self, data):
         """

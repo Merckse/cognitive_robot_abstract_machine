@@ -8,6 +8,8 @@ import subprocess
 import socket
 import psutil
 from time import sleep
+import time
+import requests
 
 
 
@@ -18,11 +20,39 @@ class NlpInterfaceStartingDemo(NlpInterface):
 
     def filter_response(self, response : list[Any], challenge : str):
         # TODO: role einbinden, damit challenge ausgegeben wird
-        return response[1]
+        return response[2][2] # should return entity from entity_elem
 
 def is_port_in_use(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('0.0.0.0', port)) == 0
+
+def wait_for_rasa(
+    url="http://localhost:5005/status",
+    timeout=120,
+    interval=1
+):
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            r = requests.get(url, timeout=1)
+            if r.status_code == 200:
+                print("Rasa is ready")
+                return True
+        except requests.exceptions.RequestException:
+            pass
+        time.sleep(interval)
+
+    raise TimeoutError("Rasa did not start in time")
+
+def wait_for_whisper(proc, keyword="started", timeout=60):
+    start = time.time()
+    while time.time() - start < timeout:
+        line = proc.stdout.readline()
+        if keyword in line:
+            print(f"Found '{keyword}'")
+            return True
+    raise TimeoutError("Whisper did not start")
+
 
 def end_process(procs : list[subprocess.Popen]):
     for proc in procs:
@@ -45,6 +75,7 @@ def main():
 
     Note: If interrupted too early, processes might not be terminated, if possible, terminate when asked, else see DEBUG
 
+    Don't want to automate this, because accidentally killing wrong processes is not that good ._.
     DEBUG: if port 5005 is blocked, in terminal:
             lsof -i :5005
     take PID and:
@@ -52,25 +83,31 @@ def main():
     """
     nlp = NlpInterfaceStartingDemo()
 
+
     # DEBUG
-    # nlp.last_output = ["", "GPSR"]
+    # nlp.last_output = ["Start", "", ["", "", "GPSR"]]
 
     while True:
         # starts NLP Pipeline for demo start
         proc = subprocess.Popen('bash -i -c "nlp_rasa_start"', shell=True)
-        sleep(45)
+        wait_for_rasa()
 
-        proc2 = subprocess.Popen('bash -i -c "nlp_whisper_start"', shell=True)
-        sleep(20)
+        proc2 = subprocess.Popen('bash -i -c "nlp_whisper_start"', shell=True, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True)
+        wait_for_whisper(proc2)
 
         nlp.input_confirmation_loop(4)
+
+        # if intent wasn't understood right even after confirmation and repeating n-times
+        if nlp.last_output[0] != "Start" and nlp.last_output[0] != "Change":
+            raise NotImplementedError("NLP Intent should not happen.")
 
         end_process([proc, proc2])
 
         # waits until rasa port is free again
         while is_port_in_use(5005):
             print("Port 5005 is still in use, waiting...")
-            sleep(3)
+            sleep(2)
 
         if nlp.last_output is None:
             print("Oh no :((")
@@ -86,27 +123,27 @@ def main():
                 proc = subprocess.Popen('bash -i -c "nlp_rasa_restaurant_start"', shell=True)
             case _:
                 NotImplemented()
-        sleep(45)
-
-        proc2 = subprocess.Popen('bash -i -c "nlp_whisper_start"', shell=True)
-        sleep(20)
+        wait_for_rasa()
+        proc2 = subprocess.Popen('bash -i -c "nlp_whisper_start"', shell=True, stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, text=True)
+        wait_for_whisper(proc2)
 
         match nlp.filter_response(nlp.last_output, ""):
             case 'Receptionist':
-                NotImplemented()
+                print("Insert code here.......")
             case 'GPSR':
-                NotImplemented()
+                print("Insert code here.......")
                 # gpsr_01.main()
             case 'Restaurant':
-                NotImplemented()
+                print("Insert code here.......")
             case _:
-                NotImplemented()
+                raise NotImplementedError()
 
         end_process([proc, proc2])
 
         while is_port_in_use(5005):
             print("Port 5005 is still in use, waiting...")
-            sleep(3)
+            sleep(2)
 
         print("If you want to stop, interrupt now")
         i = 5

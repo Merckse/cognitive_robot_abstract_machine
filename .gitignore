@@ -65,3 +65,10 @@ qtcreator-*
 # Catkin custom files
 CATKIN_IGNORE
 poetry.lock
+
+# Created during tests
+file::memory:
+
+# Documentation build artifacts
+**/doc/_build/
+**/.jupyter_cache/

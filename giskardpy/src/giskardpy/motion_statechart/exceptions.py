@@ -1,21 +1,56 @@
-from dataclasses import dataclass
+from __future__ import annotations
 
-from krrood.adapters.json_serializer import JSON_TYPE_NAME, JSONSerializableTypeRegistry
-from krrood.utils import get_full_class_name
-from typing_extensions import Any, Dict
+from dataclasses import dataclass, field
+
+from typing_extensions import TYPE_CHECKING
+
+from krrood.symbolic_math.symbolic_math import FloatVariable, Scalar
+from krrood.utils import DataclassException
+
+if TYPE_CHECKING:
+    from giskardpy.motion_statechart.graph_node import (
+        MotionStatechartNode,
+        TrinaryCondition,
+    )
 
 
-class MotionStatechartError(Exception):
-    pass
+@dataclass
+class MotionStatechartError(DataclassException):
+    message: str = field(init=False)
 
 
-class GoalInitalizationException(MotionStatechartError):
-    pass
+@dataclass
+class NodeInitializationError(MotionStatechartError):
+    node: MotionStatechartNode
+
+    def __post_init__(self):
+        self.message = f'Failed to initialize Goal "{self.node.unique_name}". Reason: {self.message}'
 
 
+@dataclass
 class EmptyMotionStatechartError(MotionStatechartError):
-    def __init__(self):
-        super().__init__("MotionStatechart is empty.")
+    message: str = field(default="MotionStatechart is empty.", init=False)
+
+
+@dataclass
+class NodeAlreadyBelongsToDifferentNodeError(NodeInitializationError):
+    new_node: MotionStatechartNode
+
+    def __post_init__(self):
+        if self.new_node.parent_node is not None:
+            parent_name = self.new_node.parent_node.unique_name
+        else:
+            parent_name = "top level of motion statechart"
+        self.message = (
+            f'Node "{self.new_node.unique_name}" already belongs to "{parent_name}".'
+        )
+
+
+@dataclass
+class EndMotionInGoalError(NodeInitializationError):
+    message: str = field(
+        default="Goals are not allowed to have EndMotion as a child.", init=False
+    )
 
 
 @dataclass
@@ -23,7 +58,7 @@ class NodeNotFoundError(MotionStatechartError):
     name: str
 
     def __post_init__(self):
-        super().__init__(f"Node '{self.name}' not found in MotionStatechart.")
+        self.message = f"Node '{self.name}' not found in MotionStatechart."
 
 
 @dataclass
@@ -31,34 +66,46 @@ class NotInMotionStatechartError(MotionStatechartError):
     name: str
 
     def __post_init__(self):
-        super().__init__(
-            f"Operation can't be performed because node '{self.name}' does not belong to a MotionStatechart."
-        )
+        self.message = f"Operation can't be performed because node '{self.name}' does not belong to a MotionStatechart."
 
 
 @dataclass
 class InvalidConditionError(MotionStatechartError):
-    expression: Any
+    condition: TrinaryCondition
+    new_expression: Scalar
 
     def __post_init__(self):
-        super().__init__(
-            f"Invalid condition: {self.expression}. Did you forget '.observation_variable'?"
+        self.message = f'Invalid {self.condition.kind.name} condition of node "{self.condition.owner.unique_name}": "{self.new_expression}". Reason: "{self.message}"'
+
+
+@dataclass
+class InputNotExpressionError(InvalidConditionError):
+    message: str = field(
+        default="Input is not an expression. Did you forget '.observation_variable'?",
+        init=False,
+    )
+
+
+@dataclass
+class SelfInStartConditionError(InvalidConditionError):
+    message: str = field(
+        default=f"Start condition cannot contain the node itself.", init=False
+    )
+
+
+@dataclass
+class NonObservationVariableError(InvalidConditionError):
+    non_observation_variable: FloatVariable
+
+    def __post_init__(self):
+        self.message = f'Contains "{self.non_observation_variable}", which is not an observation variable.'
+
+
+@dataclass
+class MissingContextExtensionError(MotionStatechartError):
+    expected_extension: type
+
+    def __post_init__(self):
+        self.message = (
+            f'Missing context extension "{self.expected_extension.__name__}".'
         )
-
-
-def serialize_exception(obj: Exception) -> Dict[str, Any]:
-
-    return {
-        JSON_TYPE_NAME: get_full_class_name(type(obj)),
-        "value": str(obj),
-    }
-
-
-def deserialize_exception(data: Dict[str, Any], **kwargs) -> Exception:
-
-    return Exception(data["value"])
-
-
-JSONSerializableTypeRegistry().register(
-    Exception, serialize_exception, deserialize_exception
-)

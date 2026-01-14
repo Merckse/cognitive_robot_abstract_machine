@@ -20,7 +20,7 @@ class NlpInterfaceStartingDemo(NlpInterface):
 
     def filter_response(self, response : list[Any], challenge : str):
         # TODO: role einbinden, damit challenge ausgegeben wird
-        return response[2][2] # should return entity from entity_elem
+        return response[2][1] # should return value from entity_elem
 
 def is_port_in_use(port):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -85,7 +85,7 @@ def main():
 
 
     # DEBUG
-    # nlp.last_output = ["Start", "", ["", "", "GPSR"]]
+    # nlp.last_output = ["Start", "", ["", "GPSR"]]
 
     while True:
         # starts NLP Pipeline for demo start

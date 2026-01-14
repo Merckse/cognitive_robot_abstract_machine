@@ -10,10 +10,11 @@ if result and result.res:
         if obj.description and obj.pose:
             description = obj.description[0]
             if "colabottle" in description.lower():
-                position = obj.pose[0].pose.position
-                processed_results.append(
-                    {"description": description, "position": position}
-                )
+                for pose_stamped in obj.pose:
+                    position = pose_stamped.pose.position
+                    processed_results.append(
+                        {"description": description, "position": position}
+                    )
 
 if processed_results:
     print(processed_results)

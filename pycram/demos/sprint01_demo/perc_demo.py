@@ -2,8 +2,8 @@ import rclpy
 from pycram.external_interfaces import robokudo
 
 rclpy.init()
-result = robokudo.query_object_str("beverage")
-# result = robokudo.query_all_objects()
+# result = robokudo.query_object_str("beverage")
+result = robokudo.query_all_objects()
 processed_results = []
 if result and result.res:
     for obj in result.res:

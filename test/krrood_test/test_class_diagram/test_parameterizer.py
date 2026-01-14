@@ -3,6 +3,8 @@ from random_events.set import Set
 from random_events.variable import Continuous, Integer, Symbolic
 from krrood.class_diagrams.class_diagram import ClassDiagram
 from krrood.class_diagrams.parameterizer import Parameterizer
+from pycram.datastructures.enums import TorsoState
+from pycram.robot_plans import MoveTorsoAction
 from ..dataset.example_classes import (
     Position,
     Orientation,
@@ -104,5 +106,27 @@ def test_create_fully_factorized_distribution():
 
 
 
+
+def test_parameterize_movetorso_action():
+    """
+    Test Parameterizer for MoveTorsoAction with multiple torso states.
+    """
+    class_diagram = ClassDiagram([MoveTorsoAction])
+    wrapped_action = class_diagram.get_wrapped_class(MoveTorsoAction)
+    parameterizer = Parameterizer
+    variables = parameterizer(wrapped_action)
+
+    expected_variable = Symbolic(
+        "MoveTorsoAction.torso_state",
+        Set.from_iterable(list(TorsoState))
+    )
+
+    variable = variables[0]
+    assert variable.name == expected_variable.name
+    assert set(variable.domain) == set(expected_variable.domain)
+
+    domain_values = {str(value) for value in variable.domain}
+    expected_values = {str(int(state)) for state in TorsoState}
+    assert domain_values == expected_values
 
 

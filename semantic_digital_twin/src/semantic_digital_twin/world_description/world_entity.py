@@ -133,7 +133,9 @@ class WorldEntityWithID(WorldEntity, SubclassJSONSerializer):
         result["id"] = to_json(self.id)
         return result
 
-    def _track_object_in_from_json(self, **kwargs) -> WorldEntityWithIDKwargsTracker:
+    def _track_object_in_from_json(
+        self, from_json_kwargs
+    ) -> WorldEntityWithIDKwargsTracker:
         """
         Add this object to the WorldEntityWithIDKwargsTracker.
 
@@ -141,10 +143,10 @@ class WorldEntityWithID(WorldEntity, SubclassJSONSerializer):
             Always use this when referencing WorldEntityWithID in the current class.
             Call this when the _from_json
 
-        :param kwargs: The kwargs passed to the _from_json method.
+        :param from_json_kwargs: The kwargs passed to the _from_json method.
         :return: The instance of WorldEntityWithIDKwargsTracker.
         """
-        tracker = WorldEntityWithIDKwargsTracker.from_kwargs(kwargs)
+        tracker = WorldEntityWithIDKwargsTracker.from_kwargs(from_json_kwargs)
         tracker.add_world_entity_with_id(self)
         return tracker
 
@@ -482,7 +484,7 @@ class Body(KinematicStructureEntity):
             name=PrefixedName.from_json(data["name"], **kwargs),
             id=from_json(data["id"]),
         )
-        result._track_object_in_from_json(**kwargs)
+        result._track_object_in_from_json(kwargs)
 
         collision = ShapeCollection.from_json(data["collision"], **kwargs)
         visual = ShapeCollection.from_json(data["visual"], **kwargs)
@@ -619,7 +621,7 @@ class Region(KinematicStructureEntity):
         result = cls(
             name=PrefixedName.from_json(data["name"]), id=from_json(data["id"])
         )
-        result._track_object_in_from_json(**kwargs)
+        result._track_object_in_from_json(kwargs)
         area = ShapeCollection.from_json(data["area"], **kwargs)
         for shape in area:
             shape.origin.reference_frame = result
@@ -744,7 +746,7 @@ class SemanticAnnotation(WorldEntityWithID, SubclassJSONSerializer):
                 current_result = cls._item_from_json(current_data, **kwargs)
             init_args[k] = current_result
         result = cls(**init_args)
-        result._track_object_in_from_json(**kwargs)
+        result._track_object_in_from_json(kwargs)
         return result
 
     @classmethod

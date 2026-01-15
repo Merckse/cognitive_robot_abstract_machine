@@ -1,35 +1,23 @@
 import unittest
 from time import sleep
-
 import pytest
 
 from semantic_digital_twin.exceptions import IncorrectScaleError
-from semantic_digital_twin.world_description.geometry import Scale
-from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
-from semantic_digital_twin.spatial_types.spatial_types import (
-    HomogeneousTransformationMatrix,
-)
+from semantic_digital_twin.worlddescription.geometry import Scale
+from semantic_digital_twin.datastructures.prefixedname import PrefixedName
+from semantic_digital_twin.spatialtypes.spatialtypes import HomogeneousTransformationMatrix
 from semantic_digital_twin.semantic_annotations.semantic_annotations import (
-    Handle,
-    Door,
-    Container,
-    Drawer,
-    Dresser,
-    Wall,
+    Handle, Door, Container, Drawer, Dresser, Wall
 )
 from semantic_digital_twin.semantic_annotations.factories import (
-    HandleFactory,
-    Direction,
-    DoorFactory,
-    ContainerFactory,
-    DoubleDoorFactory,
-    DrawerFactory,
-    DresserFactory,
-    WallFactory,
-    SemanticPositionDescription,
-    HorizontalSemanticDirection,
-    VerticalSemanticDirection,
+    HandleFactory, Direction, DoorFactory, ContainerFactory, DoubleDoorFactory,
+    DrawerFactory, DresserFactory, WallFactory, SemanticPositionDescription,
+    HorizontalSemanticDirection, VerticalSemanticDirection,
+    # NEU:
+    PerceivedObjectFactory, query_object_by_class, query_objects_by_class,
+    get_all_perceived_objects, query_object_by_name
 )
+from semantic_digital_twin.world import World
 
 
 class TestFactories(unittest.TestCase):
@@ -280,6 +268,57 @@ class TestFactories(unittest.TestCase):
 
         wall: Wall = semantic_wall_annotations[0]
         self.assertEqual(world.root, wall.body)
+
+
+def test_perceived_object_factory():
+    """Test PerceivedObjectFactory creation and queries."""
+    from semantic_digital_twin.semantic_annotations.factories import (
+        PerceivedObjectFactory,
+        query_object_by_class,
+        query_objects_by_class,
+        get_all_perceived_objects,
+        query_object_by_name,
+    )
+    from semantic_digital_twin.worlddescription.geometry import Scale
+    from semantic_digital_twin.datastructures.prefixedname import PrefixedName
+
+    # Test 1: Single object creation
+    factory = PerceivedObjectFactory(
+        perceived_object_class="apple",
+        object_dimensions=Scale(x=0.08, y=0.08, z=0.08)
+    )
+    world = factory.create()
+
+    # Check: World contains 1 body + 1 semantic annotation
+    assert len(world.bodies) == 1
+    assert len(world.semantic_annotations) == 1
+
+    # Test queries
+    apple = query_object_by_class(world, "apple")
+    assert apple is not None
+    assert apple.object_class == "apple"
+
+    all_objects = get_all_perceived_objects(world)
+    assert len(all_objects) == 1
+
+    # Test 2: Multiple objects
+    scene_world = World(name="kitchen_scene")
+
+    objects = [
+        ("apple", Scale(x=0.08, y=0.08, z=0.08)),
+        ("banana", Scale(x=0.02, y=0.02, z=0.12)),
+    ]
+
+    for obj_class, dims in objects:
+        factory = PerceivedObjectFactory(perceived_object_class=obj_class, object_dimensions=dims)
+        obj_world = factory.create()
+        scene_world.merge_world(obj_world)
+
+    apples = query_objects_by_class(scene_world, "apple")
+    assert len(apples) == 1
+
+    all_perceived = get_all_perceived_objects(scene_world)
+    assert len(all_perceived) == 2
 
 
 if __name__ == "__main__":

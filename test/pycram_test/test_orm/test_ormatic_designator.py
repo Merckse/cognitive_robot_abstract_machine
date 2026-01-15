@@ -1,19 +1,10 @@
-import logging
-from copy import deepcopy
-
 import numpy as np
 import pytest
-import rclpy
-import sqlalchemy.sql.elements
-
-from krrood.entity_query_language.symbol_graph import SymbolGraph
-from krrood.ormatic.dao import to_dao
-from krrood.ormatic.utils import create_engine
-from semantic_digital_twin.adapters.viz_marker import VizMarkerPublisher
-from semantic_digital_twin.robots.pr2 import PR2
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from krrood.ormatic.dao import to_dao
+from krrood.ormatic.utils import create_engine
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import (
     TorsoState,
@@ -24,7 +15,6 @@ from pycram.datastructures.enums import (
 )
 from pycram.datastructures.grasp import GraspDescription
 from pycram.datastructures.pose import PyCramPose, PoseStamped
-from pycram.designator import NamedObject
 from pycram.language import SequentialPlan, ParallelPlan
 from pycram.orm.ormatic_interface import *
 from pycram.process_module import simulated_robot
@@ -44,29 +34,6 @@ from pycram.robot_plans import (
     PickUpAction,
     PlaceAction,
 )
-from pycram.testing import ApartmentWorldTestCase
-
-
-class ORMaticBaseTestCaseMixin(ApartmentWorldTestCase):
-    engine: sqlalchemy.engine
-    session: Session
-
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
-        cls.engine = create_engine("sqlite:///:memory:")
-
-    def setUp(self):
-        super().setUp()
-        session = Session(engine)
-        Base.metadata.create_all(bind=session.bind)
-
-    def tearDown(self):
-        super().tearDown()
-        Base.metadata.drop_all(session.bind)
-        session.expunge_all()
-        session.close()
-
 
 engine = create_engine("sqlite:///:memory:")
 
@@ -238,7 +205,9 @@ def test_inheritance(database, mutable_model_world):
                 world.get_body_by_name("milk.stl"),
                 Arms.LEFT,
                 GraspDescription(
-                    ApproachDirection.FRONT, VerticalAlignment.NoAlignment, False
+                    ApproachDirection.FRONT,
+                    VerticalAlignment.NoAlignment,
+                    robot_view.left_arm.manipulator,
                 ),
             ),
             NavigateActionDescription(

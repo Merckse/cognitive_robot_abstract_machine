@@ -3,7 +3,8 @@ from enum import Enum
 from typing import Optional
 
 from giskardpy.data_types.exceptions import ForceTorqueSaysNoException
-from giskardpy.motion_statechart.context import BuildContext
+from giskardpy.motion_statechart.context import BuildContext, ExecutionContext
+from giskardpy.motion_statechart.data_types import DefaultWeights
 from giskardpy.motion_statechart.goals.templates import Sequence, Parallel
 from giskardpy.motion_statechart.graph_node import Goal, NodeArtifacts, CancelMotion
 from giskardpy.motion_statechart.ros2_nodes.force_torque_monitor import (
@@ -34,6 +35,8 @@ class HSRGripper(Enum):
 @dataclass(repr=False, eq=False)
 class PickUp(Goal):
     # root_link: KinematicStructureEntity = field(kw_only=True)
+    # NOTE: Pickup should be called split, meaning grabbing first and then separately retracting
+    # because after grasping the object it should get attached to the too frame in semdt
     manipulator: Manipulator = field(kw_only=True)
     object_geometry: Body = field(kw_only=True)
     ft: bool = field(kw_only=True, default=False)
@@ -50,8 +53,8 @@ class PickUp(Goal):
                     manipulator=self.manipulator, object_geometry=self.object_geometry
                 ),
                 CloseHand(manipulator=self.manipulator, ft=self.ft),
-                # PullUp(manipulator=self.manipulator, ft=self.ft)
-                # Retracting(manipulator=self.manipulator, distance=0.15)
+                PullUp(manipulator=self.manipulator, ft=self.ft),
+                # Retracting(manipulator=self.manipulator)
             ]
         )
         self.add_node(self.sequence)
@@ -64,15 +67,17 @@ class PickUp(Goal):
 
 @dataclass(repr=False, eq=False)
 class OpenHand(Goal):
+    # NOTE: Only works in simulation, giskard cant move gripper irl
     manipulator: Manipulator = field(kw_only=True)
 
     def expand(self, context: BuildContext) -> None:
         # TODO remove hsr hardcoding
-        self.joint_goal = JointPositionList(
+        position_list = JointPositionList(
             goal_state=JointState.from_str_dict(
                 {"hand_motor_joint": HSRGripper.open_gripper.value}, context.world
             )
         )
+        self.joint_goal = position_list
         self.add_node(self.joint_goal)
 
     def build(self, context: BuildContext) -> NodeArtifacts:
@@ -185,6 +190,7 @@ class Grasping(Goal):
 
 @dataclass(repr=False, eq=False)
 class CloseHand(Goal):
+    # NOTE: Only works in simulation, giskard cant move gripper irl
     manipulator: Manipulator = field(kw_only=True)
     ft: bool = field(kw_only=True, default=False)
 
@@ -210,25 +216,30 @@ class PullUp(Goal):
 
     def expand(self, context: BuildContext) -> None:
         super().expand(context)
-        if not self.ft:
+        if self.ft:
             self._ft = ForceImpactMonitor(threshold=50, topic_name="ft_irgendwas")
             self._cm = CancelMotion(exception=ForceTorqueSaysNoException("No"))
             self._cm.start_condition = trinary_logic_not(self._ft.observation_variable)
             self.add_node(self._ft)
             self.add_node(self._cm)
 
-        pose = PoseStamped()
-        # magic
-        self._cart_pose = CartesianPose(
+        # Note: Assumes x axis of tool frame is pointing up
+        # Transforming point from map to tool frame is problematic, as we then need to evaluate the position at runtime
+        point = Point3(0.15, 0.0, 0.0, reference_frame=self.manipulator.tool_frame)
+        self._cart_position = CartesianPosition(
             root_link=context.world.root,
             tip_link=self.manipulator.tool_frame,
-            goal_pose=pose,
+            goal_point=point,
         )
+        self.add_node(self._cart_position)
 
     def build(self, context: BuildContext) -> NodeArtifacts:
         artifacts = super().build(context)
 
-        artifacts.observation = trinary_logic_and(
-            self._ft.observation_variable, self._cart_pose.observation_variable
-        )
+        if self.ft:
+            artifacts.observation = trinary_logic_and(
+                self._ft.observation_variable, self._cart_position.observation_variable
+            )
+        else:
+            artifacts.observation = self._cart_position.observation_variable
         return artifacts

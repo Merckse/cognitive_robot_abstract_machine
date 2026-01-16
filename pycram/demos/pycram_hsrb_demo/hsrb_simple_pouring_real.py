@@ -7,6 +7,7 @@ import numpy as np
 import rclpy
 from rclpy.action import ActionClient
 from rclpy.executors import SingleThreadedExecutor
+from suturo_resources.queries import eql_is_supported_by2
 from suturo_resources.suturo_map import load_environment
 from tmc_control_msgs.action import GripperApplyEffort
 
@@ -45,6 +46,7 @@ from pycram.robot_plans import (
 from pycram.robot_plans import ParkArmsActionDescription
 from pycram.datastructures.dataclasses import Context
 from semantic_digital_twin.adapters.mesh import STLParser
+from semantic_digital_twin.adapters.viz_marker import VizMarkerPublisher
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.robots.abstract_robot import ParallelGripper
 from semantic_digital_twin.robots.hsrb import HSRB
@@ -77,6 +79,7 @@ hsrb_world = fetch_world_from_service(node)
 model_sync = ModelSynchronizer(world=hsrb_world, node=node)
 state_sync = StateSynchronizer(world=hsrb_world, node=node)
 
+# hsrb_world.transform(spatial_object=)
 
 #
 # try:
@@ -84,25 +87,30 @@ state_sync = StateSynchronizer(world=hsrb_world, node=node)
 #     logger.debug("was in true")
 # except Exception as e:
 #     logger.debug(e)
-#     env_world = load_environment()
-#     bowl_world = STLParser(
-#         os.path.join(
-#             os.path.dirname(__file__), "..", "..", "resources", "objects", "bowl.stl"
-#         )
-#     ).parse()
-#     milk_world = STLParser(
-#         os.path.join(
-#             os.path.dirname(__file__), "..", "..", "resources", "objects", "milk.stl"
-#         )
-#     ).parse()
-#     with hsrb_world.modify_world():
-#         hsrb_world.merge_world(env_world)
-#         hsrb_world.merge_world_at_pose(
-#             milk_world,
-#             pose=HomogeneousTransformationMatrix.from_xyz_rpy(
-#                 x=1.0, y=6.22, z=0.8, yaw=np.pi / 2
-#             ),
-#         )
+env_world = load_environment()
+bowl_world = STLParser(
+    os.path.join(
+        os.path.dirname(__file__), "..", "..", "resources", "objects", "bowl.stl"
+    )
+).parse()
+milk_world = STLParser(
+    os.path.join(
+        os.path.dirname(__file__), "..", "..", "resources", "objects", "milk.stl"
+    )
+).parse()
+with hsrb_world.modify_world():
+    hsrb_world.merge_world(env_world)
+    hsrb_world.merge_world_at_pose(
+        milk_world,
+        pose=HomogeneousTransformationMatrix.from_xyz_rpy(
+            x=1.0, y=6.22, z=0.8, yaw=np.pi / 2
+        ),
+    )
+base_link = hsrb_world.get_kinematic_structure_entity_by_name(name="base_link")
+base_link_x = base_link.global_pose.to_position().x
+base_link_y = base_link.global_pose.to_position().y
+
+
 def add_box(name: str, scale_xyz: tuple[float, float, float]):
     body = Body(
         name=PrefixedName(name),
@@ -147,16 +155,16 @@ def perceive_and_spawn_all_objects():
                         pos_x=object_pose.position.x,
                         pos_y=object_pose.position.y,
                         pos_z=object_pose.position.z,
-                        quat_x=object_pose.orientation.x,
-                        quat_y=object_pose.orientation.y,
-                        quat_z=object_pose.orientation.z,
-                        quat_w=object_pose.orientation.w,
+                        quat_x=1.0,  # object_pose.orientation.x
+                        quat_y=6.22,
+                        quat_z=0.8,
+                        quat_w=np.pi / 2,
                     ),
                 )
             )
 
 
-# VizMarkerPublisher(hsrb_world, node, throttle_state_updates=5)
+VizMarkerPublisher(hsrb_world, node, throttle_state_updates=5)
 # PosePublisher(hsrb_world, node)
 context = Context(
     hsrb_world, hsrb_world.get_semantic_annotations_by_type(HSRB)[0], ros_node=node
@@ -173,11 +181,10 @@ plan1 = SequentialPlan(
         )
     ),
 )
-perceive_and_spawn_all_objects()
-
+# perceive_and_spawn_all_objects()
+print(perceived_objects)
 plan2 = SequentialPlan(
     context,
-    ParkArmsActionDescription(Arms.BOTH),
     MoveTorsoActionDescription(TorsoState.HIGH),
     PickUpActionDescription(
         arm=Arms.LEFT,
@@ -185,6 +192,16 @@ plan2 = SequentialPlan(
         grasp_description=grasp,
     ),
 )
-with real_robot:
 
+with real_robot:
+    # print(base_link.global_pose.to_position().x)
+    # print(hsrb_world.get_semantic_annotations_by_name("hsrb")[0])
+    # plan2.perform()
+    # print(base_link_x)
+    # print(base_link_y)
+    # print(eql_is_supported_by2(load_environment().get_body_by_name("cookingTable_body"), base_link_x, base_link_y))
     plan2.perform()
+    # time.sleep(5000)
+
+
+exit(0)

@@ -243,3 +243,83 @@ class PullUp(Goal):
         else:
             artifacts.observation = self._cart_position.observation_variable
         return artifacts
+
+
+@dataclass(repr=False, eq=False)
+class Retracting(Goal):
+    """
+    Retracts the tool frame of a manipulator by a certain distance.
+    Generic implementation that works with any reference frame.
+    """
+
+    manipulator: Manipulator = field(kw_only=True)
+    distance: float = field(default=0.15, kw_only=True)
+    reference_frame: Optional[KinematicStructureEntity] = field(
+        default=None, kw_only=True
+    )
+    velocity: float = field(default=0.1, kw_only=True)
+    weight: float = field(default=DefaultWeights.WEIGHT_ABOVE_CA, kw_only=True)
+
+    def expand(self, context: BuildContext) -> None:
+        # Default to manipulator's tool frame if no reference frame is provided
+        ref_frame = (
+            self.reference_frame
+            if self.reference_frame
+            else self.manipulator.tool_frame
+        )
+        tip_link = self.manipulator.tool_frame
+        root_link = context.world.root
+
+        # Hand or gripper frames have an outgoing z axis,
+        # base frames have an outgoing x axis
+        direction = Vector3()
+        if "hand" in ref_frame.name.name or "gripper" in ref_frame.name.name:
+            direction.z = -self.distance
+        else:
+            direction.x = -self.distance
+
+        direction.reference_frame = ref_frame
+
+        # TODO: Fix so that it doesnt use transform (makes it so that Point is evaluated not at runtime)
+        goal_point = Point3(0, 0, 0, reference_frame=tip_link)
+        goal_point = context.world.transform(
+            target_frame=ref_frame, spatial_object=goal_point
+        )
+        goal_point.x += direction.x
+        goal_point.y += direction.y
+        goal_point.z += direction.z
+
+        world_goal_point = context.world.transform(
+            target_frame=root_link, spatial_object=goal_point
+        )
+
+        # Linear movement task
+        self.cart_pos = CartesianPosition(
+            root_link=root_link,
+            tip_link=tip_link,
+            goal_point=world_goal_point,
+            weight=self.weight,
+        )
+
+        # Keep Orientation task (Align current tool Z with world Z or keep it fixed)
+        self.keep_ori = AlignPlanes(
+            root_link=root_link,
+            tip_link=tip_link,
+            tip_normal=Vector3.Z(tip_link),
+            goal_normal=context.world.transform(
+                target_frame=root_link, spatial_object=Vector3.Z(tip_link)
+            ),
+            weight=self.weight,
+        )
+
+        self.add_node(parallel := Parallel([self.cart_pos, self.keep_ori]))
+        self.parallel = parallel
+
+    def build(self, context: BuildContext) -> NodeArtifacts:
+        artifacts = super().build(context)
+        # Goal is finished when both position and orientation constraints are satisfied
+        artifacts.observation = self.parallel.observation_variable
+        return artifacts
+
+    def on_start(self, context: ExecutionContext):
+        super().on_start(context)

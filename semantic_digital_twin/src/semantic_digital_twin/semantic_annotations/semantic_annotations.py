@@ -1048,3 +1048,16 @@ class Saucer(HasBody, IsPerceivable):
     """
     A saucer.
     """
+
+@dataclass(eq=False)
+class Softball(HasBody, IsPerceivable):
+    """
+    A softball.
+    """
+
+
+@dataclass(eq=False)
+class Marker(HasBody, IsPerceivable):
+    """
+    A marker (e.g., black marker).
+    """

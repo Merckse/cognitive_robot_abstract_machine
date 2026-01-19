@@ -1170,7 +1170,7 @@ class TestCartesianTasks:
         with hsr_world_setup.modify_world():
             box = Body(
                 name=PrefixedName("muh"),
-                collision=ShapeCollection([Box(scale=Scale(0.1, 0.1, 0.1))]),
+                collision=ShapeCollection([Box(scale=Scale(0.1, 0.2, 0.1))]),
             )
             dof = DegreeOfFreedom(
                 lower_limits=DerivativeMap(data=[None, -1.0, None, None]),

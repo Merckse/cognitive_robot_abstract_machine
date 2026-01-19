@@ -2335,6 +2335,7 @@ class TestOpenClose:
                 connection_limits=DegreeOfFreedomLimits(
                     lower_limit=lower_limits, upper_limit=upper_limits
                 ),
+                active_axis=Vector3.Z()
             )
 
             door.add_handle(handle)

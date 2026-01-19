@@ -1,6 +1,8 @@
 import logging
 import threading
 from threading import Thread
+
+import rclpy
 from rclpy.action.client import ClientGoalHandle
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -12,14 +14,17 @@ from typing_extensions import List, Callable, Optional
 from typing import Any
 from ..datastructures.pose import PoseStamped
 from ..designator import ObjectDesignatorDescription
+from geometry_msgs.msg import PointStamped
 
 logger = logging.getLogger(__name__)
 
 # Global variables for shared resources
 robokudo_action_client: ActionClient | None = None
 robokudo_node: Node | None = None
+chd: Node | None = None
+current_human_position: PoseStamped | None = None
 is_init = False
-current_goal_handle: ClientGoalHandle | None = None
+goal_handle: ClientGoalHandle | None = None
 executor: MultiThreadedExecutor | None = None
 executor_thread: Thread | None = None
 
@@ -27,7 +32,7 @@ executor_thread: Thread | None = None
 def create_robokudo_action_client():
     """Creates a new ActionClient and a MultithreadedExecutor for the Robokudo interface."""
 
-    global robokudo_node, executor, executor_thread
+    global robokudo_node, executor, executor_thread, chd
 
     if robokudo_node is None:
         robokudo_node = Node("robokudo_interface_client")
@@ -41,6 +46,9 @@ def create_robokudo_action_client():
         executor_thread = Thread(target=executor.spin, daemon=True)
         executor_thread.start()
         logger.info("Started MultiThreadedExecutor")
+
+    if chd is None:
+        chd = CONTINUOUS_HUMAN_DETECTION()
 
     if not client.wait_for_server(timeout_sec=10.0):
         logger.error("robokudo_query action server not available")
@@ -81,6 +89,7 @@ def send_query(
     obj_type: Optional[str] = None,
     region: Optional[str] = None,
     attributes: Optional[List[str]] = None,
+    continues: Optional[bool] = False,
 ) -> Any:
     """Generic function to send a query to RoboKudo."""
 
@@ -98,6 +107,7 @@ def send_query(
     result_event = threading.Event()
 
     def goal_response_callback(future):
+        global goal_handle
         goal_handle = future.result()
         if not goal_handle.accepted:
             logger.info("Goal rejected")
@@ -113,17 +123,22 @@ def send_query(
         result_event.set()
 
     logger.info("Send Query")
-    send_goal_future = robokudo_action_client.send_goal_async(goal)
-    send_goal_future.add_done_callback(goal_response_callback)
-
-    result_event.wait()
+    if continues:
+        send_goal_future = robokudo_action_client.send_goal_async(goal)
+        send_goal_future.add_done_callback(goal_response_callback)
+    else:
+        send_goal_future = robokudo_action_client.send_goal_async(goal)
+        send_goal_future.add_done_callback(goal_response_callback)
+        result_event.wait()
 
     return result
 
 
 @init_robokudo_interface
-def query_human() -> PoseStamped:
-    """Query RoboKudo for human detection and return the detected human's pose."""
+def query_human() -> "PointStamped":
+    """Query RoboKudo for human detection and return the detected human's pose.
+    This only querys one human.
+    """
     result = send_query(obj_type="human")
     posi = None
     if result is None:
@@ -134,6 +149,16 @@ def query_human() -> PoseStamped:
                 if posi is None or p.pose > posi:
                     posi = p.pose
     return posi
+
+
+@init_robokudo_interface
+def query_current_human_postion_in_continues():
+    global current_human_position
+    if not goal_handle:
+        # Send goal
+        send_query(obj_type="human", continues=True)
+    rclpy.spin_once(chd, timeout_sec=0.5)
+    return current_human_position.point
 
 
 @init_robokudo_interface
@@ -159,6 +184,11 @@ def query_postion_closest_object() -> PoseStamped:
 @init_robokudo_interface
 def query_object(obj_desc: ObjectDesignatorDescription) -> dict:
     return send_query(obj_type=str(obj_desc.types[0]))
+
+
+@init_robokudo_interface
+def query_object_str(obj_desc: str) -> dict:
+    return send_query(obj_type=str(obj_desc))
 
 
 """
@@ -197,30 +227,31 @@ def query_waving_human() -> PoseStamped:
 @init_robokudo_interface
 def cancel_goal():
     """Sends a cancel request for the active goal."""
-    if not current_goal_handle:
+    if not goal_handle:
         logger.error("No active goal to cancel.")
         return
 
     logger.info("Sending cancel request...")
-    cancel_future = current_goal_handle.cancel_goal_async()
+    cancel_future = goal_handle.cancel_goal_async()
     cancel_future.add_done_callback(cancel_done_callback)
 
 
 def cancel_done_callback(future):
     """Handles the response from the action server regarding goal cancellation."""
+    global goal_handle
     cancel_response = future.result()
     if len(cancel_response.goals_canceling) > 0:
         logger.info("Goal cancellation accepted by the server.")
+        goal_handle = None
     else:
         logger.warning("Goal cancellation was not successful.")
-    # self.done = True
     logger.info("Shutting down after cancellation is accepted.")
 
 
 def shutdown_robokudo_interface():
     """Clean shutdown of perception interface."""
 
-    global robokudo_node, executor, executor_thread, is_init
+    global robokudo_node, executor, executor_thread, is_init, chd, current_human_position
 
     if executor is not None:
         executor.shutdown()
@@ -231,5 +262,25 @@ def shutdown_robokudo_interface():
     if robokudo_node is not None:
         robokudo_node.destroy_node()
 
+    if chd is not None:
+        chd.destroy_node()
+
+    current_human_position = None
+    cancel_goal()
+
     is_init = False
     logger.info("Navigation interface shut down")
+
+
+class CONTINUOUS_HUMAN_DETECTION(Node):
+    def __init__(self):
+
+        super().__init__("continous_human_detection")
+
+        self.sub_chd = self.create_subscription(
+            PointStamped, "/human_pose", self.data_callback, 10
+        )
+
+    def data_callback(self, data):
+        global current_human_position
+        current_human_position = data

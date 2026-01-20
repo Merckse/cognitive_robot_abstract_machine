@@ -1563,7 +1563,7 @@ PERCEIVED_OBJECT_MAPPING = {
     "cucumber": Cucumber,
     "zucchini": Zucchini,
 }
-@dataclass(eq=False)
+@dataclass
 class PerceivedObjectFactory(SemanticAnnotationFactory[SemanticAnnotation]):
     """
     Factory for creating a perceived object from the perception system.

@@ -15,7 +15,7 @@ from semantic_digital_twin.semantic_annotations.factories import (
     DrawerFactory, DresserFactory, WallFactory, SemanticPositionDescription,
     HorizontalSemanticDirection, VerticalSemanticDirection,
     # NEU:
-    PerceivedObjectFactory
+    PerceivedObjectFactory,
 )
 
 from semantic_digital_twin.semantic_annotations.semantic_annotations import (
@@ -283,7 +283,7 @@ class TestFactories(unittest.TestCase):
         wall: Wall = semantic_wall_annotations[0]
         self.assertEqual(world.root, wall.body)
 
-    def test_perceived_object_factory_comprehensive(self):
+    def test_perceived_object_factory(self):
         """Test that PerceivedObjectFactory creates a valid object with correct type and name."""
         # Test one representative class: apple
         factory = PerceivedObjectFactory(

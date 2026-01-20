@@ -1567,28 +1567,12 @@ PERCEIVED_OBJECT_MAPPING = {
 class PerceivedObjectFactory(SemanticAnnotationFactory[SemanticAnnotation]):
     """
     Factory for creating a perceived object from the perception system.
-
-    Maps a class name (e.g., "apple") to the actual semantic annotation class via a mapping.
-    The factory creates a world with a body and the corresponding semantic annotation.
-
-    This factory is used by Planning to spawn objects based on perception output.
+    ...
     """
 
     perceived_object_class: str
-    """
-    The class name of the perceived object, e.g., "apple", "salt_aquasale_can".
-    Must be a key in PERCEIVED_OBJECT_MAPPING.
-    """
-
     object_dimensions: Scale
-    """
-    The dimensions (x, y, z) in meters as Scale.
-    """
-
     name: Optional[PrefixedName] = None
-    """
-    Optional name for the object; if None, the class name is used.
-    """
 
     def __post_init__(self) -> None:
         """
@@ -1600,11 +1584,9 @@ class PerceivedObjectFactory(SemanticAnnotationFactory[SemanticAnnotation]):
                 f"Must be in PERCEIVED_OBJECT_MAPPING."
             )
 
-        # Set default name if not provided
         if self.name is None:
             self.name = PrefixedName(self.perceived_object_class)
 
-        # Store the target class
         self._target_class = PERCEIVED_OBJECT_MAPPING[self.perceived_object_class]
 
     def _create(self, world: World) -> World:
@@ -1614,7 +1596,6 @@ class PerceivedObjectFactory(SemanticAnnotationFactory[SemanticAnnotation]):
         :param world: The world to create the object in.
         :return: The world with the object added.
         """
-        # 1. Create body from dimensions
         object_body = Body(name=self.name)
         object_event = self.object_dimensions.simple_event.as_composite_set()
         collision_shapes = BoundingBoxCollection.from_event(
@@ -1624,7 +1605,6 @@ class PerceivedObjectFactory(SemanticAnnotationFactory[SemanticAnnotation]):
         object_body.visual = collision_shapes
         world.add_kinematic_structure_entity(object_body)
 
-        # 2. Create semantic annotation using the correct class
         semantic_annotation = self._target_class(
             name=self.name,
             body=object_body,

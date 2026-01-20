@@ -196,8 +196,6 @@ def is_supported_by(
     If the intersection is higher than this value, the check returns False due to unhandled clipping.
     :return: True if the second object is supported by the first object, False otherwise
     """
-    if supported_body.combined_mesh is None or supporting_body.combined_mesh is None:
-        return False
 
     if Below(supported_body, supporting_body, supported_body.global_pose)():
         return False

@@ -12,6 +12,7 @@ from pycram.robot_plans import (
     LookAtActionDescription,
     ParkArmsActionDescription,
     MoveTorsoActionDescription,
+    PlaceActionDescription,
 )
 from semantic_digital_twin.robots.hsrb import HSRB
 from pycram_ros_setup import setup_ros_node
@@ -84,9 +85,14 @@ logger = logging.getLogger(__name__)
 # Setup ROS node and fetch the world
 node, hsrb_world = setup_ros_node()
 
+env_world = load_environment()
+hsrb_world.merge_world(env_world)
+
 # Setup context
 context = Context(
-    hsrb_world, hsrb_world.get_semantic_annotations_by_type(HSRB)[0], ros_node=node
+    hsrb_world,
+    hsrb_world.get_semantic_annotations_by_type(HSRB)[0],
+    ros_node=node,
 )
 
 # Perceive objects and spawn them
@@ -96,10 +102,10 @@ context = Context(
 # ---- Adding end-effector and current object in hand
 
 # ----
-env_world = load_environment()
-# hsrb_world.merge_world(env_world)
 
-table_height = env_world.get_body_by_name("cookingTable_body").global_pose.z
+table_height = (
+    (hsrb_world.get_body_by_name("cookingTable_body").global_pose.z) * 2
+) + 0.05
 print(f"table height: {table_height}")
 
 debug = hsrb_world.get_bodies_by_name("lowerTable_body")
@@ -113,15 +119,18 @@ table_pose = hsrb_world.get_bodies_by_name("cookingTable_body")
 print(f"table pose: {table_pose}")
 # ----
 
+"""
+PoseStamped.from_spatial_type(
+            HomogeneousTransformationMatrix.from_xyz_rpy(x=1.0, y=6.22, z=0.8)
+        )
+"""
 VizMarkerPublisher(hsrb_world, node, throttle_state_updates=5)
 
 
 plan1 = SequentialPlan(
     context,
-    LookAtActionDescription(
-        target=PoseStamped.from_spatial_type(
-            HomogeneousTransformationMatrix.from_xyz_rpy(x=1.0, y=6.22, z=0.8)
-        )
+    PlaceActionDescription(
+        table, arm=Arms.LEFT, target=PoseStamped.from_spatial_type(table_pose)
     ),
 )
 

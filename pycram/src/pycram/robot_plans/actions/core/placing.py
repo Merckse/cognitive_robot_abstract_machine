@@ -39,7 +39,7 @@ class PlaceAction(ActionDescription):
 
     object_designator: Body
     """
-    Object designator_description describing the object that should be place
+    Object designator_description describing the object that should be placed
     """
     target_location: PoseStamped
     """

@@ -49,6 +49,9 @@ from semantic_digital_twin.world_description.connections import (
     FixedConnection,
     HasUpdateState,
 )
+from semantic_digital_twin.world_description.world_modification import (
+    AttributeUpdateModification,
+)
 
 all_classes = set(
     classes_of_module(semantic_digital_twin.world_description.world_entity)
@@ -83,7 +86,6 @@ all_classes |= set(
     classes_of_module(semantic_digital_twin.world_description.world_modification)
 )
 all_classes |= set(classes_of_module(semantic_digital_twin.callbacks.callback))
-all_classes |= set([JSONAttributeDiff])
 
 # remove classes that should not be mapped
 all_classes -= {
@@ -95,6 +97,8 @@ all_classes -= {
     semantic_digital_twin.adapters.procthor.procthor_resolver.ProcthorResolver,
     ContainsType,
     SemanticDirection,
+    JSONAttributeDiff,
+    AttributeUpdateModification,
 }
 # keep only dataclasses that are NOT AlternativeMapping subclasses
 all_classes = {

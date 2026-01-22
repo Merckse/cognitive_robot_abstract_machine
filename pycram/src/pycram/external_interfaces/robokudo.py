@@ -241,11 +241,12 @@ def cancel_goal():
 
 def cancel_done_callback(future):
     """Handles the response from the action server regarding goal cancellation."""
-    global goal_handle
+    global goal_handle, current_human_position
     cancel_response = future.result()
     if len(cancel_response.goals_canceling) > 0:
         logger.info("Goal cancellation accepted by the server.")
         goal_handle = None
+        current_human_position = None
     else:
         logger.warning("Goal cancellation was not successful.")
     logger.info("Shutting down after cancellation is accepted.")
@@ -269,8 +270,6 @@ def shutdown_robokudo_interface():
 
     if chd is not None:
         chd.destroy_node()
-
-    current_human_position = None
 
     is_init = False
     logger.info("Navigation interface shut down")

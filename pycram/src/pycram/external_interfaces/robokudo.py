@@ -189,13 +189,27 @@ def query_human_attributes() -> Any:
 
 @init_robokudo_interface
 def query_waving_human() -> PoseStamped:
-    result = send_query(obj_type="human")
-    if result and result.res:
-        try:
-            return result.res[0]
-        except IndexError:
-            pass
-    return None
+    """Query RoboKudo for a waving human and return the detected human's pose.
+
+    Note: At the moment this uses the same underlying query as `query_human()`.
+    RoboKudo doesn't expose a dedicated 'waving' flag here, so we return the
+    best pose available (consistent with `query_human`).
+    """
+    result = send_query(obj_type="human", attributes=["waving"])
+    posi = None
+    if result is None:
+        return None
+
+    try:
+        for r in result.res:
+            for p in r.pose:
+                if posi is None or p.pose > posi:
+                    posi = p.pose
+    except Exception:
+        # Defensive: if message layout differs, fall back to None.
+        return None
+
+    return posi
 
 
 @init_robokudo_interface

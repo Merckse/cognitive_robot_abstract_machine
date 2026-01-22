@@ -15,6 +15,7 @@ from typing import Any
 from ..datastructures.pose import PoseStamped
 from ..designator import ObjectDesignatorDescription
 from geometry_msgs.msg import PointStamped
+from time import sleep
 
 logger = logging.getLogger(__name__)
 
@@ -37,18 +38,19 @@ def create_robokudo_action_client():
     if robokudo_node is None:
         robokudo_node = Node("robokudo_interface_client")
 
+    if chd is None:
+        chd = CONTINUOUS_HUMAN_DETECTION()
+
     client = create_action_client("/robokudo/query", Query, robokudo_node)
 
     if executor is None:
         executor = MultiThreadedExecutor()
         executor.add_node(robokudo_node)
+        executor.add_node(chd)
 
         executor_thread = Thread(target=executor.spin, daemon=True)
         executor_thread.start()
         logger.info("Started MultiThreadedExecutor")
-
-    if chd is None:
-        chd = CONTINUOUS_HUMAN_DETECTION()
 
     if not client.wait_for_server(timeout_sec=10.0):
         logger.error("robokudo_query action server not available")
@@ -152,12 +154,13 @@ def query_human() -> "PointStamped":
 
 
 @init_robokudo_interface
-def query_current_human_postion_in_continues():
+def query_current_human_position_in_continues():
     global current_human_position
     if not goal_handle:
         # Send goal
         send_query(obj_type="human", continues=True)
-    rclpy.spin_once(chd, timeout_sec=0.5)
+        # Needs to change!
+        sleep(4)
     return current_human_position
 
 
@@ -253,6 +256,8 @@ def shutdown_robokudo_interface():
 
     global robokudo_node, executor, executor_thread, is_init, chd, current_human_position
 
+    cancel_goal()
+
     if executor is not None:
         executor.shutdown()
 
@@ -266,7 +271,6 @@ def shutdown_robokudo_interface():
         chd.destroy_node()
 
     current_human_position = None
-    cancel_goal()
 
     is_init = False
     logger.info("Navigation interface shut down")
@@ -283,4 +287,12 @@ class CONTINUOUS_HUMAN_DETECTION(Node):
 
     def data_callback(self, data):
         global current_human_position
-        current_human_position = data
+        if data is not None and current_human_position is not None:
+            if (
+                round(current_human_position.point.x, 2) != round(data.point.x, 2)
+                and round(current_human_position.point.y, 2) != round(data.point.y, 2)
+                and round(current_human_position.point.z, 2) != round(data.point.z, 2)
+            ):
+                current_human_position = data
+        elif data is not None:
+            current_human_position = data

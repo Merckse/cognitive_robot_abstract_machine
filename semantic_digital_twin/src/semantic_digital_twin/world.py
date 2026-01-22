@@ -24,6 +24,7 @@ from typing_extensions import (
     Callable,
     Any,
     Iterable,
+    TYPE_CHECKING,
 )
 from typing_extensions import List
 from typing_extensions import Type, Set
@@ -38,12 +39,13 @@ from .exceptions import (
     WorldEntityNotFoundError,
     AlreadyBelongsToAWorldError,
     MissingWorldModificationContextError,
+    WorldEntityWithIDNotFoundError,
 )
 from .robots.abstract_robot import AbstractRobot
 from .spatial_computations.forward_kinematics import ForwardKinematicsManager
 from .spatial_computations.ik_solver import InverseKinematicsSolver
 from .spatial_computations.raytracer import RayTracer
-from .spatial_types import spatial_types as cas
+from .spatial_types import HomogeneousTransformationMatrix, Quaternion
 from .spatial_types.derivatives import Derivatives
 from .utils import IDGenerator
 from .world_description.connections import (
@@ -58,6 +60,7 @@ from .world_description.visitors import CollisionBodyCollector, ConnectionCollec
 from .world_description.world_entity import (
     Connection,
     SemanticAnnotation,
+    WorldEntityWithID,
     KinematicStructureEntity,
     Region,
     GenericKinematicStructureEntity,
@@ -84,6 +87,9 @@ from .world_description.world_modification import (
     RemoveActuatorModification,
 )
 from .world_description.world_state import WorldState
+
+if TYPE_CHECKING:
+    from .spatial_types import GenericSpatialType
 
 logger = logging.getLogger(__name__)
 
@@ -515,6 +521,11 @@ class World:
     Manages forward kinematics computations for the world.
     """
 
+    _world_entity_hash_table: Dict = field(init=False, default_factory=dict)
+    """
+    Lookup table to get a world entity by its hash
+    """
+
     def __post_init__(self):
         self._collision_pair_manager = CollisionPairManager(self)
         self.state = WorldState(_world=self)
@@ -779,6 +790,7 @@ class World:
         """
         semantic_annotation.add_to_world(self)
         self.semantic_annotations.append(semantic_annotation)
+        self._world_entity_hash_table[hash(semantic_annotation)] = semantic_annotation
 
     def add_actuator(self, actuator: Actuator) -> None:
         """
@@ -807,7 +819,7 @@ class World:
         :param actuator: The actuator to be added to the system.
         :return: None
         """
-        actuator._world = self
+        actuator.add_to_world(self)
         self.actuators.append(actuator)
 
     def _raise_error_if_belongs_to_other_world(self, world_entity: WorldEntity):
@@ -1141,34 +1153,38 @@ class World:
                 ]
 
     def get_degree_of_freedom_by_id(self, id: UUID) -> DegreeOfFreedom:
-        return self._get_world_entity_by_hash_from_iterable(
-            hash(id), self.degrees_of_freedom
-        )
+        return self._get_world_entity_by_hash(hash(id))
+
+    def get_world_entity_with_id_by_id(self, id: UUID) -> WorldEntityWithID:
+        result = [
+            v
+            for v in self._world_entity_hash_table.values()
+            if isinstance(v, WorldEntityWithID) and v.id == id
+        ]
+        if len(result) == 0:
+            raise WorldEntityWithIDNotFoundError(id)
+        else:
+            return result[0]
 
     def get_kinematic_structure_entity_by_id(
         self, id: UUID
     ) -> KinematicStructureEntity:
-        return self._get_world_entity_by_hash_from_iterable(
-            hash(id), self.kinematic_structure_entities
-        )
+        return self._get_world_entity_by_hash(hash(id))
 
     def get_actuator_by_id(self, id: UUID) -> Actuator:
-        return self._get_world_entity_by_hash_from_iterable(hash(id), self.actuators)
+        return self._get_world_entity_by_hash(hash(id))
 
-    def _get_world_entity_by_hash_from_iterable(
-        self, entity_hash: int, world_entity_iterable: Iterable[GenericWorldEntity]
-    ) -> GenericWorldEntity:
+    def get_semantic_annotation_by_id(self, id: UUID) -> SemanticAnnotation:
+        return [s for s in self.semantic_annotations if s.id == id][0]
+
+    def _get_world_entity_by_hash(self, entity_hash: int) -> GenericWorldEntity:
         """
         Retrieve a WorldEntity by its hash.
 
         :param entity_hash: The hash of the entity to retrieve.
-        :param world_entity_iterable: The iterable of world entities to search for the entity.
         :return:
         """
-        entity = next(
-            (entity for entity in world_entity_iterable if hash(entity) == entity_hash),
-            None,
-        )
+        entity = self._world_entity_hash_table.get(entity_hash, None)
         if entity is None:
             raise WorldEntityNotFoundError(entity_hash)
         return entity
@@ -1177,55 +1193,46 @@ class World:
     def is_semantic_annotation_in_world(
         self, semantic_annotation: SemanticAnnotation
     ) -> bool:
-        return self._is_world_entity_with_hash_in_world_from_iterable(
-            hash(semantic_annotation), self.semantic_annotations
+        return (
+            semantic_annotation._world == self
+            and semantic_annotation in self.semantic_annotations
         )
 
     def is_body_in_world(self, body: Body) -> bool:
-        return self._is_world_entity_with_hash_in_world_from_iterable(
-            hash(body), self.bodies
-        )
+        return self._is_world_entity_with_hash_in_world_from_iterable(hash(body))
 
     def is_kinematic_structure_entity_in_world(
         self, kinematic_structure_entity: KinematicStructureEntity
     ) -> bool:
         return self._is_world_entity_with_hash_in_world_from_iterable(
-            hash(kinematic_structure_entity), self.kinematic_structure_entities
+            hash(kinematic_structure_entity)
         )
 
     def is_connection_in_world(self, connection: Connection) -> bool:
-        return self._is_world_entity_with_hash_in_world_from_iterable(
-            hash(connection), self.connections
-        )
+        return self._is_world_entity_with_hash_in_world_from_iterable(hash(connection))
 
     def is_degree_of_freedom_in_world(self, degree_of_freedom: DegreeOfFreedom) -> bool:
         return self._is_world_entity_with_hash_in_world_from_iterable(
-            hash(degree_of_freedom), self.degrees_of_freedom
+            hash(degree_of_freedom)
         )
 
     def is_actuator_in_world(self, actuator: Actuator) -> bool:
-        return self._is_world_entity_with_hash_in_world_from_iterable(
-            hash(actuator), self.actuators
-        )
+        return self._is_world_entity_with_hash_in_world_from_iterable(hash(actuator))
 
-    @staticmethod
     def _is_world_entity_with_hash_in_world_from_iterable(
-        entity_hash: int, world_entity_iterable: Iterable[WorldEntity]
+        self, entity_hash: int
     ) -> bool:
         """
         Check if a world entity with a given hash exists in the world based on a given iterable.
         :param entity_hash: The hash of the entity to retrieve.
-        :param world_entity_iterable: The iterable of world entities to search for the entity.
         :return: True if the entity exists, False otherwise.
         """
-        return any(
-            world_entity
-            for world_entity in world_entity_iterable
-            if hash(world_entity) == entity_hash
-        )
+        return entity_hash in self._world_entity_hash_table
 
     # %% World Merging
-    def merge_world_at_pose(self, other: World, pose: cas.TransformationMatrix) -> None:
+    def merge_world_at_pose(
+        self, other: World, pose: HomogeneousTransformationMatrix
+    ) -> None:
         """
         Merge another world into the existing one, creates a 6DoF connection between the root of this world and the root
         of the other world.
@@ -1754,7 +1761,7 @@ class World:
 
     def compute_forward_kinematics(
         self, root: KinematicStructureEntity, tip: KinematicStructureEntity
-    ) -> cas.TransformationMatrix:
+    ) -> HomogeneousTransformationMatrix:
         """
         Compute the forward kinematics from the root KinematicStructureEntity to the tip KinematicStructureEntity.
 
@@ -1769,7 +1776,7 @@ class World:
 
     def compose_forward_kinematics_expression(
         self, root: KinematicStructureEntity, tip: KinematicStructureEntity
-    ) -> cas.TransformationMatrix:
+    ) -> HomogeneousTransformationMatrix:
         """
         :param root: The root KinematicStructureEntity in the kinematic chain.
             It determines the starting point of the forward kinematics calculation.
@@ -1806,7 +1813,7 @@ class World:
         self,
         root: KinematicStructureEntity,
         tip: KinematicStructureEntity,
-        target: cas.TransformationMatrix,
+        target: HomogeneousTransformationMatrix,
         dt: float = 0.05,
         max_iterations: int = 200,
         translation_velocity: float = 0.2,
@@ -1857,9 +1864,9 @@ class World:
 
     def transform(
         self,
-        spatial_object: cas.GenericSpatialType,
+        spatial_object: GenericSpatialType,
         target_frame: KinematicStructureEntity,
-    ) -> cas.GenericSpatialType:
+    ) -> GenericSpatialType:
         """
         Transform a given spatial object from its reference frame to a target frame.
 
@@ -1883,7 +1890,7 @@ class World:
         )
 
         match spatial_object:
-            case cas.Quaternion():
+            case Quaternion():
                 reference_frame_R = spatial_object.to_rotation_matrix()
                 target_frame_R = target_frame_T_reference_frame @ reference_frame_R
                 return target_frame_R.to_quaternion()
@@ -1902,12 +1909,12 @@ class World:
         with new_world.modify_world():
             for body in self.bodies:
                 new_body = Body(
-                    visual=body.visual,
-                    collision=body.collision,
                     name=body.name,
                     id=body.id,
                 )
                 new_world.add_kinematic_structure_entity(new_body)
+                new_body.visual = body.visual.copy_for_world(new_world)
+                new_body.collision = body.collision.copy_for_world(new_world)
             for region in self.regions:
                 new_region = Region(
                     name=region.name,

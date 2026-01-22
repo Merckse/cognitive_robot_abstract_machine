@@ -7,10 +7,9 @@ from typing_extensions import Optional, Tuple, Union, List, Dict
 from urdf_parser_py import urdf as urdfpy
 
 from ..datastructures.prefixed_name import PrefixedName
-from ..exceptions import ParsingError, WorldEntityNotFoundError
-from ..spatial_types import spatial_types as cas
+from ..exceptions import ParsingError
 from ..spatial_types.derivatives import Derivatives, DerivativeMap
-from ..spatial_types.spatial_types import TransformationMatrix, Vector3
+from ..spatial_types.spatial_types import HomogeneousTransformationMatrix, Vector3
 from ..utils import (
     suppress_stdout_stderr,
     hacky_urdf_parser_fix,
@@ -199,7 +198,7 @@ class URDFParser:
         translation_offset = getattr(joint.origin, "xyz", [0, 0, 0])
         rotation_offset = getattr(joint.origin, "rpy", [0, 0, 0])
 
-        parent_T_connection = cas.TransformationMatrix.from_xyz_rpy(
+        parent_T_connection = HomogeneousTransformationMatrix.from_xyz_rpy(
             x=translation_offset[0],
             y=translation_offset[1],
             z=translation_offset[2],
@@ -225,15 +224,15 @@ class URDFParser:
             offset = joint.mimic.offset if joint.mimic.offset is not None else 0
             dof_name = PrefixedName(joint.mimic.joint, prefix)
 
-        try:
-            dof = world.get_degree_of_freedom_by_name(dof_name)
-        except WorldEntityNotFoundError as e:
+        if dof_name not in [d.name for d in world.degrees_of_freedom]:
             dof = DegreeOfFreedom(
                 name=dof_name,
                 lower_limits=lower_limits,
                 upper_limits=upper_limits,
             )
             world.add_degree_of_freedom(dof)
+        else:
+            dof = world.get_degree_of_freedom_by_name(dof_name)
 
         assert joint.axis is not None, f"Joint axis is None for joint {joint.name}"
         result = connection_type(
@@ -286,7 +285,7 @@ class URDFParser:
         )
         for i, geom in enumerate(geometry):
             params = (*(geom.origin.xyz + geom.origin.rpy),) if geom.origin else ()
-            origin_transform = TransformationMatrix.from_xyz_rpy(
+            origin_transform = HomogeneousTransformationMatrix.from_xyz_rpy(
                 *params, reference_frame=body
             )
             if isinstance(geom.geometry, urdfpy.Box):
@@ -363,12 +362,12 @@ class URDFParser:
                         package_path = self.package_resolver[package_name]
                     else:
                         raise ParsingError(
-                            msg=f"Package '{package_name}' not found in package resolver and "
+                            message=f"Package '{package_name}' not found in package resolver and "
                             f"ROS is not installed."
                         )
                 else:
                     raise ParsingError(
-                        msg="No ROS install found while the URDF file contains references to "
+                        message="No ROS install found while the URDF file contains references to "
                         "ROS packages."
                     )
             file_path = file_path.replace("package://" + package_name, package_path)

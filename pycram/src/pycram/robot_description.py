@@ -20,6 +20,7 @@ from itertools import product
 from scipy.spatial.transform import Rotation as R
 from typing_extensions import List, Dict, Union, Optional, TypeVar
 
+from semantic_digital_twin.robots.hsrb import HSRB
 from .datastructures.dataclasses import (
     VirtualMobileBaseJoints,
     ManipulatorData,

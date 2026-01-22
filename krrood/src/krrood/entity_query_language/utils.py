@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 """
 Utilities for hashing, rendering, and general helpers used by the
 symbolic query engine.
@@ -18,7 +16,16 @@ try:
 except ImportError:
     Source = None
 
-from typing_extensions import Set, Any, List, Type
+from typing_extensions import (
+    Set,
+    Any,
+    TypeVar,
+    List,
+    Dict,
+    Iterable,
+    Callable,
+    Iterator,
+)
 
 
 class IDGenerator:
@@ -61,7 +68,7 @@ def generate_bindings(child_vars_items, sources):
     backtracking strategy with early pruning.
 
     The input mirrors Variable._child_vars_.items(): a sequence of (name, var)
-    pairs. Each yielded item is a mapping: name -> {var_id: HashedValue}.
+    pairs. Each yielded item is a mapping: name -> {var_id: value}.
 
     The function evaluates each child variable against the current partial
     binding "sources" so constraints can prune the search space early.
@@ -80,9 +87,9 @@ def generate_bindings(child_vars_items, sources):
 
     ordered = sorted(list(child_vars_items), key=score)
 
-    acc = dict(sources)  # var_id -> HashedValue
+    acc = dict(sources)  # var_id -> value
     initially_bound = set(acc.keys())
-    selected = {}  # name -> {var_id: HashedValue}
+    selected = {}  # name -> {var_id: value}
 
     def dfs(i: int):
         if i == len(ordered):
@@ -158,21 +165,45 @@ def make_set(value: Any) -> Set:
     return set(value) if is_iterable(value) else {value}
 
 
-@dataclass(eq=False)
-class ALL:
+T = TypeVar("T")
+
+Binding = Dict[int, Any]
+"""
+A dictionary mapping variable IDs to values.
+"""
+Stage = Callable[[Binding], Iterator[Binding]]
+"""
+A function that accepts a binding and returns an iterator of bindings.
+"""
+
+
+def chain_stages(stages: List[Stage], initial: Binding) -> Iterator[Binding]:
     """
-    Sentinel that compares equal to any other value.
+    Chains a sequence of stages into a single pipeline.
 
-    This is used to signal wildcard matches in hashing/containment logic.
+    This function takes a list of computational stages and an initial binding, passing the
+    result of each computation stage to the next one. It produces an iterator of bindings
+    by applying each stage in sequence to the current binding.
+
+    :param stages: List[Stage]: A list of stages where each stage is a callable that accepts
+        a Binding and produces an iterator of bindings.
+    :param initial: Binding: The initial binding to start the computation with.
+
+    :return: Iterator[Binding]: An iterator over the bindings resulting from applying all
+        stages in sequence.
     """
 
-    def __eq__(self, other):
-        """Always return True."""
-        return True
+    def evaluate_next_stage_or_yield(i: int, b: Binding) -> Iterator[Binding]:
+        """
+        Recursively evaluates the next stage or yields the current binding if all stages are done.
 
-    def __hash__(self):
-        """Hash based on object identity to remain unique as a sentinel."""
-        return hash(id(self))
+        :param i: int: The index of the current stage.
+        :param b: Binding: The current binding to be processed.
+        """
+        if i == len(stages):
+            yield b
+            return
+        for b2 in stages[i](b):
+            yield from evaluate_next_stage_or_yield(i + 1, b2)
 
-
-All = ALL()
+    yield from evaluate_next_stage_or_yield(0, initial)

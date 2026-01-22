@@ -1,9 +1,14 @@
 import unittest
 from time import sleep
 
+import pytest
+
+from semantic_digital_twin.exceptions import IncorrectScaleError
 from semantic_digital_twin.world_description.geometry import Scale
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
-from semantic_digital_twin.spatial_types.spatial_types import TransformationMatrix
+from semantic_digital_twin.spatial_types.spatial_types import (
+    HomogeneousTransformationMatrix,
+)
 from semantic_digital_twin.semantic_annotations.semantic_annotations import (
     Handle,
     Door,
@@ -80,7 +85,7 @@ class TestFactories(unittest.TestCase):
                 vertical_direction_chain=[VerticalSemanticDirection.FULLY_CENTER],
             ),
         )
-        door_transform = TransformationMatrix.from_xyz_rpy(y=-0.5)
+        door_transform = HomogeneousTransformationMatrix.from_xyz_rpy(y=-0.5)
 
         door_factory2 = DoorFactory(
             name=PrefixedName("door2"),
@@ -93,7 +98,7 @@ class TestFactories(unittest.TestCase):
                 vertical_direction_chain=[VerticalSemanticDirection.FULLY_CENTER],
             ),
         )
-        door_transform2 = TransformationMatrix.from_xyz_rpy(y=0.5)
+        door_transform2 = HomogeneousTransformationMatrix.from_xyz_rpy(y=0.5)
 
         door_factories = [door_factory, door_factory2]
         door_transforms = [door_transform, door_transform2]
@@ -160,12 +165,26 @@ class TestFactories(unittest.TestCase):
                 vertical_direction_chain=[VerticalSemanticDirection.FULLY_CENTER],
             ),
         )
-        drawer_transform = TransformationMatrix()
+        drawer_transform = HomogeneousTransformationMatrix()
+
+        with pytest.raises(IncorrectScaleError) as e_info:
+            door_factory = DoorFactory(
+                name=PrefixedName("door"),
+                handle_factory=HandleFactory(name=PrefixedName("door_handle")),
+                scale=Scale(1.05, 1.0, 1.0),  # x < y and z
+                semantic_position=SemanticPositionDescription(
+                    horizontal_direction_chain=[
+                        HorizontalSemanticDirection.RIGHT,
+                        HorizontalSemanticDirection.FULLY_CENTER,
+                    ],
+                    vertical_direction_chain=[VerticalSemanticDirection.FULLY_CENTER],
+                ),
+            )
 
         door_factory = DoorFactory(
             name=PrefixedName("door"),
             handle_factory=HandleFactory(name=PrefixedName("door_handle")),
-            scale=Scale(1.0, 1.0, 1.0),
+            scale=Scale(0.05, 1.0, 1.0),  # x < y and z
             semantic_position=SemanticPositionDescription(
                 horizontal_direction_chain=[
                     HorizontalSemanticDirection.RIGHT,
@@ -175,7 +194,7 @@ class TestFactories(unittest.TestCase):
             ),
         )
 
-        door_transform = TransformationMatrix()
+        door_transform = HomogeneousTransformationMatrix()
 
         container_factory = ContainerFactory(name=PrefixedName("dresser_container"))
 
@@ -211,7 +230,7 @@ class TestFactories(unittest.TestCase):
                 vertical_direction_chain=[VerticalSemanticDirection.FULLY_CENTER],
             ),
         )
-        door_transform = TransformationMatrix.from_xyz_rpy(y=-0.5)
+        door_transform = HomogeneousTransformationMatrix.from_xyz_rpy(y=-0.5)
 
         door_factory2 = DoorFactory(
             name=PrefixedName("door2"),
@@ -224,7 +243,7 @@ class TestFactories(unittest.TestCase):
                 vertical_direction_chain=[VerticalSemanticDirection.FULLY_CENTER],
             ),
         )
-        door_transform2 = TransformationMatrix.from_xyz_rpy(y=0.5)
+        door_transform2 = HomogeneousTransformationMatrix.from_xyz_rpy(y=0.5)
 
         door_factories = [door_factory, door_factory2]
         door_transforms = [door_transform, door_transform2]
@@ -234,7 +253,7 @@ class TestFactories(unittest.TestCase):
             door_factories=door_factories,
             door_transforms=door_transforms,
         )
-        double_door_transform = TransformationMatrix()
+        double_door_transform = HomogeneousTransformationMatrix()
 
         single_door_factory = DoorFactory(
             name=PrefixedName("single_door"),
@@ -247,7 +266,7 @@ class TestFactories(unittest.TestCase):
                 vertical_direction_chain=[VerticalSemanticDirection.FULLY_CENTER],
             ),
         )
-        single_door_transform = TransformationMatrix.from_xyz_rpy(y=-1.5)
+        single_door_transform = HomogeneousTransformationMatrix.from_xyz_rpy(y=-1.5)
 
         factory = WallFactory(
             name=PrefixedName("wall"),

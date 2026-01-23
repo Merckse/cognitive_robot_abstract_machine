@@ -2,10 +2,13 @@ import threading
 import time
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
+
+from semantic_digital_twin.adapters.ros.messages import LoadModel
 from semantic_digital_twin.adapters.ros.world_fetcher import fetch_world_from_service
 from semantic_digital_twin.adapters.ros.world_synchronizer import (
     ModelSynchronizer,
     StateSynchronizer,
+    ModelReloadSynchronizer,
 )
 
 
@@ -19,7 +22,9 @@ def setup_ros_node():
     thread = threading.Thread(target=executor.spin, daemon=True, name="rclpy-executor")
     thread.start()
     time.sleep(0.1)
-
+    mrs = ModelReloadSynchronizer(node=node, world=None, session=None)
+    message = LoadModel(primary_key=1, meta_data=mrs.meta_data)
+    mrs.publish(message)
     hsrb_world = fetch_world_from_service(node)
     model_sync = ModelSynchronizer(world=hsrb_world, node=node)
     state_sync = StateSynchronizer(world=hsrb_world, node=node)

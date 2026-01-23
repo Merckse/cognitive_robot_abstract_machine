@@ -50,6 +50,9 @@ class Base(DeclarativeBase):
     }
 
 
+# Make module import-idempotent (required for some test runners)
+Base.metadata.clear()
+
 # Association tables for many-to-many relationships
 shapecollectiondao_shapes_association = Table(
     "shapecollectiondao_shapes_association",
@@ -4049,6 +4052,29 @@ class LiquidCapDAO(
     }
 
 
+class MarkerDAO(
+    HasBodyDAO,
+    DataAccessObject[
+        semantic_digital_twin.semantic_annotations.semantic_annotations.Marker
+    ],
+):
+
+    __tablename__ = "MarkerDAO"
+
+    database_id: Mapped[builtins.int] = mapped_column(
+        ForeignKey(HasBodyDAO.database_id), primary_key=True, use_existing_column=True
+    )
+
+    class_label: Mapped[typing.Optional[builtins.str]] = mapped_column(
+        String(255), use_existing_column=True
+    )
+
+    __mapper_args__ = {
+        "polymorphic_identity": "MarkerDAO",
+        "inherit_condition": database_id == HasBodyDAO.database_id,
+    }
+
+
 class PenDAO(
     HasBodyDAO,
     DataAccessObject[
@@ -4389,6 +4415,29 @@ class SofaDAO(
 
     __mapper_args__ = {
         "polymorphic_identity": "SofaDAO",
+        "inherit_condition": database_id == HasBodyDAO.database_id,
+    }
+
+
+class SoftballDAO(
+    HasBodyDAO,
+    DataAccessObject[
+        semantic_digital_twin.semantic_annotations.semantic_annotations.Softball
+    ],
+):
+
+    __tablename__ = "SoftballDAO"
+
+    database_id: Mapped[builtins.int] = mapped_column(
+        ForeignKey(HasBodyDAO.database_id), primary_key=True, use_existing_column=True
+    )
+
+    class_label: Mapped[typing.Optional[builtins.str]] = mapped_column(
+        String(255), use_existing_column=True
+    )
+
+    __mapper_args__ = {
+        "polymorphic_identity": "SoftballDAO",
         "inherit_condition": database_id == HasBodyDAO.database_id,
     }
 

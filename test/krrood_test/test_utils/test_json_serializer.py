@@ -247,3 +247,13 @@ def test_nparray():
     data = to_json(obj)
     result = from_json(data)
     assert np.allclose(result, obj)
+
+    obj = np.array([1, 2, 3], dtype=np.float64)
+    data = to_json(obj)
+    result = from_json(data)
+    assert np.allclose(result, obj)
+
+    obj = np.array([1.3, 2, 3], dtype=np.float64)
+    data = to_json(obj)
+    result = from_json(data)
+    assert np.allclose(result, obj)

@@ -310,7 +310,7 @@ class ExceptionJSONSerializer(ExternalClassJSONSerializer[Exception]):
 
 
 @dataclass
-class NumpyNDarrayJSONSerializer(ExternalClassJSONSerializer[np.array]):
+class NumpyNDarrayJSONSerializer(ExternalClassJSONSerializer[np.ndarray]):
     @classmethod
     def to_json(cls, obj: np.ndarray) -> Dict[str, Any]:
         return {
@@ -323,7 +323,7 @@ class NumpyNDarrayJSONSerializer(ExternalClassJSONSerializer[np.array]):
     def from_json(
         cls, data: Dict[str, Any], clazz: Type[np.ndarray], **kwargs
     ) -> np.ndarray:
-        return clazz(data["data"], dtype=data["type"])
+        return np.array(data["data"], dtype=data["type"])
 
 
 @dataclass

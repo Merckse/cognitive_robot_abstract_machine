@@ -302,53 +302,59 @@ def test_apply_control_commands_omni_drive_pr2(pr2_world_state_reset):
     assert pr2_world_state_reset.state[omni_drive.y.id].position == 0.1094837581924854
 
 
-def test_search_for_connections_of_type(pr2_world_setup: World):
+def test_search_for_connections_of_type(pr2_world_state_reset: World):
 
-    connections = pr2_world_setup.get_connections_by_type(OmniDrive)
+    connections = pr2_world_state_reset.get_connections_by_type(OmniDrive)
     assert len(connections) == 1
     assert connections[0].name == PrefixedName(
         name="odom_combined_T_base_footprint", prefix="pr2"
     )
-    assert connections[0].parent == pr2_world_setup.root
+    assert connections[0].parent == pr2_world_state_reset.root
     assert connections[
         0
-    ].child == pr2_world_setup.get_kinematic_structure_entity_by_name("base_footprint")
+    ].child == pr2_world_state_reset.get_kinematic_structure_entity_by_name(
+        "base_footprint"
+    )
 
-    connections = pr2_world_setup.get_connections_by_type(PrismaticConnection)
+    connections = pr2_world_state_reset.get_connections_by_type(PrismaticConnection)
     assert len(connections) == 5
     assert connections[0].name == PrefixedName(name="torso_lift_joint", prefix="pr2")
     assert connections[
         0
-    ].parent == pr2_world_setup.get_kinematic_structure_entity_by_name("base_link")
+    ].parent == pr2_world_state_reset.get_kinematic_structure_entity_by_name(
+        "base_link"
+    )
     assert connections[
         0
-    ].child == pr2_world_setup.get_kinematic_structure_entity_by_name("torso_lift_link")
+    ].child == pr2_world_state_reset.get_kinematic_structure_entity_by_name(
+        "torso_lift_link"
+    )
     assert connections[1].name == PrefixedName(
         name="r_gripper_motor_slider_joint", prefix="pr2"
     )
     assert connections[
         1
-    ].parent == pr2_world_setup.get_kinematic_structure_entity_by_name(
+    ].parent == pr2_world_state_reset.get_kinematic_structure_entity_by_name(
         "r_gripper_palm_link"
     )
     assert connections[
         1
-    ].child == pr2_world_setup.get_kinematic_structure_entity_by_name(
+    ].child == pr2_world_state_reset.get_kinematic_structure_entity_by_name(
         "r_gripper_motor_slider_link"
     )
     assert connections[2].name == PrefixedName(name="r_gripper_joint", prefix="pr2")
     assert connections[
         2
-    ].parent == pr2_world_setup.get_kinematic_structure_entity_by_name(
+    ].parent == pr2_world_state_reset.get_kinematic_structure_entity_by_name(
         "r_gripper_r_finger_tip_link"
     )
     assert connections[
         2
-    ].child == pr2_world_setup.get_kinematic_structure_entity_by_name(
+    ].child == pr2_world_state_reset.get_kinematic_structure_entity_by_name(
         "r_gripper_l_finger_tip_frame"
     )
 
-    connections = pr2_world_setup.get_connections_by_type(RevoluteConnection)
+    connections = pr2_world_state_reset.get_connections_by_type(RevoluteConnection)
     assert len(connections) == 40
 
 
@@ -391,7 +397,7 @@ def test_kinematic_chains(pr2_world_state_reset):
         assert chain.tip
 
 
-def test_load_collision_config_srdf(pr2_world_setup):
+def test_load_collision_config_srdf(pr2_world_state_reset):
     path = os.path.join(
         os.path.dirname(os.path.abspath(__file__)),
         "..",
@@ -402,12 +408,21 @@ def test_load_collision_config_srdf(pr2_world_setup):
         "collision_configs",
         "pr2.srdf",
     )
-    pr2_world_setup.load_collision_srdf(path)
+    pr2_world_state_reset.load_collision_srdf(path)
     assert (
-        len([b for b in pr2_world_setup.bodies if b.get_collision_config().disabled])
+        len(
+            [
+                b
+                for b in pr2_world_state_reset.bodies
+                if b.get_collision_config().disabled
+            ]
+        )
         == 20
     )
-    assert len(pr2_world_setup._collision_pair_manager.disabled_collision_pairs) == 1485
+    assert (
+        len(pr2_world_state_reset._collision_pair_manager.disabled_collision_pairs)
+        == 1485
+    )
 
 
 def test_tracy_semantic_annotation(tracy_world):
@@ -450,17 +465,17 @@ def test_pr2_tighten_dof_velocity_limits_of_1dof_connections(pr2_world_state_res
     pr2.tighten_dof_velocity_limits_of_1dof_connections(new_limits)
     # if spacial case triggers, but the new limit is above the old one, nothing happens
     assert (
-        pr2._world.get_connection_by_name("head_pan_joint").dof.upper_limits.velocity
+        pr2._world.get_connection_by_name("head_pan_joint").dof.limits.upper.velocity
         == 1
     )
     # new limit is applied to joint without spacial case
     assert (
-        pr2._world.get_connection_by_name("head_tilt_joint").dof.upper_limits.velocity
+        pr2._world.get_connection_by_name("head_tilt_joint").dof.limits.upper.velocity
         == 0.5
     )
     # non-spacial case where the old limit is below 1
     assert (
-        pr2._world.get_connection_by_name("torso_lift_joint").dof.upper_limits.velocity
+        pr2._world.get_connection_by_name("torso_lift_joint").dof.limits.upper.velocity
         == 0.013
     )
 

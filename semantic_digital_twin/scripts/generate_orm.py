@@ -23,6 +23,7 @@ import semantic_digital_twin.world_description.degree_of_freedom
 import semantic_digital_twin.world_description.geometry
 import semantic_digital_twin.world_description.shape_collection
 import semantic_digital_twin.world_description.world_entity
+from krrood.adapters.json_serializer import JSONAttributeDiff
 from krrood.class_diagrams import ClassDiagram
 from krrood.ormatic.ormatic import ORMatic
 from krrood.ormatic.utils import classes_of_module
@@ -31,7 +32,12 @@ from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.mixin import SimulatorAdditionalProperty
 from semantic_digital_twin.orm.model import *  # type: ignore
 from semantic_digital_twin.reasoning.predicates import ContainsType
-from semantic_digital_twin.semantic_annotations.mixins import HasBody
+from semantic_digital_twin.semantic_annotations.mixins import (
+    HasRootBody,
+)
+from semantic_digital_twin.semantic_annotations.position_descriptions import (
+    SemanticDirection,
+)
 from semantic_digital_twin.spatial_computations.forward_kinematics import (
     ForwardKinematicsManager,
 )
@@ -43,6 +49,9 @@ from semantic_digital_twin.world import WorldModelManager
 from semantic_digital_twin.world_description.connections import (
     FixedConnection,
     HasUpdateState,
+)
+from semantic_digital_twin.world_description.world_modification import (
+    AttributeUpdateModification,
 )
 
 all_classes = set(
@@ -88,6 +97,9 @@ all_classes -= {
     WorldModelManager,
     semantic_digital_twin.adapters.procthor.procthor_resolver.ProcthorResolver,
     ContainsType,
+    SemanticDirection,
+    JSONAttributeDiff,
+    AttributeUpdateModification,
 }
 # keep only dataclasses that are NOT AlternativeMapping subclasses
 all_classes = {

@@ -14,7 +14,8 @@ from krrood.ontomatic.property_descriptor.attribute_introspector import (
     DescriptorAwareIntrospector,
 )
 from krrood.utils import recursive_subclasses
-from pycram.datastructures.dataclasses import Context
+
+from pycram.datastructures.dataclasses import Context  # type: ignore
 from semantic_digital_twin.adapters.mesh import STLParser
 from semantic_digital_twin.adapters.urdf import URDFParser
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
@@ -32,7 +33,6 @@ from semantic_digital_twin.world_description.connections import (
 from semantic_digital_twin.world_description.geometry import Box, Scale
 from semantic_digital_twin.world_description.shape_collection import ShapeCollection
 from semantic_digital_twin.world_description.world_entity import Body
-
 
 ###############################
 ### Fixture Usage Guide #######
@@ -232,7 +232,7 @@ def apartment_world_setup():
             2.37, 1.8, 1.05, reference_frame=apartment_world.root
         ),
     )
-    milk_view = Milk(body=apartment_world.get_body_by_name("milk.stl"))
+    milk_view = Milk(root=apartment_world.get_body_by_name("milk.stl"))
     with apartment_world.modify_world():
         apartment_world.add_semantic_annotation(milk_view)
 

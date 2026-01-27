@@ -173,6 +173,7 @@ class WorldFromDatabaseConfig(WorldConfig):
     """
 
     primary_key: int = 1
+    """Primary key of the world in the semantic digital twin database."""
 
     def setup_collision_config(self):
         pass

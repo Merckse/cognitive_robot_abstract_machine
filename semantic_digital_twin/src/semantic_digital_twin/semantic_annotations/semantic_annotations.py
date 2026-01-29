@@ -482,6 +482,12 @@ class Armchair(Chair):
 
 
 @dataclass(eq=False)
+class TrashCan(HasBody, Furniture):
+    """
+    Abstract class for Trash Can.
+    """
+
+@dataclass(eq=False)
 class ShelvingUnit(HasBody, Furniture):
     """
     A shelving unit.

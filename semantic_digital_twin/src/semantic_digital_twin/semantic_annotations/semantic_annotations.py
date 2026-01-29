@@ -307,13 +307,6 @@ class Pringles(Food):
 
 
 @dataclass(eq=False)
-class GelatinBox(Food):
-    """
-    Gelatin box.
-    """
-
-
-@dataclass(eq=False)
 class TomatoSoup(Food):
     """
     Tomato soup.
@@ -373,6 +366,7 @@ class Produce(Food):
 
     pass
 
+
 @dataclass(eq=False)
 class Fruit(Produce):
     """
@@ -380,6 +374,7 @@ class Fruit(Produce):
     """
 
     ...
+
 
 @dataclass(eq=False)
 class Vegetable(Produce):
@@ -422,13 +417,6 @@ class Apple(Fruit):
 class Banana(Fruit):
     """
     A banana.
-    """
-
-
-@dataclass(eq=False)
-class Orange(Fruit):
-    """
-    An orange.
     """
 
 
@@ -486,6 +474,7 @@ class TrashCan(HasBody, Furniture):
     """
     Abstract class for Trash Can.
     """
+
 
 @dataclass(eq=False)
 class ShelvingUnit(HasBody, Furniture):
@@ -657,29 +646,31 @@ class LiquidCap(HasBody):
     A liquid cap.
     """
 
+
 @dataclass(eq=False)
 class Drink(SemanticAnnotation):
     """
     A Semantic annotation representing a drink item.
     """
+
     body: Body = field(kw_only=True)
 
 
 @dataclass(eq=False)
-class Cola(Drink):
-    ...
+class Cola(Drink): ...
+
 
 @dataclass(eq=False)
-class Fanta(Drink):
-    ...
+class Fanta(Drink): ...
+
 
 @dataclass(eq=False)
-class Water(Drink):
-    ...
+class Water(Drink): ...
+
 
 @dataclass(eq=False)
-class Beer(Drink):
-    ...
+class Beer(Drink): ...
+
 
 # Food Items (with HasBody)
 @dataclass(eq=False)
@@ -828,11 +819,13 @@ class Cucumber(Food, IsPerceivable):
     A cucumber.
     """
 
+
 @dataclass(eq=False)
 class Zucchini(Food, IsPerceivable):
     """
     A zucchini.
     """
+
 
 @dataclass(eq=False)
 class Salt(Food, IsPerceivable):
@@ -846,6 +839,8 @@ class Muesli(Food, IsPerceivable):
     """
     A pack of muesli (e.g., in a box or bag).
     """
+
+
 @dataclass(eq=False)
 class Corn(Food, IsPerceivable):
     """
@@ -1048,6 +1043,7 @@ class Saucer(HasBody, IsPerceivable):
     """
     A saucer.
     """
+
 
 @dataclass(eq=False)
 class Softball(HasBody, IsPerceivable):

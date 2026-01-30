@@ -4,9 +4,8 @@ import sys
 
 import semantic_digital_twin.semantic_annotations.semantic_annotations as sem_annotations
 
-# -----------------------------------------------------------------------------
-# Helper functions for resolving semantic object classes from strings
-# -----------------------------------------------------------------------------
+"""Helper functions for resolving semantic object classes from strings"""
+
 
 # Faster lookup method:
 # If the target dataclass is known to live inside a specific module

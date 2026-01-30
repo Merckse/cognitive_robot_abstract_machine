@@ -40,6 +40,7 @@ from .exceptions import (
     AlreadyBelongsToAWorldError,
     MissingWorldModificationContextError,
     WorldEntityWithIDNotFoundError,
+    MissingReferenceFrameError,
 )
 from .robots.abstract_robot import AbstractRobot
 from .spatial_computations.forward_kinematics import ForwardKinematicsManager
@@ -1918,6 +1919,8 @@ class World:
             is a Quaternion, the returned object is a Quaternion. Otherwise, it is the
             transformed spatial object.
         """
+        if spatial_object.reference_frame is None:
+            raise MissingReferenceFrameError(spatial_object)
         target_frame_T_reference_frame = self.compute_forward_kinematics(
             root=target_frame, tip=spatial_object.reference_frame
         )
@@ -1929,6 +1932,11 @@ class World:
                 return target_frame_R.to_quaternion()
             case _:
                 return target_frame_T_reference_frame @ spatial_object
+
+    def transform_to_world(
+        self, spatial_object: GenericSpatialType
+    ) -> GenericSpatialType:
+        return self.transform(spatial_object, self.root)
 
     def __deepcopy__(self, memo):
         memo = {} if memo is None else memo

@@ -40,6 +40,7 @@ from .exceptions import (
     AlreadyBelongsToAWorldError,
     MissingWorldModificationContextError,
     WorldEntityWithIDNotFoundError,
+    MissingReferenceFrameError,
 )
 from .robots.abstract_robot import AbstractRobot
 from .spatial_computations.forward_kinematics import ForwardKinematicsManager
@@ -1319,6 +1320,31 @@ class World:
             self.add_semantic_annotation(semantic_annotation)
 
     # %% Subgraph Targeting
+
+    def move_branch_with_fixed_connection(
+        self,
+        branch_root: KinematicStructureEntity,
+        new_parent: KinematicStructureEntity,
+    ):
+        """
+        Moves a branch of the kinematic structure starting at branch_root to a new parent.
+        Useful for example to "attach" an object (branch_root) to the gripper of the robot (new_parent), when picking up
+        an object.
+        ..warning:: the old connection is lost after calling this method
+
+        :param branch_root: The root of the branch to move.
+        :param new_parent: The new parent of the branch.
+        """
+        new_parent_T_child = self.compute_forward_kinematics(new_parent, branch_root)
+        self.remove_connection(branch_root.parent_connection)
+        self.add_connection(
+            FixedConnection(
+                parent=new_parent,
+                child=branch_root,
+                parent_T_connection_expression=new_parent_T_child,
+            )
+        )
+
     def get_connections_of_branch(
         self, root: KinematicStructureEntity
     ) -> List[Connection]:
@@ -1906,6 +1932,8 @@ class World:
             is a Quaternion, the returned object is a Quaternion. Otherwise, it is the
             transformed spatial object.
         """
+        if spatial_object.reference_frame is None:
+            raise MissingReferenceFrameError(spatial_object)
         target_frame_T_reference_frame = self.compute_forward_kinematics(
             root=target_frame, tip=spatial_object.reference_frame
         )

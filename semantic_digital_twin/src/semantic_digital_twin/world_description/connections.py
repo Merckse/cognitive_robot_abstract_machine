@@ -11,7 +11,9 @@ from typing_extensions import List, TYPE_CHECKING, Union, Optional, Dict, Any, S
 
 from .degree_of_freedom import DegreeOfFreedom
 from .world_entity import CollisionCheckingConfig, Connection, KinematicStructureEntity
-from ..adapters.world_entity_kwargs_tracker import WorldEntityWithIDKwargsTracker
+from ..adapters.world_entity_kwargs_tracker import (
+    KinematicStructureEntityKwargsTracker,
+)
 from ..datastructures.prefixed_name import PrefixedName
 from ..datastructures.types import NpMatrix4x4
 from ..spatial_types import HomogeneousTransformationMatrix, Vector3, Point3, Quaternion
@@ -67,9 +69,9 @@ class ActiveConnection(Connection):
 
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
-        tracker = WorldEntityWithIDKwargsTracker.from_kwargs(kwargs)
-        parent = tracker.get_world_entity_with_id(id=from_json(data["parent_id"]))
-        child = tracker.get_world_entity_with_id(id=from_json(data["child_id"]))
+        tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
+        parent = tracker.get_kinematic_structure_entity(id=from_json(data["parent_id"]))
+        child = tracker.get_kinematic_structure_entity(id=from_json(data["child_id"]))
         return cls(
             name=PrefixedName.from_json(data["name"]),
             parent=parent,
@@ -153,9 +155,9 @@ class ActiveConnection1DOF(ActiveConnection, ABC):
 
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
-        tracker = WorldEntityWithIDKwargsTracker.from_kwargs(kwargs)
-        parent = tracker.get_world_entity_with_id(id=from_json(data["parent_id"]))
-        child = tracker.get_world_entity_with_id(id=from_json(data["child_id"]))
+        tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
+        parent = tracker.get_kinematic_structure_entity(id=from_json(data["parent_id"]))
+        child = tracker.get_kinematic_structure_entity(id=from_json(data["child_id"]))
         return cls(
             name=PrefixedName.from_json(data["name"]),
             parent=parent,
@@ -399,9 +401,9 @@ class Connection6DoF(Connection):
 
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
-        tracker = WorldEntityWithIDKwargsTracker.from_kwargs(kwargs)
-        parent = tracker.get_world_entity_with_id(id=from_json(data["parent_id"]))
-        child = tracker.get_world_entity_with_id(id=from_json(data["child_id"]))
+        tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
+        parent = tracker.get_kinematic_structure_entity(id=from_json(data["parent_id"]))
+        child = tracker.get_kinematic_structure_entity(id=from_json(data["child_id"]))
         return cls(
             name=PrefixedName.from_json(data["name"]),
             parent=parent,
@@ -625,9 +627,9 @@ class OmniDrive(ActiveConnection, HasUpdateState):
 
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
-        tracker = WorldEntityWithIDKwargsTracker.from_kwargs(kwargs)
-        parent = tracker.get_world_entity_with_id(id=from_json(data["parent_id"]))
-        child = tracker.get_world_entity_with_id(id=from_json(data["child_id"]))
+        tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
+        parent = tracker.get_kinematic_structure_entity(id=from_json(data["parent_id"]))
+        child = tracker.get_kinematic_structure_entity(id=from_json(data["child_id"]))
         return cls(
             name=PrefixedName.from_json(data["name"], **kwargs),
             parent=parent,

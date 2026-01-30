@@ -5,41 +5,40 @@ from uuid import UUID
 
 from typing_extensions import Dict, Optional, TYPE_CHECKING, Self, ClassVar, Any
 
-from ..exceptions import (
-    WorldEntityWithIDNotInKwargs,
-    WorldEntityNotFoundError,
-    WorldEntityWithIDNotFoundError,
-)
+from ..exceptions import KinematicStructureEntityNotInKwargs, WorldEntityNotFoundError
 
 if TYPE_CHECKING:
     from ..world import World
-    from ..world_description.world_entity import WorldEntityWithID
+    from ..datastructures.prefixed_name import PrefixedName
+    from ..world_description.world_entity import KinematicStructureEntity
 
 
 @dataclass
-class WorldEntityWithIDKwargsTracker:
+class KinematicStructureEntityKwargsTracker:
     """
-    Keeps track of the world entities that have been parsed in a from_json call from SubclassJSONSerializer.
+    Keeps track of the kinematic structure entities that have been parsed in a from_json call from SubclassJSONSerializer.
     Usage:
         Top-level object must create a new tracker, optionally using a world instance if present, and pass it along:
-            tracker = WorldEntityWithIDKwargsTracker.from_world(world)
+            tracker = KinematicStructureEntityKwargsTracker.from_world(world)
             SubclassJSONSerializer.from_json(json_data, **tracker.create_from_json_kwargs())
 
-        Objects that create world entities:
+        Objects that create kinematic structure entities:
             def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
                 new_instance = cls(...)
-                tracker = WorldEntityWithIDKwargsTracker.from_kwargs(kwargs)
-                tracker.add_world_entity_with_id(new_instance)
+                tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
+                tracker.add_kinematic_structure_entity(new_instance)
                 ...
 
-        Objects that need world entities for parsing:
+        Objects that need kinematic structure entities for parsing:
             def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
-                tracker = WorldEntityWithIDKwargsTracker.from_kwargs(kwargs)
-                entity = tracker.get_world_entity_with_id(name_of_entity)
+                tracker = KinematicStructureEntityKwargsTracker.from_kwargs(kwargs)
+                entity = tracker.get_kinematic_structure_entity(name_of_entity)
                 ...
     """
 
-    _world_entities_with_id: Dict[UUID, WorldEntityWithID] = field(default_factory=dict)
+    _kinematic_structure_entities: Dict[UUID, KinematicStructureEntity] = field(
+        default_factory=dict
+    )
     _world: Optional[World] = field(init=False, default=None)
     __world_entity_tracker: ClassVar[str] = "__world_entity_tracker"
 
@@ -84,33 +83,41 @@ class WorldEntityWithIDKwargsTracker:
         """
         kwargs[self.__world_entity_tracker] = self
 
-    def add_world_entity_with_id(self, world_entity_with_id: WorldEntityWithID):
+    def add_kinematic_structure_entity(
+        self, kinematic_structure_entity: KinematicStructureEntity
+    ):
         """
-        Add a new world entity with id to the tracker in-place, to make it available for parsing in future from_json calls.
+        Add a new kinematic structure entity to the tracker, to make it available for parsing in future from_json calls.
         """
-        self._world_entities_with_id[world_entity_with_id.id] = world_entity_with_id
+        self._kinematic_structure_entities[kinematic_structure_entity.id] = (
+            kinematic_structure_entity
+        )
 
-    def has_world_entity_with_id(self, id: UUID) -> bool:
-        return id in self._world_entities_with_id
+    def has_kinematic_structure_entity(self, id: UUID) -> bool:
+        try:
+            self.get_kinematic_structure_entity(id)
+            return True
+        except KinematicStructureEntityNotInKwargs:
+            return False
 
-    def get_world_entity_with_id(self, id: UUID) -> WorldEntityWithID:
+    def get_kinematic_structure_entity(self, id: UUID) -> KinematicStructureEntity:
         """
-        Retrieve a world entity by its UUID.
+        Retrieve a kinematic structure entity by its UUID.
 
-        This method attempts to find a world entity from the internal
+        This method attempts to find a kinematic structure entity from the internal
         collection. If the entity is not found and a world object is available,
         it will try to retrieve the entity by its UUID from the world object.
 
-        :param id: The UUID of the world entity to retrieve.
-        :return: The world entity corresponding to the specified UUID,
+        :param id: The UUID of the kinematic structure entity to retrieve.
+        :return: The kinematic structure entity corresponding to the specified UUID,
                  or None if not found.
         """
-        result = self._world_entities_with_id.get(id)
-        if result is not None:
-            return result
+        kinematic_structure_entity = self._kinematic_structure_entities.get(id)
+        if kinematic_structure_entity is not None:
+            return kinematic_structure_entity
         if self._world is not None:
             try:
-                return self._world.get_world_entity_with_id_by_id(id)
-            except WorldEntityWithIDNotFoundError:
+                return self._world.get_kinematic_structure_entity_by_id(id)
+            except WorldEntityNotFoundError:
                 pass
-        raise WorldEntityWithIDNotInKwargs(id)
+        raise KinematicStructureEntityNotInKwargs(id)

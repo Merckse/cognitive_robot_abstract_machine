@@ -2,36 +2,40 @@ import time
 from dataclasses import field, dataclass
 from typing import Optional, Callable
 
-from ..context import ExecutionContext, BuildContext
-from ..data_types import ObservationStateValues
-from ..graph_node import MotionStatechartNode, NodeArtifacts
+from giskardpy.motion_statechart.context import ExecutionContext
+from giskardpy.motion_statechart.data_types import ObservationStateValues
+from giskardpy.motion_statechart.graph_node import MotionStatechartNode
 
 
-@dataclass(eq=False, repr=False)
-class CheckControlCycleCount(MotionStatechartNode):
-    """
-    Sets observation to True if control cycle count is above threshold.
-    """
+@dataclass
+class CheckMaxTrajectoryLength(MotionStatechartNode):
+    length: float
 
-    threshold: int = field(kw_only=True)
-    """After this many control cycles, the node will turn True."""
-
-    def build(self, context: BuildContext) -> NodeArtifacts:
-        artifacts = NodeArtifacts()
-        artifacts.observation = context.control_cycle_variable > self.threshold
-        return artifacts
+    def __post_init__(self):
+        self.observation_expression = context.time_symbol > self.length
 
 
 @dataclass(eq=False, repr=False)
 class Print(MotionStatechartNode):
-    """
-    Prints a message to the console every tick.
-    """
     message: str = ""
 
     def on_tick(self, context: ExecutionContext) -> ObservationStateValues:
         print(self.message)
         return ObservationStateValues.TRUE
+
+
+# @dataclass
+# class Sleep(MotionStatechartNode):
+#     seconds: float
+#     start_time: Optional[float] = field(default=None, init=False)
+#
+#     def on_start(self, context: ExecutionContext):
+#         self.start_time = None
+#
+#     def on_tick(self, context: ExecutionContext) -> Optional[float]:
+#         if self.start_time is None:
+#             self.start_time = god_map.time
+#         return god_map.time - self.start_time >= self.seconds
 
 
 @dataclass
@@ -56,25 +60,23 @@ class CountSeconds(MotionStatechartNode):
 
 
 @dataclass(repr=False, eq=False)
-class CountControlCycles(MotionStatechartNode):
+class CountTicks(MotionStatechartNode):
     """
-    This node counts 'threshold'-many control cycles and then turns True.
+    This node counts 'threshold'-many ticks and then turns True.
     Only counts while in state RUNNING.
     """
 
-    _counter: int = field(init=False)
-    """Keeps track of how many ticks have passed since first True"""
-    control_cycles: int = field(kw_only=True)
-    """Turns True after this many control cycles."""
+    ticks: int = field(kw_only=True)
+    counter: int = field(init=False)
 
     def on_tick(self, context: ExecutionContext) -> Optional[ObservationStateValues]:
-        self._counter += 1
-        if self._counter >= self.control_cycles:
+        self.counter += 1
+        if self.counter >= self.ticks:
             return ObservationStateValues.TRUE
         return ObservationStateValues.FALSE
 
     def on_start(self, context: ExecutionContext):
-        self._counter = 0
+        self.counter = 0
 
 
 @dataclass
@@ -83,17 +85,13 @@ class Pulse(MotionStatechartNode):
     Will stay True for a single tick, then turn False.
     """
 
-    _counter: int = field(default=0, init=False)
-    """Keeps track of how many ticks have passed since first True"""
-    length: int = field(default=1, kw_only=True)
-    """Number of ticks to stay True"""
-
-    def on_start(self, context: ExecutionContext):
-        self._counter = 0
+    _triggered: bool = field(default=False, init=False)
 
     def on_tick(self, context: ExecutionContext) -> Optional[ObservationStateValues]:
-        if self._counter < self.length:
+        if not self._triggered:
             self._triggered = True
-            self._counter += 1
             return ObservationStateValues.TRUE
         return ObservationStateValues.FALSE
+
+    def on_reset(self, context: ExecutionContext):
+        self._triggered = False

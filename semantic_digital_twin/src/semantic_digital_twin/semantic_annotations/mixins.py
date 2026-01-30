@@ -296,6 +296,7 @@ class HasRootBody(HasRootKinematicStructureEntity, ABC):
         :param active_axis: The active axis for the connection.
         :param connection_multiplier: The multiplier for the connection.
         :param connection_offset: The offset for the connection.
+        :param scale: The scale used to generate the geometry of the body.
         :return: The created semantic annotation instance.
         """
         body = Body(name=name)

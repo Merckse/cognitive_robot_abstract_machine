@@ -32,7 +32,6 @@ if TYPE_CHECKING:
         SpatialType,
     )
     from .spatial_types import Vector3
-    from .semantic_annotations.mixins import HasRootKinematicStructureEntity
     from .world_description.degree_of_freedom import DegreeOfFreedomLimits
 
 
@@ -288,7 +287,7 @@ class MissingReferenceFrameError(SpatialTypesError):
 
     spatial_type: SpatialType
     """
-   Spatial type that lacks a reference frame.
+    Spatial type that lacks a reference frame.
     """
 
     def __post_init__(self):

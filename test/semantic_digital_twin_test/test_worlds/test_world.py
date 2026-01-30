@@ -1145,7 +1145,7 @@ def test_attach_with_fixed_connection(world_setup):
     assert isinstance(l2.parent_connection, PrismaticConnection)
 
     with world.modify_world():
-        world.attach_with_fixed_connection(new_parent=bf, new_child=l2)
+        world.reattach_with_fixed_connection(new_parent=bf, new_child=l2)
 
     # New state: l2 is child of bf via FixedConnection
     assert l2.parent_connection.parent == bf
@@ -1153,7 +1153,7 @@ def test_attach_with_fixed_connection(world_setup):
     assert l2 in world.compute_child_kinematic_structure_entities(bf)
     assert l2 not in world.compute_child_kinematic_structure_entities(l1)
     new_child_global_pose = l2.global_pose
-    np.allclose(old_child_global_pose.to_np(), new_child_global_pose.to_np())
+    assert np.allclose(old_child_global_pose, new_child_global_pose)
 
 
 def test_transform_to_world(world_setup):
@@ -1185,7 +1185,7 @@ def test_transform_to_world(world_setup):
     point_in_l2 = Point3(x=0.1, y=0.0, z=0.0, reference_frame=l2)
 
     # Transform to world frame
-    point_in_world = world.transform_to_world(point_in_l2)
+    point_in_world = world.transform_to_global_reference_frame(point_in_l2)
 
     # Expected calculation:
     # point in l2: (0.1, 0, 0)

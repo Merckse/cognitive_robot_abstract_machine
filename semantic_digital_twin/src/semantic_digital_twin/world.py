@@ -1321,7 +1321,7 @@ class World:
 
     # %% Subgraph Targeting
 
-    def attach_with_fixed_connection(
+    def reattach_with_fixed_connection(
         self, new_parent: KinematicStructureEntity, new_child: KinematicStructureEntity
     ):
         """
@@ -1330,9 +1330,7 @@ class World:
         :param new_parent: The new parent of the kinematic structure entity.
         :param new_child: The new child of the kinematic structure entity.
         """
-        root_T_parent = new_parent.global_pose
-        root_T_child = new_child.global_pose
-        new_parent_T_child = root_T_parent.inverse() @ root_T_child
+        new_parent_T_child = self.compute_forward_kinematics(new_parent, new_child)
         self.remove_connection(new_child.parent_connection)
         self.add_connection(
             FixedConnection(
@@ -1906,9 +1904,12 @@ class World:
         """
         return not bool(len(self.kinematic_structure))
 
-    def transform_to_world(
+    def transform_to_global_reference_frame(
         self, spatial_object: GenericSpatialType
     ) -> GenericSpatialType:
+        """
+        Transforms a spatial object to the global reference frame, world.root
+        """
         return self.transform(spatial_object, self.root)
 
     def transform(

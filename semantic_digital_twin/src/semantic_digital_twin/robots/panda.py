@@ -1,9 +1,10 @@
 from dataclasses import dataclass
 from typing import Self
 
-from .abstract_robot import AbstractRobot, Arm, Finger, ParallelGripper, JointState
+from .abstract_robot import AbstractRobot, Arm, Finger, ParallelGripper
 from .robot_mixins import HasArms
 from ..datastructures.definitions import StaticJointState, GripperState
+from ..datastructures.joint_state import JointState
 from ..datastructures.prefixed_name import PrefixedName
 from ..spatial_types import Quaternion
 from ..spatial_types.spatial_types import Vector3
@@ -78,10 +79,13 @@ class Panda(AbstractRobot, HasArms):
 
             arm_park = JointState(
                 name=PrefixedName("arm_park", prefix=panda.name.name),
-                joints=[c for c in arm.connections if type(c) != FixedConnection],
-                joint_positions=[0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853],
+                mapping=dict(
+                    zip(
+                        [c for c in arm.connections if type(c) != FixedConnection],
+                        [0.0, 0.0, 0.0, -1.57079, 0.0, 1.57079, -0.7853],
+                    )
+                ),
                 state_type=StaticJointState.PARK,
-                _world=world,
             )
 
             arm.add_joint_state(arm_park)
@@ -93,18 +97,14 @@ class Panda(AbstractRobot, HasArms):
 
             gripper_open = JointState(
                 name=PrefixedName("gripper_open", prefix=panda.name.name),
-                joints=gripper_joints,
-                joint_positions=[0.04, 0.04],
+                mapping=dict(zip(gripper_joints, [0.04, 0.04])),
                 state_type=GripperState.OPEN,
-                _world=world,
             )
 
             gripper_close = JointState(
                 name=PrefixedName("gripper_close", prefix=panda.name.name),
-                joints=gripper_joints,
-                joint_positions=[0.0, 0.0],
+                mapping=dict(zip(gripper_joints, [0.0, 0.0])),
                 state_type=GripperState.CLOSE,
-                _world=world,
             )
 
             gripper.add_joint_state(gripper_open)

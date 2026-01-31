@@ -22,6 +22,7 @@ from krrood.adapters.json_serializer import (
     DataclassJSONSerializer,
 )
 from ..collision_checking.collision_detector import CollisionCheck
+from ..datastructures.joint_state import GripperState, JointState
 from ..datastructures.prefixed_name import PrefixedName
 from ..spatial_types.derivatives import DerivativeMap
 from ..spatial_types.spatial_types import (
@@ -211,7 +212,7 @@ class Manipulator(SemanticRobotAnnotation, ABC):
     The axis of the manipulator's tool frame that is facing forward.
     """
 
-    joint_states: List[JointState] = field(default_factory=list)
+    joint_states: List[GripperState] = field(default_factory=list)
     """
     Fixed joint states that are defined for this manipulator, like open and close. 
     """
@@ -386,72 +387,6 @@ class Torso(KinematicChain):
         This allows for proper comparison and storage in sets or dictionaries.
         """
         return hash((self.name, self.root, self.tip))
-
-
-@dataclass
-class JointState(DataclassJSONSerializer):
-    """
-    Represents a named joint state of a robot. For example, the park position of the arms.
-    """
-
-    name: PrefixedName
-    """
-    The identifier for this joint state.
-    """
-
-    joints: List[Connection]
-    """
-    The joints involved in this state
-    """
-
-    joint_positions: List[float]
-    """
-    Position of the joints in this state, must correspond to the joint_names
-    """
-
-    state_type: JointStateType
-    """
-    Type of the joint state (e.g., "Park", "Open" (for gripper))
-    """
-
-    _world: World = field(default=None)
-    """
-    The backreference to the world this joint state belongs to.
-    """
-
-    _robot: AbstractRobot = field(init=False, default=None)
-    """
-    The robot this joint state belongs to
-    """
-
-    def apply_to_world(self, world: World):
-        """
-        Applies the joint state to the robot in the given world.
-        :param world: The world in which the robot is located.
-        """
-        for joint, joint_position in zip(self.joints, self.joint_positions):
-            joint.position = joint_position
-        world.notify_state_change()
-
-    def assign_to_robot(self, robot: AbstractRobot):
-        """
-        Assigns the joint state to the given robot. This method ensures that the joint state is only assigned
-        to one robot at a time, and raises an error if it is already assigned to another robot.
-        """
-        if self._robot is not None and self._robot != robot:
-            raise ValueError(
-                f"Joint State {self.name} is already assigned to another robot: {self._robot.name}."
-            )
-        if self._robot is not None:
-            return
-        self._robot = robot
-
-    def __hash__(self):
-        """
-        Returns the hash of the joint state, which is based on the joint state name.
-        This allows for proper comparison and storage in sets or dictionaries.
-        """
-        return hash(self.name)
 
 
 @dataclass

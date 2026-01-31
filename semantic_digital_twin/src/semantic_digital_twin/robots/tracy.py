@@ -5,6 +5,7 @@ from dataclasses import field, dataclass
 from typing import Self
 
 from ..datastructures.definitions import StaticJointState, GripperState
+from ..datastructures.joint_state import JointState
 from ..datastructures.prefixed_name import PrefixedName
 from ..robots.abstract_robot import (
     Finger,
@@ -14,7 +15,6 @@ from ..robots.abstract_robot import (
     FieldOfView,
     Neck,
     AbstractRobot,
-    JointState,
 )
 from .robot_mixins import HasNeck, SpecifiesLeftRightArm
 from ..spatial_types import Quaternion, Vector3
@@ -137,20 +137,26 @@ class Tracy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
             # Create states
             left_arm_park = JointState(
                 name=PrefixedName("left_arm_park", prefix=robot.name.name),
-                joints=[c for c in left_arm.connections if type(c) != FixedConnection],
-                joint_positions=[3.0, -1.0, 1.2, -0.5, 1.57, 0.0],
+                mapping=dict(
+                    zip(
+                        [c for c in left_arm.connections if type(c) != FixedConnection],
+                        [3.0, -1.0, 1.2, -0.5, 1.57, 0.0],
+                    )
+                ),
                 state_type=StaticJointState.PARK,
-                _world=world,
             )
 
             left_arm.add_joint_state(left_arm_park)
 
             right_arm_park = JointState(
                 name=PrefixedName("right_arm_park", prefix=robot.name.name),
-                joints=[c for c in left_arm.connections if type(c) != FixedConnection],
-                joint_positions=[3.0, -2.1, -1.57, 0.5, 1.57, 0.0],
+                mapping=dict(
+                    zip(
+                        [c for c in left_arm.connections if type(c) != FixedConnection],
+                        [3.0, -2.1, -1.57, 0.5, 1.57, 0.0],
+                    )
+                ),
                 state_type=StaticJointState.PARK,
-                _world=world,
             )
 
             right_arm.add_joint_state(right_arm_park)
@@ -161,18 +167,16 @@ class Tracy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             left_gripper_open = JointState(
                 name=PrefixedName("left_gripper_open", prefix=robot.name.name),
-                joints=left_gripper_joints,
-                joint_positions=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                mapping=dict(zip(left_gripper_joints, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])),
                 state_type=GripperState.OPEN,
-                _world=world,
             )
 
             left_gripper_close = JointState(
                 name=PrefixedName("left_gripper_close", prefix=robot.name.name),
-                joints=left_gripper_joints,
-                joint_positions=[0.8, -0.8, -0.8, 0.8, -0.8, 0.8],
+                mapping=dict(
+                    zip(left_gripper_joints, [0.8, -0.8, -0.8, 0.8, -0.8, 0.8])
+                ),
                 state_type=GripperState.CLOSE,
-                _world=world,
             )
 
             left_gripper.add_joint_state(left_gripper_close)
@@ -184,18 +188,16 @@ class Tracy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             right_gripper_open = JointState(
                 name=PrefixedName("right_gripper_open", prefix=robot.name.name),
-                joints=right_gripper_joints,
-                joint_positions=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                mapping=dict(zip(right_gripper_joints, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])),
                 state_type=GripperState.OPEN,
-                _world=world,
             )
 
             right_gripper_close = JointState(
                 name=PrefixedName("right_gripper_close", prefix=robot.name.name),
-                joints=right_gripper_joints,
-                joint_positions=[0.8, -0.8, -0.8, 0.8, -0.8, 0.8],
+                mapping=dict(
+                    zip(right_gripper_joints, [0.8, -0.8, -0.8, 0.8, -0.8, 0.8])
+                ),
                 state_type=GripperState.CLOSE,
-                _world=world,
             )
 
             right_gripper.add_joint_state(right_gripper_close)

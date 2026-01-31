@@ -5,6 +5,7 @@ from typing import Self
 
 from .robot_mixins import HasNeck, SpecifiesLeftRightArm
 from ..datastructures.definitions import StaticJointState, GripperState, TorsoState
+from ..datastructures.joint_state import JointState
 from ..datastructures.prefixed_name import PrefixedName
 from ..robots.abstract_robot import (
     Neck,
@@ -15,7 +16,6 @@ from ..robots.abstract_robot import (
     FieldOfView,
     Torso,
     AbstractRobot,
-    JointState,
 )
 from ..spatial_types import Quaternion, Vector3
 from ..world import World
@@ -198,44 +198,54 @@ class Justin(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
             # Create states
             left_arm_park = JointState(
                 name=PrefixedName("left_arm_park", prefix=justin.name.name),
-                joints=[c for c in left_arm.connections if type(c) != FixedConnection],
-                joint_positions=[
-                    0.0,
-                    0.0,
-                    0.174533,
-                    0.0,
-                    0.0,
-                    -1.9,
-                    0.0,
-                    1.0,
-                    0.0,
-                    -1.0,
-                    0.0,
-                ],
+                mapping=dict(
+                    zip(
+                        [c for c in left_arm.connections if type(c) != FixedConnection],
+                        [
+                            0.0,
+                            0.0,
+                            0.174533,
+                            0.0,
+                            0.0,
+                            -1.9,
+                            0.0,
+                            1.0,
+                            0.0,
+                            -1.0,
+                            0.0,
+                        ],
+                    )
+                ),
                 state_type=StaticJointState.PARK,
-                _world=world,
             )
 
             left_arm.add_joint_state(left_arm_park)
 
             right_arm_park = JointState(
                 name=PrefixedName("right_arm_park", prefix=justin.name.name),
-                joints=[c for c in right_arm.connections if type(c) != FixedConnection],
-                joint_positions=[
-                    0.0,
-                    0.0,
-                    0.174533,
-                    0.0,
-                    0.0,
-                    -1.9,
-                    0.0,
-                    1.0,
-                    0.0,
-                    -1.0,
-                    0.0,
-                ],
+                mapping=dict(
+                    zip(
+                        [
+                            c
+                            for c in right_arm.connections
+                            if type(c) != FixedConnection
+                        ],
+                        [
+                            0.0,
+                            0.0,
+                            0.174533,
+                            0.0,
+                            0.0,
+                            -1.9,
+                            0.0,
+                            1.0,
+                            0.0,
+                            -1.0,
+                            0.0,
+                        ],
+                    )
+                ),
                 state_type=StaticJointState.PARK,
-                _world=world,
             )
 
             right_arm.add_joint_state(right_arm_park)
@@ -246,60 +256,66 @@ class Justin(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             left_gripper_open = JointState(
                 name=PrefixedName("left_gripper_open", prefix=justin.name.name),
-                joints=left_gripper_joints,
-                joint_positions=[
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                ],
+                mapping=dict(
+                    zip(
+                        left_gripper_joints,
+                        [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                        ],
+                    )
+                ),
                 state_type=GripperState.OPEN,
-                _world=world,
             )
 
             left_gripper_close = JointState(
                 name=PrefixedName("left_gripper_close", prefix=justin.name.name),
-                joints=left_gripper_joints,
-                joint_positions=[
-                    0.0,
-                    0.523599,
-                    1.50098,
-                    1.76278,
-                    1.76278,
-                    0.0,
-                    0.523599,
-                    1.50098,
-                    1.76278,
-                    1.76278,
-                    0.0,
-                    0.523599,
-                    1.50098,
-                    1.76278,
-                    1.76278,
-                    0.0,
-                    0.523599,
-                    1.50098,
-                    1.76278,
-                    1.76278,
-                ],
+                mapping=dict(
+                    zip(
+                        left_gripper_joints,
+                        [
+                            0.0,
+                            0.523599,
+                            1.50098,
+                            1.76278,
+                            1.76278,
+                            0.0,
+                            0.523599,
+                            1.50098,
+                            1.76278,
+                            1.76278,
+                            0.0,
+                            0.523599,
+                            1.50098,
+                            1.76278,
+                            1.76278,
+                            0.0,
+                            0.523599,
+                            1.50098,
+                            1.76278,
+                            1.76278,
+                        ],
+                    )
+                ),
                 state_type=GripperState.CLOSE,
-                _world=world,
             )
 
             left_gripper.add_joint_state(left_gripper_close)
@@ -311,60 +327,66 @@ class Justin(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             right_gripper_open = JointState(
                 name=PrefixedName("right_gripper_open", prefix=justin.name.name),
-                joints=right_gripper_joints,
-                joint_positions=[
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0,
-                ],
+                mapping=dict(
+                    zip(
+                        right_gripper_joints,
+                        [
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                        ],
+                    )
+                ),
                 state_type=GripperState.OPEN,
-                _world=world,
             )
 
             right_gripper_close = JointState(
                 name=PrefixedName("right_gripper_close", prefix=justin.name.name),
-                joints=right_gripper_joints,
-                joint_positions=[
-                    0.0,
-                    0.523599,
-                    1.50098,
-                    1.76278,
-                    1.76278,
-                    0.0,
-                    0.523599,
-                    1.50098,
-                    1.76278,
-                    1.76278,
-                    0.0,
-                    0.523599,
-                    1.50098,
-                    1.76278,
-                    1.76278,
-                    0.0,
-                    0.523599,
-                    1.50098,
-                    1.76278,
-                    1.76278,
-                ],
+                mapping=dict(
+                    zip(
+                        right_gripper_joints,
+                        [
+                            0.0,
+                            0.523599,
+                            1.50098,
+                            1.76278,
+                            1.76278,
+                            0.0,
+                            0.523599,
+                            1.50098,
+                            1.76278,
+                            1.76278,
+                            0.0,
+                            0.523599,
+                            1.50098,
+                            1.76278,
+                            1.76278,
+                            0.0,
+                            0.523599,
+                            1.50098,
+                            1.76278,
+                            1.76278,
+                        ],
+                    )
+                ),
                 state_type=GripperState.CLOSE,
-                _world=world,
             )
 
             right_gripper.add_joint_state(right_gripper_close)
@@ -378,26 +400,20 @@ class Justin(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             torso_low = JointState(
                 name=PrefixedName("torso_low", prefix=justin.name.name),
-                joints=torso_joints,
-                joint_positions=[-0.9, 2.33874, -1.57],
+                mapping=dict(zip(torso_joints, [-0.9, 2.33874, -1.57])),
                 state_type=TorsoState.LOW,
-                _world=world,
             )
 
             torso_mid = JointState(
                 name=PrefixedName("torso_mid", prefix=justin.name.name),
-                joints=torso_joints,
-                joint_positions=[-0.8, 1.57, -0.77],
+                mapping=dict(zip(torso_joints, [-0.8, 1.57, -0.77])),
                 state_type=TorsoState.MID,
-                _world=world,
             )
 
             torso_high = JointState(
                 name=PrefixedName("torso_high", prefix=justin.name.name),
-                joints=torso_joints,
-                joint_positions=[0.0, 0.174533, 0.0],
+                mapping=dict(zip(torso_joints, [0.0, 0.174533, 0.0])),
                 state_type=TorsoState.HIGH,
-                _world=world,
             )
 
             torso.add_joint_state(torso_low)

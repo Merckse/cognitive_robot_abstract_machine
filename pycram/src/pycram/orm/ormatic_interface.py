@@ -46,6 +46,7 @@ import pycram.robot_plans.motions.navigation
 import pycram.robot_plans.motions.robot_body
 import semantic_digital_twin.callbacks.callback
 import semantic_digital_twin.datastructures.definitions
+import semantic_digital_twin.datastructures.joint_state
 import semantic_digital_twin.datastructures.prefixed_name
 import semantic_digital_twin.orm.model
 import semantic_digital_twin.reasoning.predicates
@@ -89,12 +90,6 @@ executiondatadao_added_world_modifications_association = Table(
         "target_worldmodelmodificationblockdao_id",
         ForeignKey("WorldModelModificationBlockDAO.database_id"),
     ),
-)
-jointstatedao_joints_association = Table(
-    "jointstatedao_joints_association",
-    Base.metadata,
-    Column("source_jointstatedao_id", ForeignKey("JointStateDAO.database_id")),
-    Column("target_connectiondao_id", ForeignKey("ConnectionDAO.database_id")),
 )
 movetcpwaypointsmotiondao_waypoints_association = Table(
     "movetcpwaypointsmotiondao_waypoints_association",
@@ -1092,7 +1087,7 @@ class JerkVariableDAO(
 
 
 class JointStateDAO(
-    Base, DataAccessObject[semantic_digital_twin.robots.abstract_robot.JointState]
+    Base, DataAccessObject[semantic_digital_twin.datastructures.joint_state.JointState]
 ):
 
     __tablename__ = "JointStateDAO"
@@ -1105,10 +1100,6 @@ class JointStateDAO(
         semantic_digital_twin.datastructures.definitions.JointStateType
     ] = mapped_column(use_existing_column=True)
 
-    joint_positions: Mapped[typing.List[builtins.float]] = mapped_column(
-        JSON, nullable=False, use_existing_column=True
-    )
-
     name_id: Mapped[int] = mapped_column(
         ForeignKey("PrefixedNameDAO.database_id", use_alter=True),
         nullable=True,
@@ -1117,13 +1108,6 @@ class JointStateDAO(
 
     name: Mapped[PrefixedNameDAO] = relationship(
         "PrefixedNameDAO", uselist=False, foreign_keys=[name_id], post_update=True
-    )
-    joints: Mapped[builtins.list[ConnectionDAO]] = relationship(
-        "ConnectionDAO",
-        secondary="jointstatedao_joints_association",
-        primaryjoin="JointStateDAO.database_id == jointstatedao_joints_association.c.source_jointstatedao_id",
-        secondaryjoin="ConnectionDAO.database_id == jointstatedao_joints_association.c.target_connectiondao_id",
-        cascade="save-update, merge",
     )
 
 

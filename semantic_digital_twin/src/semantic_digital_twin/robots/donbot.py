@@ -5,6 +5,7 @@ from typing import Self
 
 from .robot_mixins import HasNeck, HasArms
 from ..datastructures.definitions import StaticJointState, GripperState, TorsoState
+from ..datastructures.joint_state import JointState
 from ..datastructures.prefixed_name import PrefixedName
 from ..robots.abstract_robot import (
     Neck,
@@ -15,7 +16,6 @@ from ..robots.abstract_robot import (
     FieldOfView,
     Torso,
     AbstractRobot,
-    JointState,
 )
 from ..spatial_types import Quaternion, Vector3
 from ..world import World
@@ -120,20 +120,26 @@ class Donbot(AbstractRobot, HasArms, HasNeck):
             # Create states
             arm_park = JointState(
                 name=PrefixedName("arm_park", prefix=donbot.name.name),
-                joints=[c for c in arm.connections if type(c) != FixedConnection],
-                joint_positions=[3.23, -1.51, -1.57, 0.0, 1.57, -1.65],
+                mapping=dict(
+                    zip(
+                        [c for c in arm.connections if type(c) != FixedConnection],
+                        [3.23, -1.51, -1.57, 0.0, 1.57, -1.65],
+                    )
+                ),
                 state_type=StaticJointState.PARK,
-                _world=world,
             )
 
             arm.add_joint_state(arm_park)
 
             looking = JointState(
                 name=PrefixedName("looking", prefix=donbot.name.name),
-                joints=[c for c in neck.connections if type(c) != FixedConnection],
-                joint_positions=[0.0, -0.35, -2.15, -0.7, 1.57, -1.57],
+                mapping=dict(
+                    zip(
+                        [c for c in neck.connections if type(c) != FixedConnection],
+                        [0.0, -0.35, -2.15, -0.7, 1.57, -1.57],
+                    )
+                ),
                 state_type=StaticJointState.PARK,
-                _world=world,
             )
 
             neck.add_joint_state(looking)
@@ -145,18 +151,14 @@ class Donbot(AbstractRobot, HasArms, HasNeck):
 
             gripper_open = JointState(
                 name=PrefixedName("gripper_open", prefix=donbot.name.name),
-                joints=gripper_joints,
-                joint_positions=[0.109, -0.055],
+                mapping=dict(zip(gripper_joints, [0.109, -0.055])),
                 state_type=GripperState.OPEN,
-                _world=world,
             )
 
             gripper_close = JointState(
                 name=PrefixedName("gripper_close", prefix=donbot.name.name),
-                joints=gripper_joints,
-                joint_positions=[0.0065, -0.0027],
+                mapping=dict(zip(gripper_joints, [0.0065, -0.0027])),
                 state_type=GripperState.CLOSE,
-                _world=world,
             )
 
             gripper.add_joint_state(gripper_close)
@@ -166,26 +168,20 @@ class Donbot(AbstractRobot, HasArms, HasNeck):
 
             torso_low = JointState(
                 name=PrefixedName("torso_low", prefix=donbot.name.name),
-                joints=torso_joint,
-                joint_positions=[0.0],
+                mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.LOW,
-                _world=world,
             )
 
             torso_mid = JointState(
                 name=PrefixedName("torso_mid", prefix=donbot.name.name),
-                joints=torso_joint,
-                joint_positions=[0.0],
+                mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.MID,
-                _world=world,
             )
 
             torso_high = JointState(
                 name=PrefixedName("torso_high", prefix=donbot.name.name),
-                joints=torso_joint,
-                joint_positions=[0.0],
+                mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.HIGH,
-                _world=world,
             )
 
             torso.add_joint_state(torso_low)

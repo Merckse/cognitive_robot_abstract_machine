@@ -29,7 +29,7 @@ from giskardpy.motion_statechart.motion_statechart import (
     ObservationState,
 )
 from giskardpy.motion_statechart.tasks.cartesian_tasks import CartesianPose
-from giskardpy.motion_statechart.tasks.joint_tasks import JointPositionList, JointState
+from giskardpy.motion_statechart.tasks.joint_tasks import JointPositionList
 from giskardpy.motion_statechart.test_nodes.test_nodes import (
     ConstTrueNode,
     TestNestedGoal,
@@ -44,6 +44,7 @@ from krrood.symbolic_math.symbolic_math import (
 from semantic_digital_twin.adapters.world_entity_kwargs_tracker import (
     WorldEntityWithIDKwargsTracker,
 )
+from semantic_digital_twin.datastructures.joint_state import JointState
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.robots.abstract_robot import AbstractRobot
 from semantic_digital_twin.spatial_types import Vector3, HomogeneousTransformationMatrix

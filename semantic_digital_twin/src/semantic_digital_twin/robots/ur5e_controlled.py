@@ -6,10 +6,10 @@ from .abstract_robot import (
     Arm,
     Finger,
     ParallelGripper,
-    JointState,
 )
 from .robot_mixins import HasArms
 from ..datastructures.definitions import StaticJointState, GripperState
+from ..datastructures.joint_state import JointState
 from ..datastructures.prefixed_name import PrefixedName
 from ..spatial_types import Quaternion
 from ..spatial_types.spatial_types import Vector3
@@ -85,10 +85,13 @@ class UR5Controlled(AbstractRobot, HasArms):
             # Create states
             arm_park = JointState(
                 name=PrefixedName("arm_park", prefix=ur5_controlled.name.name),
-                joints=[c for c in arm.connections if type(c) != FixedConnection],
-                joint_positions=[3.14, -1.56, 1.58, -1.57, -1.57, 0.0],
+                mapping=dict(
+                    zip(
+                        [c for c in arm.connections if type(c) != FixedConnection],
+                        [3.14, -1.56, 1.58, -1.57, -1.57, 0.0],
+                    )
+                ),
                 state_type=StaticJointState.PARK,
-                _world=world,
             )
 
             arm.add_joint_state(arm_park)
@@ -99,27 +102,30 @@ class UR5Controlled(AbstractRobot, HasArms):
 
             gripper_open = JointState(
                 name=PrefixedName("gripper_open", prefix=ur5_controlled.name.name),
-                joints=gripper_joints,
-                joint_positions=[
-                    0.798,
-                    0.00366,
-                    0.796,
-                    -0.793,
-                    0.798,
-                    0.00366,
-                    0.796,
-                    -0.793,
-                ],
+                mapping=dict(
+                    zip(
+                        gripper_joints,
+                        [
+                            0.798,
+                            0.00366,
+                            0.796,
+                            -0.793,
+                            0.798,
+                            0.00366,
+                            0.796,
+                            -0.793,
+                        ],
+                    )
+                ),
                 state_type=GripperState.OPEN,
-                _world=world,
             )
 
             gripper_close = JointState(
                 name=PrefixedName("gripper_close", prefix=ur5_controlled.name.name),
-                joints=gripper_joints,
-                joint_positions=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                mapping=dict(
+                    zip(gripper_joints, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+                ),
                 state_type=GripperState.CLOSE,
-                _world=world,
             )
 
             gripper.add_joint_state(gripper_open)

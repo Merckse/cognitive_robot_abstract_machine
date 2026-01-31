@@ -9,10 +9,10 @@ from .abstract_robot import (
     ParallelGripper,
     Camera,
     Torso,
-    JointState,
 )
 from .robot_mixins import HasNeck, HasArms
 from ..datastructures.definitions import StaticJointState, GripperState, TorsoState
+from ..datastructures.joint_state import JointState
 from ..datastructures.prefixed_name import PrefixedName
 from ..spatial_types import Quaternion
 from ..spatial_types.spatial_types import Vector3
@@ -153,10 +153,13 @@ class Stretch(AbstractRobot, HasArms, HasNeck):
             # Create states
             arm_park = JointState(
                 name=PrefixedName("arm_park", prefix=stretch.name.name),
-                joints=[c for c in arm.connections if type(c) != FixedConnection],
-                joint_positions=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                mapping=dict(
+                    zip(
+                        [c for c in arm.connections if type(c) != FixedConnection],
+                        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                    )
+                ),
                 state_type=StaticJointState.PARK,
-                _world=world,
             )
 
             arm.add_joint_state(arm_park)
@@ -168,18 +171,14 @@ class Stretch(AbstractRobot, HasArms, HasNeck):
 
             gripper_open = JointState(
                 name=PrefixedName("gripper_open", prefix=stretch.name.name),
-                joints=gripper_joints,
-                joint_positions=[0.59, 0.59],
+                mapping=dict(zip(gripper_joints, [0.59, 0.59])),
                 state_type=GripperState.OPEN,
-                _world=world,
             )
 
             gripper_close = JointState(
                 name=PrefixedName("gripper_close", prefix=stretch.name.name),
-                joints=gripper_joints,
-                joint_positions=[0.0, 0.0],
+                mapping=dict(zip(gripper_joints, [0.0, 0.0])),
                 state_type=GripperState.CLOSE,
-                _world=world,
             )
 
             gripper.add_joint_state(gripper_open)
@@ -189,26 +188,20 @@ class Stretch(AbstractRobot, HasArms, HasNeck):
 
             torso_low = JointState(
                 name=PrefixedName("torso_low", prefix=stretch.name.name),
-                joints=torso_joint,
-                joint_positions=[0.0],
+                mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.LOW,
-                _world=world,
             )
 
             torso_mid = JointState(
                 name=PrefixedName("torso_mid", prefix=stretch.name.name),
-                joints=torso_joint,
-                joint_positions=[0.5],
+                mapping=dict(zip(torso_joint, [0.5])),
                 state_type=TorsoState.MID,
-                _world=world,
             )
 
             torso_high = JointState(
                 name=PrefixedName("torso_high", prefix=stretch.name.name),
-                joints=torso_joint,
-                joint_positions=[1.0],
+                mapping=dict(zip(torso_joint, [1.0])),
                 state_type=TorsoState.HIGH,
-                _world=world,
             )
 
             torso.add_joint_state(torso_low)

@@ -7,6 +7,7 @@ from typing import Type
 import numpy as np
 import pytest
 
+from giskardpy.motion_statechart.goals.pick_up import PickUp
 from giskardpy.data_types.exceptions import DuplicateNameException
 from giskardpy.executor import Executor, SimulationPacer
 from giskardpy.model.collision_matrix_manager import CollisionRequest
@@ -113,7 +114,7 @@ from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import (
     RevoluteConnection,
     ActiveConnection1DOF,
-    FixedConnection,
+    FixedConnection, PrismaticConnection, OmniDrive,
 )
 from semantic_digital_twin.world_description.degree_of_freedom import (
     DegreeOfFreedom,
@@ -467,18 +468,18 @@ def test_joint_goal():
     msc.draw("muh.pdf")
     assert len(msc.history) == 6
     assert (
-        msc.history.get_observation_history_of_node(task1)[-1]
-        == ObservationStateValues.TRUE
+            msc.history.get_observation_history_of_node(task1)[-1]
+            == ObservationStateValues.TRUE
     )
     assert (
-        msc.history.get_observation_history_of_node(end)[-1]
-        == ObservationStateValues.TRUE
+            msc.history.get_observation_history_of_node(end)[-1]
+            == ObservationStateValues.TRUE
     )
     assert (
-        msc.history.get_life_cycle_history_of_node(task1)[-1] == LifeCycleValues.RUNNING
+            msc.history.get_life_cycle_history_of_node(task1)[-1] == LifeCycleValues.RUNNING
     )
     assert (
-        msc.history.get_life_cycle_history_of_node(end)[-1] == LifeCycleValues.RUNNING
+            msc.history.get_life_cycle_history_of_node(end)[-1] == LifeCycleValues.RUNNING
     )
 
 
@@ -1241,7 +1242,7 @@ class TestCartesianTasks:
         kin_sim.tick_until_end()
 
     def test_cart_goal_sequence_at_build(
-        self, pr2_world_state_reset: World, rclpy_node
+            self, pr2_world_state_reset: World, rclpy_node
     ):
         tf_publisher = TFPublisher(node=rclpy_node, world=pr2_world_state_reset)
         viz = VizMarkerPublisher(world=pr2_world_state_reset, node=rclpy_node)
@@ -1471,7 +1472,7 @@ class TestCartesianTasks:
         assert np.allclose(fk[:3, 3], expected[:3, 3], atol=cart_goal2.threshold)
 
     def test_cartesian_orientation_sequence_at_build(
-        self, pr2_world_state_reset: World
+            self, pr2_world_state_reset: World
     ):
         """Test CartesianOrientation with Bind_at_build policy."""
         tip = pr2_world_state_reset.get_kinematic_structure_entity_by_name(
@@ -1524,7 +1525,7 @@ class TestCartesianTasks:
         assert np.allclose(fk, expected, atol=cart_goal2.threshold)
 
     def test_cartesian_orientation_sequence_on_start(
-        self, pr2_world_state_reset: World
+            self, pr2_world_state_reset: World
     ):
         """Test CartesianOrientation with Bind_on_start policy (default)."""
         tip = pr2_world_state_reset.get_kinematic_structure_entity_by_name(
@@ -1690,7 +1691,7 @@ def test_pointing_cone(pr2_world_state_reset: World):
     angle = angle_between_vector(v_pointing, v_goal)
 
     assert (
-        angle <= cone_theta + pointing_cone.threshold
+            angle <= cone_theta + pointing_cone.threshold
     ), f"PointingCone failed: final angle {angle:.6f} rad > cone_theta {cone_theta:.6f} rad"
 
 
@@ -1739,7 +1740,7 @@ def test_align_planes(pr2_world_state_reset: World):
     angle = angle_between_vector(v_tip, v_goal)
 
     assert (
-        angle <= align_planes.threshold
+            angle <= align_planes.threshold
     ), f"AlignPlanes failed: final angle {angle:.6f} rad > threshold {align_planes.threshold:.6f} rad"
 
 
@@ -1849,7 +1850,7 @@ def test_angle_goal(pr2_world_state_reset: World):
     angle = angle_between_vector(v_tip, v_ref)
 
     assert (
-        lower_angle <= angle <= upper_angle
+            lower_angle <= angle <= upper_angle
     ), f"AngleGoal failed: final angle {angle:.6f} rad not in [{lower_angle:.6f}, {upper_angle:.6f}]"
 
 
@@ -1887,7 +1888,7 @@ class TestVelocityTasks:
         ids=["pos/generic", "pos/position-only", "rot/generic", "rot/rotation-only"],
     )
     def test_observation_variable(
-        self, pr2_world_state_reset: World, goal_type: str, limit_cls: Type
+            self, pr2_world_state_reset: World, goal_type: str, limit_cls: Type
     ):
         """
         Tests that velocity limit's observation variable can trigger a CancelMotion
@@ -1937,7 +1938,7 @@ class TestVelocityTasks:
         ids=["generic_linear", "position_only_linear"],
     )
     def test_cartesian_position_velocity_limit(
-        self, pr2_world_state_reset: World, limit_cls: Type
+            self, pr2_world_state_reset: World, limit_cls: Type
     ):
         """
         Position velocity limit: check slower limit increases cycles.
@@ -1971,7 +1972,7 @@ class TestVelocityTasks:
         )
 
         assert (
-            tight_cycles >= 2 * loose_cycles
+                tight_cycles >= 2 * loose_cycles
         ), f"tight ({tight_cycles}) should take >= loose ({2 * loose_cycles}) control cycles"
 
     @pytest.mark.parametrize(
@@ -1980,7 +1981,7 @@ class TestVelocityTasks:
         ids=["generic_angular", "rotation_only_angular"],
     )
     def test_cartesian_rotation_velocity_limit(
-        self, pr2_world_state_reset: World, limit_cls: Type
+            self, pr2_world_state_reset: World, limit_cls: Type
     ):
         """
         Rotation velocity limit: check slower limit increases cycles.
@@ -2014,8 +2015,108 @@ class TestVelocityTasks:
         )
 
         assert (
-            tight_cycles >= 2 * loose_cycles
+                tight_cycles >= 2 * loose_cycles
         ), f"tight ({tight_cycles}) should take >= loose ({2 * loose_cycles}) control cycles"
+
+
+def test_pick_up(hsr_world_setup: World, rclpy_node):
+    with hsr_world_setup.modify_world():
+        box = Body(
+            name=PrefixedName("muh"),
+            collision=ShapeCollection([Box(scale=Scale(0.2, 0.1, 0.2))]),
+            visual=ShapeCollection([Box(scale=Scale(0.2, 0.1, 0.2))]),
+        )
+        dof_limits = DegreeOfFreedomLimits(lower=DerivativeMap(data=[None, -1.0, None, None]),
+                                           upper=DerivativeMap(data=[None, 1.0, None, None]), )
+        dof = DegreeOfFreedom(limits=dof_limits)
+        hsr_world_setup.add_degree_of_freedom(dof)
+        connection = PrismaticConnection(
+            dof_id=dof.id,
+            parent=hsr_world_setup.root,
+            child=box,
+            axis=Vector3.Z(reference_frame=hsr_world_setup.root),
+            parent_T_connection_expression=HomogeneousTransformationMatrix.from_xyz_rpy(
+                x=2, y=1, z=0.5, yaw=1.5 * np.pi / 2
+            ),
+        )
+        hsr_world_setup.add_connection(connection)
+
+    TFPublisher(hsr_world_setup, rclpy_node)
+    VizMarkerPublisher(world=hsr_world_setup, node=rclpy_node)
+    msc_tp = MotionStatechart()
+    tp = SetOdometry(
+        base_pose=HomogeneousTransformationMatrix.from_xyz_rpy(x=3, y=1, z=0, yaw=0,
+                                                               reference_frame=hsr_world_setup.root, ),
+    )
+    msc_tp.add_node(tp)
+    msc_tp.add_node(EndMotion.when_true(tp))
+    kstp = Executor(world=hsr_world_setup)
+    kstp.compile(motion_statechart=msc_tp)
+    kstp.tick_until_end()
+
+    hsr = hsr_world_setup.get_semantic_annotations_by_type(HSRB)[0]
+    hand = hsr_world_setup.get_semantic_annotations_by_type(Manipulator)[0]
+    msc = MotionStatechart()
+    orientation_goal = hand.front_facing_orientation.to_rotation_matrix()
+    orientation_goal.reference_frame = hsr_world_setup.get_body_by_name(
+        "base_footprint"
+    )
+
+    # pre = Sequence(
+    #     [
+    #         tp,
+    #         PickUp(manipulator=hand, object_geometry=box)
+    #     ]
+    # )
+    pre = PickUp(manipulator=hand, object_geometry=box)
+    msc.add_node(pre)
+
+    # msc.add_node(
+    #     sequence := Sequence(
+    #         [
+    #             Parallel(
+    #                 [
+    #                     CartesianOrientation(
+    #                         root_link=hsr_world_setup.root,
+    #                         tip_link=hand.tool_frame,
+    #                         goal_orientation=orientation_goal,
+    #                     ),
+    #                     CartesianPosition(
+    #                         root_link=hsr_world_setup.root,
+    #                         tip_link=hand.tool_frame,
+    #                         goal_point=hsr_world_setup.bodies[
+    #                             -1
+    #                         ].global_pose.to_position(),
+    #                     ),
+    #                 ]
+    #             ),
+    #             Parallel(
+    #                 [
+    #                     CartesianPose(
+    #                         root_link=hsr_world_setup.root,
+    #                         tip_link=hand.tool_frame,
+    #                         goal_pose=HomogeneousTransformationMatrix.from_xyz_rpy(
+    #                             x=0.2, reference_frame=hand.tool_frame
+    #                         ),
+    #                         binding_policy=GoalBindingPolicy.Bind_on_start,
+    #                     ),
+    #                     CartesianPose(
+    #                         root_link=hand.tool_frame,
+    #                         tip_link=box,
+    #                         goal_pose=HomogeneousTransformationMatrix.from_xyz_rpy(
+    #                             reference_frame=hand.tool_frame
+    #                         ),
+    #                     ),
+    #                 ]
+    #             ),
+    #         ]
+    #     )
+    # )
+    msc.add_node(EndMotion.when_true(pre))
+    kin_sim = Executor(world=hsr_world_setup, pacer=SimulationPacer(1))
+    kin_sim.compile(motion_statechart=msc)
+    kin_sim.tick_until_end()
+    msc.draw("muh.pdf")
 
 
 def test_transition_triggers():
@@ -2304,7 +2405,6 @@ class TestParallel:
 
 class TestOpenClose:
     def test_open(self, pr2_world_state_reset):
-
         with pr2_world_state_reset.modify_world():
             door = Door.create_with_new_body_in_world(
                 name=PrefixedName("door"),

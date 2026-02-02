@@ -151,7 +151,7 @@ class Stretch(AbstractRobot, HasArms, HasNeck):
             stretch.add_torso(torso)
 
             # Create states
-            arm_park = JointState(
+            arm_park = JointState.from_mapping(
                 name=PrefixedName("arm_park", prefix=stretch.name.name),
                 mapping=dict(
                     zip(
@@ -169,13 +169,13 @@ class Stretch(AbstractRobot, HasArms, HasNeck):
                 world.get_connection_by_name("joint_gripper_finger_right"),
             ]
 
-            gripper_open = JointState(
+            gripper_open = JointState.from_mapping(
                 name=PrefixedName("gripper_open", prefix=stretch.name.name),
                 mapping=dict(zip(gripper_joints, [0.59, 0.59])),
                 state_type=GripperState.OPEN,
             )
 
-            gripper_close = JointState(
+            gripper_close = JointState.from_mapping(
                 name=PrefixedName("gripper_close", prefix=stretch.name.name),
                 mapping=dict(zip(gripper_joints, [0.0, 0.0])),
                 state_type=GripperState.CLOSE,
@@ -186,19 +186,19 @@ class Stretch(AbstractRobot, HasArms, HasNeck):
 
             torso_joint = [world.get_connection_by_name("joint_lift")]
 
-            torso_low = JointState(
+            torso_low = JointState.from_mapping(
                 name=PrefixedName("torso_low", prefix=stretch.name.name),
                 mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.LOW,
             )
 
-            torso_mid = JointState(
+            torso_mid = JointState.from_mapping(
                 name=PrefixedName("torso_mid", prefix=stretch.name.name),
                 mapping=dict(zip(torso_joint, [0.5])),
                 state_type=TorsoState.MID,
             )
 
-            torso_high = JointState(
+            torso_high = JointState.from_mapping(
                 name=PrefixedName("torso_high", prefix=stretch.name.name),
                 mapping=dict(zip(torso_joint, [1.0])),
                 state_type=TorsoState.HIGH,

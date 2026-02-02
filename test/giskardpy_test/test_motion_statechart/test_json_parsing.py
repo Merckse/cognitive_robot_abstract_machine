@@ -117,7 +117,7 @@ def test_trinary_transition():
 def test_to_json_joint_position_list(mini_world):
     connection = mini_world.connections[0]
     node = JointPositionList(
-        goal_state=JointState({connection: 0.5}),
+        goal_state=JointState.from_mapping({connection: 0.5}),
         threshold=0.5,
     )
     json_data = node.to_json()
@@ -194,7 +194,7 @@ def test_executing_json_parsed_statechart():
 
     msc = MotionStatechart()
 
-    task1 = JointPositionList(goal_state=JointState({root_C_tip: 0.5}))
+    task1 = JointPositionList(goal_state=JointState.from_mapping({root_C_tip: 0.5}))
     always_true = ConstTrueNode()
     msc.add_node(always_true)
     msc.add_node(task1)

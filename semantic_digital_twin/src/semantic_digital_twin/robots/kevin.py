@@ -110,7 +110,7 @@ class Kevin(AbstractRobot, HasArms):
             kevin.add_torso(torso)
 
             # Create states
-            arm_park = JointState(
+            arm_park = JointState.from_mapping(
                 name=PrefixedName("arm_park", prefix=kevin.name.name),
                 mapping=dict(
                     zip(
@@ -128,13 +128,13 @@ class Kevin(AbstractRobot, HasArms):
                 world.get_connection_by_name("robot_arm_gripper_mirror_joint"),
             ]
 
-            gripper_open = JointState(
+            gripper_open = JointState.from_mapping(
                 name=PrefixedName("gripper_open", prefix=kevin.name.name),
                 mapping=dict(zip(gripper_joints, [0.066, 0.066])),
                 state_type=GripperState.OPEN,
             )
 
-            gripper_close = JointState(
+            gripper_close = JointState.from_mapping(
                 name=PrefixedName("gripper_close", prefix=kevin.name.name),
                 mapping=dict(zip(gripper_joints, [0.0, 0.0])),
                 state_type=GripperState.CLOSE,
@@ -145,19 +145,19 @@ class Kevin(AbstractRobot, HasArms):
 
             torso_joint = [world.get_connection_by_name("robot_arm_column_joint")]
 
-            torso_low = JointState(
+            torso_low = JointState.from_mapping(
                 name=PrefixedName("torso_low", prefix=kevin.name.name),
                 mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.LOW,
             )
 
-            torso_mid = JointState(
+            torso_mid = JointState.from_mapping(
                 name=PrefixedName("torso_mid", prefix=kevin.name.name),
                 mapping=dict(zip(torso_joint, [0.3])),
                 state_type=TorsoState.MID,
             )
 
-            torso_high = JointState(
+            torso_high = JointState.from_mapping(
                 name=PrefixedName("torso_high", prefix=kevin.name.name),
                 mapping=dict(zip(torso_joint, [0.69])),
                 state_type=TorsoState.HIGH,

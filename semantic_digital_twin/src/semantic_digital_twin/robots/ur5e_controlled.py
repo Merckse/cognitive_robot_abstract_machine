@@ -83,7 +83,7 @@ class UR5Controlled(AbstractRobot, HasArms):
             ur5_controlled.add_arm(arm)
 
             # Create states
-            arm_park = JointState(
+            arm_park = JointState.from_mapping(
                 name=PrefixedName("arm_park", prefix=ur5_controlled.name.name),
                 mapping=dict(
                     zip(
@@ -100,7 +100,7 @@ class UR5Controlled(AbstractRobot, HasArms):
                 c for c in gripper.connections if type(c) != FixedConnection
             ]
 
-            gripper_open = JointState(
+            gripper_open = JointState.from_mapping(
                 name=PrefixedName("gripper_open", prefix=ur5_controlled.name.name),
                 mapping=dict(
                     zip(
@@ -120,7 +120,7 @@ class UR5Controlled(AbstractRobot, HasArms):
                 state_type=GripperState.OPEN,
             )
 
-            gripper_close = JointState(
+            gripper_close = JointState.from_mapping(
                 name=PrefixedName("gripper_close", prefix=ur5_controlled.name.name),
                 mapping=dict(
                     zip(gripper_joints, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])

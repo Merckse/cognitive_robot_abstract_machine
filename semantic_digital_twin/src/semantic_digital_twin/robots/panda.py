@@ -77,7 +77,7 @@ class Panda(AbstractRobot, HasArms):
 
             panda.add_arm(arm)
 
-            arm_park = JointState(
+            arm_park = JointState.from_mapping(
                 name=PrefixedName("arm_park", prefix=panda.name.name),
                 mapping=dict(
                     zip(
@@ -95,13 +95,13 @@ class Panda(AbstractRobot, HasArms):
                 world.get_connection_by_name("finger_joint2"),
             ]
 
-            gripper_open = JointState(
+            gripper_open = JointState.from_mapping(
                 name=PrefixedName("gripper_open", prefix=panda.name.name),
                 mapping=dict(zip(gripper_joints, [0.04, 0.04])),
                 state_type=GripperState.OPEN,
             )
 
-            gripper_close = JointState(
+            gripper_close = JointState.from_mapping(
                 name=PrefixedName("gripper_close", prefix=panda.name.name),
                 mapping=dict(zip(gripper_joints, [0.0, 0.0])),
                 state_type=GripperState.CLOSE,

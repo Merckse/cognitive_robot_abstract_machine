@@ -118,7 +118,7 @@ class Donbot(AbstractRobot, HasArms, HasNeck):
             donbot.add_torso(torso)
 
             # Create states
-            arm_park = JointState(
+            arm_park = JointState.from_mapping(
                 name=PrefixedName("arm_park", prefix=donbot.name.name),
                 mapping=dict(
                     zip(
@@ -131,7 +131,7 @@ class Donbot(AbstractRobot, HasArms, HasNeck):
 
             arm.add_joint_state(arm_park)
 
-            looking = JointState(
+            looking = JointState.from_mapping(
                 name=PrefixedName("looking", prefix=donbot.name.name),
                 mapping=dict(
                     zip(
@@ -149,13 +149,13 @@ class Donbot(AbstractRobot, HasArms, HasNeck):
                 world.get_connection_by_name("gripper_base_gripper_left_joint"),
             ]
 
-            gripper_open = JointState(
+            gripper_open = JointState.from_mapping(
                 name=PrefixedName("gripper_open", prefix=donbot.name.name),
                 mapping=dict(zip(gripper_joints, [0.109, -0.055])),
                 state_type=GripperState.OPEN,
             )
 
-            gripper_close = JointState(
+            gripper_close = JointState.from_mapping(
                 name=PrefixedName("gripper_close", prefix=donbot.name.name),
                 mapping=dict(zip(gripper_joints, [0.0065, -0.0027])),
                 state_type=GripperState.CLOSE,
@@ -166,19 +166,19 @@ class Donbot(AbstractRobot, HasArms, HasNeck):
 
             torso_joint = [world.get_connection_by_name("arm_base_mounting_joint")]
 
-            torso_low = JointState(
+            torso_low = JointState.from_mapping(
                 name=PrefixedName("torso_low", prefix=donbot.name.name),
                 mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.LOW,
             )
 
-            torso_mid = JointState(
+            torso_mid = JointState.from_mapping(
                 name=PrefixedName("torso_mid", prefix=donbot.name.name),
                 mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.MID,
             )
 
-            torso_high = JointState(
+            torso_high = JointState.from_mapping(
                 name=PrefixedName("torso_high", prefix=donbot.name.name),
                 mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.HIGH,

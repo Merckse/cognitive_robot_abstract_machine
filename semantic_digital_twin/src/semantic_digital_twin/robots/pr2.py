@@ -230,7 +230,7 @@ class PR2(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
             robot.add_torso(torso)
 
             # Create states
-            right_arm_park = JointState(
+            right_arm_park = JointState.from_mapping(
                 name=PrefixedName("right_park", prefix=robot.name.name),
                 mapping=dict(
                     zip(
@@ -247,7 +247,7 @@ class PR2(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             right_arm.add_joint_state(right_arm_park)
 
-            left_arm_park = JointState(
+            left_arm_park = JointState.from_mapping(
                 name=PrefixedName("left_park", prefix=robot.name.name),
                 mapping=dict(
                     zip(
@@ -272,13 +272,13 @@ class PR2(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
                 c for c in left_gripper.connections if type(c) != FixedConnection
             ]
 
-            left_gripper_open = JointState(
+            left_gripper_open = JointState.from_mapping(
                 name=PrefixedName("left_gripper_open", prefix=robot.name.name),
                 mapping=dict(zip(left_gripper_joints, [0.548, 0.548])),
                 state_type=GripperState.OPEN,
             )
 
-            left_gripper_close = JointState(
+            left_gripper_close = JointState.from_mapping(
                 name=PrefixedName("left_gripper_close", prefix=robot.name.name),
                 mapping=dict(zip(left_gripper_joints, [0.0, 0.0])),
                 state_type=GripperState.CLOSE,
@@ -291,13 +291,13 @@ class PR2(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
                 c for c in right_gripper.connections if type(c) != FixedConnection
             ]
 
-            right_gripper_open = JointState(
+            right_gripper_open = JointState.from_mapping(
                 name=PrefixedName("right_gripper_open", prefix=robot.name.name),
                 mapping=dict(zip(right_gripper_joints, [0.548, 0.548])),
                 state_type=GripperState.OPEN,
             )
 
-            right_gripper_close = JointState(
+            right_gripper_close = JointState.from_mapping(
                 name=PrefixedName("right_gripper_close", prefix=robot.name.name),
                 mapping=dict(zip(right_gripper_joints, [0.0, 0.0])),
                 state_type=GripperState.CLOSE,
@@ -308,19 +308,19 @@ class PR2(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             torso_joint = [world.get_connection_by_name("torso_lift_joint")]
 
-            torso_low = JointState(
+            torso_low = JointState.from_mapping(
                 name=PrefixedName("torso_low", prefix=robot.name.name),
                 mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.LOW,
             )
 
-            torso_mid = JointState(
+            torso_mid = JointState.from_mapping(
                 name=PrefixedName("torso_mid", prefix=robot.name.name),
                 mapping=dict(zip(torso_joint, [0.15])),
                 state_type=TorsoState.MID,
             )
 
-            torso_high = JointState(
+            torso_high = JointState.from_mapping(
                 name=PrefixedName("torso_high", prefix=robot.name.name),
                 mapping=dict(zip(torso_joint, [0.3])),
                 state_type=TorsoState.HIGH,

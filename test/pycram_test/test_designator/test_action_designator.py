@@ -36,7 +36,6 @@ def test_move_torso(immutable_model_world):
         plan.perform()
     dof = world.get_degree_of_freedom_by_name("torso_lift_joint")
     assert world.state[dof.id].position == pytest.approx(0.29, abs=0.01)
-    # self.assertAlmostEqual(self.world.state[dof.id].position, 0.29, places=2)
 
 
 def test_set_gripper(immutable_model_world):
@@ -50,7 +49,7 @@ def test_set_gripper(immutable_model_world):
     with simulated_robot:
         plan.perform()
     joint_state = pr2.left_arm.manipulator.get_joint_state_by_type(GripperState.OPEN)
-    for connection, value in joint_state.mapping.items():
+    for connection, value in joint_state.items():
         assert connection.position == pytest.approx(value, abs=0.01)
 
 
@@ -67,7 +66,7 @@ def test_park_arms(immutable_model_world):
     joint_state_right = robot_view.right_arm.get_joint_state_by_type(
         StaticJointState.PARK
     )
-    for connection, value in joint_state_left.mapping.items():
+    for connection, value in joint_state_left.items():
         compare_axis_angle(
             connection.position,
             np.array([1, 0, 0]),
@@ -75,7 +74,7 @@ def test_park_arms(immutable_model_world):
             np.array([1, 0, 0]),
             decimal=1,
         )
-    for connection, value in joint_state_right.mapping.items():
+    for connection, value in joint_state_right.items():
         compare_axis_angle(
             connection.position,
             np.array([1, 0, 0]),

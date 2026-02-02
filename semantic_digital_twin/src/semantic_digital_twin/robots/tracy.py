@@ -135,7 +135,7 @@ class Tracy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
             robot.add_kinematic_chain(neck)
 
             # Create states
-            left_arm_park = JointState(
+            left_arm_park = JointState.from_mapping(
                 name=PrefixedName("left_arm_park", prefix=robot.name.name),
                 mapping=dict(
                     zip(
@@ -148,7 +148,7 @@ class Tracy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             left_arm.add_joint_state(left_arm_park)
 
-            right_arm_park = JointState(
+            right_arm_park = JointState.from_mapping(
                 name=PrefixedName("right_arm_park", prefix=robot.name.name),
                 mapping=dict(
                     zip(
@@ -165,13 +165,13 @@ class Tracy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
                 c for c in left_gripper.connections if type(c) != FixedConnection
             ]
 
-            left_gripper_open = JointState(
+            left_gripper_open = JointState.from_mapping(
                 name=PrefixedName("left_gripper_open", prefix=robot.name.name),
                 mapping=dict(zip(left_gripper_joints, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])),
                 state_type=GripperState.OPEN,
             )
 
-            left_gripper_close = JointState(
+            left_gripper_close = JointState.from_mapping(
                 name=PrefixedName("left_gripper_close", prefix=robot.name.name),
                 mapping=dict(
                     zip(left_gripper_joints, [0.8, -0.8, -0.8, 0.8, -0.8, 0.8])
@@ -186,13 +186,13 @@ class Tracy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
                 c for c in right_gripper.connections if type(c) != FixedConnection
             ]
 
-            right_gripper_open = JointState(
+            right_gripper_open = JointState.from_mapping(
                 name=PrefixedName("right_gripper_open", prefix=robot.name.name),
                 mapping=dict(zip(right_gripper_joints, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0])),
                 state_type=GripperState.OPEN,
             )
 
-            right_gripper_close = JointState(
+            right_gripper_close = JointState.from_mapping(
                 name=PrefixedName("right_gripper_close", prefix=robot.name.name),
                 mapping=dict(
                     zip(right_gripper_joints, [0.8, -0.8, -0.8, 0.8, -0.8, 0.8])

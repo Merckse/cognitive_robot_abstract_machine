@@ -152,7 +152,7 @@ class Boxy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
             boxy.add_torso(torso)
 
             # Create states
-            left_arm_park = JointState(
+            left_arm_park = JointState.from_mapping(
                 name=PrefixedName("left_arm_park", prefix=boxy.name.name),
                 mapping=dict(
                     zip(
@@ -173,7 +173,7 @@ class Boxy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             left_arm.add_joint_state(left_arm_park)
 
-            right_arm_park = JointState(
+            right_arm_park = JointState.from_mapping(
                 name=PrefixedName("right_arm_park", prefix=boxy.name.name),
                 mapping=dict(
                     zip(
@@ -200,13 +200,13 @@ class Boxy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             left_gripper_joint = [world.get_connection_by_name("left_gripper_joint")]
 
-            left_gripper_open = JointState(
+            left_gripper_open = JointState.from_mapping(
                 name=PrefixedName("left_gripper_open", prefix=boxy.name.name),
                 mapping=dict(zip(left_gripper_joint, [0.548])),
                 state_type=GripperState.OPEN,
             )
 
-            left_gripper_close = JointState(
+            left_gripper_close = JointState.from_mapping(
                 name=PrefixedName("left_gripper_close", prefix=boxy.name.name),
                 mapping=dict(zip(left_gripper_joint, [0.0])),
                 state_type=GripperState.CLOSE,
@@ -217,13 +217,13 @@ class Boxy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             right_gripper_joint = [world.get_connection_by_name("right_gripper_joint")]
 
-            right_gripper_open = JointState(
+            right_gripper_open = JointState.from_mapping(
                 name=PrefixedName("right_gripper_open", prefix=boxy.name.name),
                 mapping=dict(zip(right_gripper_joint, [0.548])),
                 state_type=GripperState.OPEN,
             )
 
-            right_gripper_close = JointState(
+            right_gripper_close = JointState.from_mapping(
                 name=PrefixedName("right_gripper_close", prefix=boxy.name.name),
                 mapping=dict(zip(right_gripper_joint, [0.0])),
                 state_type=GripperState.CLOSE,
@@ -234,19 +234,19 @@ class Boxy(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
 
             torso_joint = [world.get_connection_by_name("triangle_base_joint")]
 
-            torso_low = JointState(
+            torso_low = JointState.from_mapping(
                 name=PrefixedName("torso_low", prefix=boxy.name.name),
                 mapping=dict(zip(torso_joint, [-0.58])),
                 state_type=TorsoState.LOW,
             )
 
-            torso_mid = JointState(
+            torso_mid = JointState.from_mapping(
                 name=PrefixedName("torso_mid", prefix=boxy.name.name),
                 mapping=dict(zip(torso_joint, [0.29])),
                 state_type=TorsoState.MID,
             )
 
-            torso_high = JointState(
+            torso_high = JointState.from_mapping(
                 name=PrefixedName("torso_high", prefix=boxy.name.name),
                 mapping=dict(zip(torso_joint, [0.0])),
                 state_type=TorsoState.HIGH,

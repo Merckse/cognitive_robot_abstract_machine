@@ -43,8 +43,8 @@ class MoveTorsoAction(ActionDescription):
         SequentialPlan(
             self.context,
             MoveJointsMotion(
-                [c.name.name for c in joint_state._connections],
-                joint_state._target_values,
+                [c.name.name for c in joint_state.connections],
+                joint_state.target_values,
             ),
         ).perform()
 
@@ -152,8 +152,8 @@ class ParkArmsAction(ActionDescription):
         values = []
         for arm in arm_chain:
             joint_state = arm.get_joint_state_by_type(StaticJointState.PARK)
-            names.extend([c.name.name for c in joint_state._connections])
-            values.extend(joint_state._target_values)
+            names.extend([c.name.name for c in joint_state.connections])
+            values.extend(joint_state.target_values)
         return names, values
 
     def validate(

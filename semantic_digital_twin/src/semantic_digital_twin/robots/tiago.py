@@ -136,8 +136,8 @@ class Tiago(AbstractRobot, SpecifiesLeftRightArm, HasNeck):
                 sensors={camera},
                 root=world.get_body_by_name("torso_lift_link"),
                 tip=world.get_body_by_name("head_2_link"),
-                pitch_body=world.get_body_by_name("head_2_joint"),
-                yaw_body=world.get_body_by_name("head_1_joint"),
+                pitch_body=world.get_body_by_name("head_2_link"),
+                yaw_body=world.get_body_by_name("head_1_link"),
                 _world=world,
             )
             tiago.add_neck(neck)

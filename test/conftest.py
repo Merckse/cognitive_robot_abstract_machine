@@ -22,6 +22,8 @@ from semantic_digital_twin.robots.abstract_robot import AbstractRobot
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.robots.minimal_robot import MinimalRobot
 from semantic_digital_twin.robots.pr2 import PR2
+from semantic_digital_twin.robots.stretch import Stretch
+from semantic_digital_twin.robots.tiago import Tiago
 from semantic_digital_twin.robots.tracy import Tracy
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Milk
 from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix
@@ -228,6 +230,38 @@ def tracy_world():
 
 
 @pytest.fixture(scope="session")
+def stretch_world():
+    urdf_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        "pycram",
+        "resources",
+        "robots",
+    )
+    stretch = os.path.join(urdf_dir, "stretch_description.urdf")
+    stretch_parser = URDFParser.from_file(file_path=stretch)
+    world_with_stretch = stretch_parser.parse()
+    Stretch.from_world(world_with_stretch)
+    return world_with_stretch
+
+
+@pytest.fixture(scope="session")
+def tiago_world():
+    urdf_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        "pycram",
+        "resources",
+        "robots",
+    )
+    tiago = os.path.join(urdf_dir, "tiago_dual.urdf")
+    tiago_parser = URDFParser.from_file(file_path=tiago)
+    world_with_tiago = tiago_parser.parse()
+    Tiago.from_world(world_with_tiago)
+    return world_with_tiago
+
+
+@pytest.fixture(scope="session")
 def apartment_world_setup():
     apartment_world = URDFParser.from_file(
         os.path.join(
@@ -431,11 +465,23 @@ def hsr_apartment_world(hsr_world_setup, apartment_world_setup):
     hsr_copy = deepcopy(hsr_world_setup)
     robot_view = HSRB.from_world(hsr_copy)
 
-    hsr_copy.merge_world_at_pose(
-        apartment_copy, HomogeneousTransformationMatrix.from_xyz_rpy(1.5, 2, 0)
+    apartment_copy.merge_world_at_pose(
+        hsr_copy, HomogeneousTransformationMatrix.from_xyz_rpy(1.5, 2, 0)
     )
 
-    return apartment_copy, robot_view, Context(hsr_copy, robot_view)
+    return apartment_copy, robot_view, Context(apartment_copy, robot_view)
+
+
+@pytest.fixture(scope="session")
+def stretch_apartment_world(stretch_world_setup, apartment_world_setup):
+    apartment_copy = deepcopy(apartment_world_setup)
+    stretch_copy = deepcopy(stretch_world_setup)
+
+    apartment_copy.merge_world_at_pose(
+        stretch_copy, HomogeneousTransformationMatrix.from_xyz_rpy(1.5, 2, 0)
+    )
+
+    return apartment_copy
 
 
 ###############################

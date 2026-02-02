@@ -223,7 +223,7 @@ class HSRB(AbstractRobot, HasArms, HasNeck):
 
             torso_high = JointState.from_mapping(
                 name=PrefixedName("torso_high", prefix=hsrb.name.name),
-                mapping=dict(zip(torso_joint, [0.34])),
+                mapping=dict(zip(torso_joint, [0.32])),
                 state_type=TorsoState.HIGH,
             )
 

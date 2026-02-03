@@ -6,10 +6,10 @@ from time import sleep
 
 def main():
     sleep(3)
-
+    print("-------------------------------------------------------------------------------------------------")
     print("Hello, please introduce yourself, who are you and what is your favorite drink?")
     nlp = HriNlpInterface()
-    sleep(2)
+    sleep(3)
     nlp.start_nlp()
 
     # Create HRI human representation
@@ -18,16 +18,18 @@ def main():
     # Process all collected NLP outputs
     process_response(responses=nlp.all_last_outputs, challenge="", person=person1)
 
-    print(f"Hello {person1.name}, I also like to drink {person1.hri_favourite_drink[1]},")
+    print(f"Hello {person1.name}, I also like to drink {person1.hri_favourite_drink[0]},")
     print(f"especially after a nice round of hobby horsing! What is your hobby?")
 
-    sleep(2)
+    sleep(4)
 
     nlp.start_nlp()
     process_response(responses=nlp.all_last_outputs, challenge="", person=person1)
 
     print(f"{person1.hobby} seems fun! It was nice meeting you, see you soon!")
+    print("-------------------------------------------------------------------------------------------------")
 
+    print(person1.debug())
 
 if __name__ == "__main__":
     rclpy.init()

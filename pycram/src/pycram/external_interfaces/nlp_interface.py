@@ -335,12 +335,10 @@ class NlpNode(Node):
                 if new_res != old_res:
                     res = self.response
                     all_out.append(res)
-                    print (self.response)
                     old_res = new_res
                 executor.spin_once(timeout_sec=0.05)
-            print(all_out)
 
-            self.get_logger().info(f"Received response: {self.response}")
+            self.get_logger().info(f"Received response: {all_out}")
 
             # Save and reset response
             resp = self.response

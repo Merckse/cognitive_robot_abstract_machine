@@ -98,7 +98,6 @@ def process_response(responses: list[list[Any]], challenge: str, person: HriHuma
 
                         # Add item(s) to the order
                         for i in range(0, repeat):
-                            print(repeat)
                             person.order[0].append(item)  # entity value
                             if elem[0] == 'Food':
                                 person.order[1].append(get_obj(elem[1]))
@@ -161,8 +160,8 @@ def main():
     process_response(responses=nlp.all_last_outputs, challenge="", person=person)
 
     # Debug output
-    print(person.debug())
-    print(nlp.all_last_outputs)
+    # print(person.debug())
+    # print(nlp.all_last_outputs)
     # TODO nlp.input_confirmation_loop(2)
 
 

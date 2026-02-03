@@ -2,6 +2,7 @@ import logging
 import threading
 import time
 
+import numpy
 import rclpy
 from rclpy.executors import SingleThreadedExecutor
 
@@ -74,7 +75,7 @@ grasp = GraspDescription(ApproachDirection.FRONT, VerticalAlignment.NoAlignment,
 with real_robot:
     SequentialPlan(
         context,
-        # ParkArmsActionDescription(arm=Arms.LEFT)).perform()
+        ParkArmsActionDescription(arm=Arms.LEFT),
         PickUpActionDescription(
             arm=Arms.LEFT,
             object_designator=hsrb_world.get_body_by_name("milk"),
@@ -82,8 +83,8 @@ with real_robot:
         ),
     ).perform()
 
-    # plan1.perform()
-    # Uncomment to execute plan2
-    # plan2.perform()
+# plan1.perform()
+# Uncomment to execute plan2
+# plan2.perform()
 
 # exit(0)

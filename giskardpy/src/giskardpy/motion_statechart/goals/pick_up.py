@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Tuple
 
+from giskardpy.motion_statechart.ros2_nodes.gripper_command import GripperCommandTask
 from typing_extensions import Optional, List
 
 from giskardpy.data_types.exceptions import ForceTorqueSaysNoException
@@ -75,7 +76,7 @@ class PickUp(Goal):
         )
         self.sequence = Sequence(
             [
-                OpenHand(manipulator=self.manipulator),
+                OpenHand(),
                 PreGraspPose(
                     manipulator=self.manipulator,
                     object_geometry=self.object_geometry,
@@ -88,7 +89,7 @@ class PickUp(Goal):
                     gripper_width=HSR_GRIPPER_WIDTH,
                     grasp_magic=grasp_magic,
                 ),
-                CloseHand(manipulator=self.manipulator, ft=self.ft),
+                CloseHand(ft=self.ft),
                 # PullUp(manipulator=self.manipulator, object_geometry=self.object_geometry, ft=self.ft),
             ]
         )
@@ -102,21 +103,24 @@ class PickUp(Goal):
 
 @dataclass(repr=False, eq=False)
 class OpenHand(Goal):
-    # NOTE: Only works in simulation, giskard cant move gripper irl
-    manipulator: ParallelGripper = field(kw_only=True)
+    simulated: bool = field(kw_only=True, default=True)
 
     def expand(self, context: BuildContext) -> None:
-        position_list = JointPositionList(
-            goal_state=JointState.from_str_dict(
-                {"hand_motor_joint": HSRGripper.open_gripper.value}, context.world
+        if self.simulated:
+            self.open_gripper = JointPositionList(
+                goal_state=JointState.from_str_dict(
+                    {"hand_motor_joint": HSRGripper.open_gripper.value}, context.world
+                )
             )
-        )
-        self.joint_goal = position_list
-        self.add_node(self.joint_goal)
+        else:
+            self.open_gripper = GripperCommandTask(
+                action_topic="/gripper_controller/grasp", effort=-0.8
+            )
+        self.add_node(self.open_gripper)
 
     def build(self, context: BuildContext) -> NodeArtifacts:
         artifacts = super().build(context)
-        artifacts.observation = self.joint_goal.observation_variable
+        artifacts.observation = self.open_gripper.observation_variable
         return artifacts
 
 
@@ -431,21 +435,26 @@ class Grasping(Goal):
 
 @dataclass(repr=False, eq=False)
 class CloseHand(Goal):
-    # NOTE: Only works in simulation, giskard cant move gripper irl
-    manipulator: ParallelGripper = field(kw_only=True)
     ft: bool = field(kw_only=True, default=False)
+    simulated: bool = field(kw_only=True, default=True)
 
     def expand(self, context: BuildContext) -> None:
-        self.joint_goal = JointPositionList(
-            goal_state=JointState.from_str_dict(
-                {"hand_motor_joint": HSRGripper.close_gripper.value}, context.world
+        if self.simulated:
+            self.close_gripper = JointPositionList(
+                goal_state=JointState.from_str_dict(
+                    {"hand_motor_joint": HSRGripper.close_gripper.value}, context.world
+                )
             )
-        )
-        self.add_node(self.joint_goal)
+        else:
+            self.close_gripper = GripperCommandTask(
+                action_topic="/gripper_controller/grasp",
+                effort=0.8,
+            )
+        self.add_node(self.close_gripper)
 
     def build(self, context: BuildContext) -> NodeArtifacts:
         artifacts = super().build(context)
-        artifacts.observation = self.joint_goal.observation_variable
+        artifacts.observation = self.close_gripper.observation_variable
         return artifacts
 
 

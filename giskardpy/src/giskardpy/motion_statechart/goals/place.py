@@ -1,0 +1,95 @@
+from dataclasses import dataclass, field
+from giskardpy.data_types.exceptions import ForceTorqueSaysNoException
+from giskardpy.motion_statechart.context import BuildContext
+from giskardpy.motion_statechart.data_types import DefaultWeights
+from giskardpy.motion_statechart.goals.pick_up import CloseHand
+from giskardpy.motion_statechart.goals.templates import Sequence
+from giskardpy.motion_statechart.graph_node import Goal, NodeArtifacts, CancelMotion
+from giskardpy.motion_statechart.ros2_nodes.force_torque_monitor import ForceImpactMonitor
+from giskardpy.motion_statechart.tasks.cartesian_tasks import CartesianPosition
+from semantic_digital_twin.robots.abstract_robot import Manipulator
+from semantic_digital_twin.spatial_types import (
+    Vector3,
+    Point3,
+    HomogeneousTransformationMatrix,
+)
+from semantic_digital_twin.spatial_types.spatial_types import Pose
+from semantic_digital_twin.world_description.world_entity import (
+    Body,
+    KinematicStructureEntity,
+)
+
+
+@dataclass(repr=False, eq=False)
+class Place(Sequence):
+    """
+    Assumes the object is already attached to the tool frame and the gripper is closed
+    """
+
+    manipulator: Manipulator = field(kw_only=True)
+    object_geometry: Body = field(kw_only=True)
+    cartesian_pose: Pose = field(kw_only=True)
+    ft: bool = field(kw_only=True, default=False)
+    goal_pose: HomogeneousTransformationMatrix = field(kw_only=True)
+    simulated: bool = field(default=True, kw_only=True)
+
+    def __post_init__(self):
+        super().__post_init__()
+        # Note: Retracting seperate from placing
+        approach = ApproachPlacement(manipulator=self.manipulator, object_geometry=self.object_geometry, ft=self.ft)
+        close_gripper = CloseHand(ft=self.ft, simulated=self.simulated)
+        retracting = Retracting(manipulator=self.manipulator)
+
+        self.nodes.append(approach)
+        self.nodes.append(close_gripper)
+        self.nodes.append(retracting)
+
+@dataclass(repr=False, eq=False)
+class ApproachPlacement(Goal):
+    manipulator: Manipulator = field(kw_only=True)
+    object_geometry: Body = field(kw_only=True)
+    ft: bool = field(kw_only=True, default=False)
+
+    def expand(self, context: BuildContext) -> None:
+        super().expand(context)
+
+    def build(self, context: BuildContext) -> NodeArtifacts:
+        return super().build(context)
+
+
+@dataclass(repr=False, eq=False)
+class Retracting(Goal):
+    """
+    Retracts the tool frame of a manipulator by a certain distance.
+    """
+    manipulator: Manipulator = field(kw_only=True)
+    distance: float = field(default=0.15, kw_only=True)
+    velocity: float = field(default=0.1, kw_only=True)
+    weight: float = field(default=DefaultWeights.WEIGHT_ABOVE_CA, kw_only=True)
+
+    def expand(self, context: BuildContext) -> None:
+        tip_link = self.manipulator.tool_frame
+        root_link = context.world.root
+
+        if self.ft:
+            # When retracting you shouldnt bump into anything
+            self._ft = ForceImpactMonitor(threshold=5, topic_name="ft_irgendwas")
+            self._cm = CancelMotion.when_true(self._ft)
+            self.add_node(self._ft)
+            self.add_node(self._cm)
+
+        goal_point = Point3(0, 0, -self.distance, reference_frame=tip_link)
+
+        self.cart_pos = CartesianPosition(
+            root_link=root_link,
+            tip_link=tip_link,
+            goal_point=goal_point,
+            weight=self.weight,
+        )
+
+        self.add_node(self.cart_pos)
+
+    def build(self, context: BuildContext) -> NodeArtifacts:
+        artifacts = super().build(context)
+        artifacts.observation = self.cart_pos.observation_variable
+        return artifacts

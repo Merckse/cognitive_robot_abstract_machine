@@ -165,7 +165,7 @@ class GroupOperationResult(OperationResult):
     Results grouped by variables specified in the grouped_by clause.
     """
 
-    group_key_variables: Tuple[Selectable]
+    group_key_variables: Tuple[Selectable, ...]
     """
     The variables specified in the `grouped_by` clause.
     """
@@ -495,7 +495,7 @@ class CanBehaveLikeAVariable(Selectable[T], ABC):
 
         :param current_value: The current value of the variable.
         """
-        if isinstance(self._parent_, (LogicalOperator, QueryObjectDescriptor)):
+        if isinstance(self._parent_, (LogicalOperator, QueryObjectDescriptor, GroupBy)):
             is_true = (
                 len(current_value) > 0
                 if is_iterable(current_value)
@@ -776,11 +776,17 @@ class Average(EntityAggregator[T]):
 
 
 @dataclass(eq=False, repr=False)
-class Extreme(EntityAggregator[T], ABC):
+class Extreme(EntityAggregator[T], CanBehaveLikeAVariable[T], ABC):
     """
     Find and return the extreme value among the child results. If given, make use of the key function to extract
     the value to be compared.
     """
+
+    def __post_init__(self):
+        self._var_ = (
+            self._child_._var_ if isinstance(self._child_, Selectable) else None
+        )
+        super().__post_init__()
 
     def _apply_aggregation_function_(
         self, child_results: Iterable[OperationResult]
@@ -847,6 +853,7 @@ class ResultQuantifier(ResultProcessor[T], ABC):
     def __post_init__(self):
         if not isinstance(self._child_, QueryObjectDescriptor):
             raise InvalidEntityType(type(self._child_), [QueryObjectDescriptor])
+        self._child_._build__()
         super().__post_init__()
         self._var_ = (
             self._child_._var_ if isinstance(self._child_, Selectable) else None
@@ -990,6 +997,112 @@ class OrderByParams:
     """
 
 
+@dataclass
+class GroupBy(SymbolicExpression[T]):
+    _query_descriptor_: QueryObjectDescriptor[T]
+    """
+    The query object descriptor that is being grouped.
+    """
+
+    def __post_init__(self):
+        self._child_ = self._query_descriptor_._where_expression_
+        super().__post_init__()
+
+    @cached_property
+    def _variables_to_group_by_(self) -> List[Selectable]:
+        return self._query_descriptor_._variables_to_group_by_
+
+    @property
+    def _name_(self) -> str:
+        return f"GroupBy({', '.join([var._name_ for var in self._variables_to_group_by_])})"
+
+    def _all_variable_instances_(self) -> List[Variable]:
+        return self._child_._all_variable_instances_ + self._variables_to_group_by_
+
+    def _evaluate__(
+        self, sources: Bindings = None, parent: Optional[SymbolicExpression] = None
+    ) -> Iterator[GroupOperationResult]:
+        """
+        Generate results grouped by the specified variables in the grouped_by clause.
+
+        :param sources: The current bindings.
+        :param parent: The parent symbolic expression in the query tree.
+        :return: An iterator of GroupOperationResult objects, each representing a group of child results.
+        """
+        groups = defaultdict(
+            lambda: GroupOperationResult(
+                {}, False, self, tuple(self._variables_to_group_by_)
+            )
+        )
+        variables_to_group_by_ids = [
+            var._binding_id_ for var in self._variables_to_group_by_
+        ]
+        constrained_values = self._get_child_true_results__(sources)
+        constrained_values = self._evaluate_grouped_by_variables_(constrained_values)
+        constrained_values = self._evaluate_children_of_aggregators_(constrained_values)
+        for res in constrained_values:
+            group_key = tuple(
+                next(var._evaluate__(res, parent=self)).value
+                for var in self._variables_to_group_by_
+            )
+            for id_, val in res.items():
+                if id_ in variables_to_group_by_ids:
+                    groups[group_key][id_] = val
+                else:
+                    if id_ not in groups[group_key]:
+                        groups[group_key][id_] = []
+                    groups[group_key][id_].append(val)
+        yield from groups.values()
+
+    def _get_child_true_results__(self, sources: Bindings) -> Iterator[Bindings]:
+        """
+        :param sources: The current bindings.
+        :return: An iterator of child results that are true.
+        """
+        if self._child_:
+            yield from (
+                res.bindings
+                for res in self._child_._evaluate__(sources, parent=self)
+                if res.is_true
+            )
+        else:
+            yield sources
+
+    def _evaluate_children_of_aggregators_(
+        self, sources: Iterator[Bindings]
+    ) -> Iterator[Bindings]:
+        """
+        Evaluate the children of aggregators by generating combinations of values from their evaluation generators.
+
+        :param sources: The current bindings.
+        :return: An Iterable of Bindings for each combination of values.
+        """
+        for values in sources:
+            yield from QueryObjectDescriptor._chain_evaluate_variables(
+                [
+                    var._child_
+                    for var in self._query_descriptor_._selected_variables
+                    if isinstance(var, Aggregator)
+                ],
+                values,
+                parent=self,
+            )
+
+    def _evaluate_grouped_by_variables_(
+        self, sources: Iterator[Bindings]
+    ) -> Iterator[Bindings]:
+        """
+        Evaluate the grouped_by variables by generating combinations of values from their evaluation generators.
+
+        :param sources: The current bindings.
+        :return: An Iterable of Bindings for each combination of values.
+        """
+        for values in sources:
+            yield from QueryObjectDescriptor._chain_evaluate_variables(
+                self._variables_to_group_by_, values, parent=self
+            )
+
+
 @dataclass(eq=False, repr=False)
 class QueryObjectDescriptor(SymbolicExpression[T], ABC):
     """
@@ -1036,6 +1149,14 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
     )
     """
     The condition list of the query object descriptor.
+    """
+    _having_expression_: Optional[SymbolicExpression] = field(default=None, init=False)
+    """
+    The having expression of the query object descriptor.
+    """
+    _where_expression_: Optional[SymbolicExpression] = field(default=None, init=False)
+    """
+    The where expression of the query object descriptor.
     """
 
     def __post_init__(self):
@@ -1119,8 +1240,7 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
             else self._where_condition_list_[0]
         )
 
-        # set the child of the query object descriptor to the expression and return self.
-        self._update_child_(expression)
+        self._where_expression_ = expression
         return self
 
     def having(self, *conditions: ConditionType) -> Self:
@@ -1140,9 +1260,7 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
             if len(self._having_condition_list_) > 1
             else self._having_condition_list_[0]
         )
-
-        # set the child of the query object descriptor to the expression and return self.
-        self._update_child_(expression, parent_of_existing_child=True)
+        self._having_expression_ = expression
         return self
 
     def _assert_correct_conditions__(self, conditions: List[ConditionType]):
@@ -1171,7 +1289,9 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
             raise HavingUsedBeforeWhereError(self)
         self._assert_correct_conditions__(self._where_condition_list_)
         aggregators, non_aggregators = (
-            self._aggregators_and_non_aggregators_in_where_condition_
+            self._aggregators_and_non_aggregators_in_conditions_(
+                tuple(self._where_condition_list_)
+            )
         )
         if aggregators:
             raise AggregatorInWhereConditionsError(self, aggregators)
@@ -1184,26 +1304,32 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         """
         self._assert_correct_conditions__(self._having_condition_list_)
         aggregators, non_aggregators = (
-            self._aggregators_and_non_aggregators_in_where_condition_
+            self._aggregators_and_non_aggregators_in_conditions_(
+                tuple(self._having_condition_list_)
+            )
         )
         if non_aggregators:
             raise NonAggregatorInHavingConditionsError(self, non_aggregators)
 
-    @cached_property
-    def _aggregators_and_non_aggregators_in_where_condition_(
-        self,
+    # @lru_cache
+    def _aggregators_and_non_aggregators_in_conditions_(
+        self, conditions: Tuple[ConditionType, ...]
     ) -> Tuple[List[Aggregator], List[Selectable]]:
         """
         Get the aggregators and non-aggregators in the where condition.
         """
         aggregators, non_aggregators = [], []
-        for cond in self._where_condition_list_:
+        for cond in conditions:
             if isinstance(cond, Aggregator):
                 aggregators.append(cond)
-            else:
+            elif isinstance(cond, Selectable) and not isinstance(cond, Literal):
                 non_aggregators.append(cond)
-            for var in cond._descendants_:
+            for var in cond._children_:
                 if isinstance(var, Aggregator):
+                    aggregators.append(var)
+                elif isinstance(var, DomainMapping) and any(
+                    isinstance(v, Aggregator) for v in var._descendants_
+                ):
                     aggregators.append(var)
                 elif isinstance(var, Selectable) and not isinstance(var, Literal):
                     non_aggregators.append(var)
@@ -1307,6 +1433,20 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         self._variables_to_group_by_ = list(variables)
         return self
 
+    def _build__(self):
+        group_by = None
+        having = None
+        if self._group_:
+            group_by = GroupBy(self)
+            if self._having_expression_:
+                having = Having(left=group_by, right=self._having_expression_)
+        if having:
+            self._update_child_(having)
+        elif group_by:
+            self._update_child_(group_by)
+        elif self._where_expression_:
+            self._update_child_(self._where_expression_)
+
     def _evaluate__(
         self,
         sources: Optional[Bindings] = None,
@@ -1320,10 +1460,7 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         self._eval_parent_ = parent
         sources = sources or {}
 
-        if self._group_:
-            results_generator = self._generate_grouped_results__(sources)
-        else:
-            results_generator = self._generate_results__(sources)
+        results_generator = self._generate_results__(sources)
 
         if self._order_by:
             yield from self._order(results_generator)
@@ -1345,57 +1482,6 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
                 OperationResult({**values, **result}, False, self)
                 for result in self._apply_results_mapping(selected_vars_bindings)
             )
-
-    def _generate_grouped_results__(
-        self, sources: Bindings
-    ) -> Iterator[GroupOperationResult]:
-        """
-        Generate results grouped by the specified variables in the grouped_by clause.
-
-        :param sources: The current bindings.
-        :return: An iterator of GroupOperationResult objects, each representing a group of child results.
-        """
-        groups = self._construct_groups_from_constrained_values__(sources)
-
-        for group_key, group_results in groups.items():
-            selected_vars_bindings = self._evaluate_selected_variables(group_results)
-            yield from (
-                GroupOperationResult(
-                    {**group_results, **result},
-                    False,
-                    self,
-                    tuple(self._variables_to_group_by_),
-                )
-                for result in self._apply_results_mapping(selected_vars_bindings)
-            )
-
-    def _construct_groups_from_constrained_values__(
-        self, sources: Bindings
-    ) -> Dict[GroupKey, Bindings]:
-        """
-        Construct groups from constrained values using `variables_to_group_by_`.
-
-        :param sources: The current bindings.
-        :return: A dictionary mapping group key to GroupOperationResult.
-        """
-        groups = defaultdict(lambda: defaultdict(list))
-        variables_to_group_by_ids = [
-            var._binding_id_ for var in self._variables_to_group_by_
-        ]
-        constrained_values = self.get_constrained_values(sources)
-        constrained_values = self._evaluate_grouped_by_variables_(constrained_values)
-        constrained_values = self._evaluate_children_of_aggregators_(constrained_values)
-        for res in constrained_values:
-            group_key = tuple(
-                next(var._evaluate__(res, parent=self)).value
-                for var in self._variables_to_group_by_
-            )
-            for id_, val in res.items():
-                if id_ in variables_to_group_by_ids:
-                    groups[group_key][id_] = val
-                else:
-                    groups[group_key][id_].append(val)
-        return groups
 
     @staticmethod
     def variable_is_inferred(var: Selectable[T]) -> bool:
@@ -1508,20 +1594,6 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
                 ],
                 values,
                 parent=self,
-            )
-
-    def _evaluate_grouped_by_variables_(
-        self, sources: Iterator[Bindings]
-    ) -> Iterator[Bindings]:
-        """
-        Evaluate the grouped_by variables by generating combinations of values from their evaluation generators.
-
-        :param sources: The current bindings.
-        :return: An Iterable of Bindings for each combination of values.
-        """
-        for values in sources:
-            yield from self._chain_evaluate_variables(
-                self._variables_to_group_by_, values, parent=self
             )
 
     def _evaluate_selected_variables(self, sources: Bindings) -> Iterator[Bindings]:
@@ -2191,6 +2263,61 @@ class BinaryOperator(SymbolicExpression, ABC):
         This is useful for accessing the leaves of the symbolic expression tree.
         """
         return self.left._all_variable_instances_ + self.right._all_variable_instances_
+
+
+@dataclass(eq=False, repr=False)
+class Having(BinaryOperator):
+    """
+    A symbolic having expression that can be used to filter the grouped results of a query.
+    """
+
+    left: GroupBy
+
+    @cached_property
+    def group_by(self) -> GroupBy:
+        return self.left
+
+    @cached_property
+    def conditions(self) -> SymbolicExpression:
+        return self.right
+
+    @property
+    def _name_(self) -> str:
+        return self.__class__.__name__
+
+    def _evaluate__(
+        self,
+        sources: Optional[Bindings] = None,
+        parent: Optional[SymbolicExpression] = None,
+    ) -> Iterable[OperationResult]:
+        sources = sources or {}
+        self._eval_parent_ = parent
+
+        if self._id_ in sources:
+            yield OperationResult(sources, self._is_false_, self)
+            return
+
+        yield from (
+            OperationResult(
+                condition_result.bindings,
+                self.get_and_update_truth_value(condition_result),
+                self,
+            )
+            for grouped_result in self.group_by._evaluate__(sources, parent=self)
+            for condition_result in self.conditions._evaluate__(
+                grouped_result.bindings, parent=self
+            )
+        )
+
+    def get_and_update_truth_value(self, result: OperationResult) -> bool:
+        """
+        Retrieves and updates the truth value of the given operation result.
+
+        :param result: The operation result to process.
+        :return: The truth value of the operation result.
+        """
+        self.is_false = result.is_false
+        return result.is_false
 
 
 def not_contains(container, item) -> bool:

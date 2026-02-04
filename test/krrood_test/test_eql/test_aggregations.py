@@ -120,9 +120,10 @@ def test_having_with_max(handles_and_containers_world):
             drawer_count := eql.count(drawer),
             eql.max(drawer, key=lambda d: d.handle.name),
         )
-        .having(drawer_count > 1)
         .grouped_by(cabinet)
+        .having(drawer_count > 1)
     )
+    query.visualize()
     results = list(query.evaluate())
     assert len(results) == 1
 
@@ -259,15 +260,12 @@ def test_average_with_condition(departments_and_employees):
 
     department = emp.department
     query = a(
-        set_of(
-            department,
-            avg_salary := eql.average(emp.salary).where(
-                department.name.startswith("F")
-            ),
-        )
+        set_of(department, avg_salary := eql.average(emp.salary))
+        .where(department.name.startswith("F"))
         .grouped_by(department)
         .having(avg_salary > 20000)
     )
+    query.visualize()
     results = list(query.evaluate())
     assert len(results) == 1
     assert results[0][department] == next(
@@ -279,7 +277,6 @@ def test_multiple_aggregations_per_group(departments_and_employees):
     departments, employees = departments_and_employees
 
     emp = variable(Employee, domain=None)
-    # emp_of_F = eql.an(entity(emp).where(emp.department.name.startswith("F")))
     department = emp.department
     avg_salary = eql.average(emp.salary)
     avg_starting_salary = eql.average(emp.starting_salary)
@@ -293,3 +290,37 @@ def test_multiple_aggregations_per_group(departments_and_employees):
     assert results[0][department] == next(
         d for d in departments if d.name.startswith("I")
     )
+
+
+def test_having_node_hierarchy(departments_and_employees):
+    from krrood.entity_query_language.symbolic import Having, GroupBy
+
+    emp = variable(Employee, domain=None)
+    department = emp.department
+    avg_salary = eql.average(emp.salary)
+
+    query = a(
+        set_of(department, avg_salary).grouped_by(department).having(avg_salary > 20000)
+    )
+
+    descriptor = query._child_
+    # Graph hierarchy check
+    assert isinstance(descriptor._child_, Having)
+    assert isinstance(descriptor._child_.left, GroupBy)
+    assert descriptor._child_.right._name_ == ">"
+
+
+def test_complex_having_success(departments_and_employees):
+    departments, employees = departments_and_employees
+    emp = variable(Employee, domain=None)
+    department = emp.department
+    avg_salary = eql.average(emp.salary)
+
+    query = a(
+        set_of(department, avg_salary).grouped_by(department).having(avg_salary > 30000)
+    )
+
+    results = list(query.evaluate())
+    # Should only return Finance department (avg 35000)
+    assert len(results) == 1
+    assert results[0][department].name == "Finance"

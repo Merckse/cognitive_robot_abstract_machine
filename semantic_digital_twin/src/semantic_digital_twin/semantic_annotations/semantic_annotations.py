@@ -832,7 +832,7 @@ class Bed(Furniture):
 
 
 @dataclass(eq=False)
-class Sofa(Furniture):
+class Sofa(Furniture, HasSupportingSurface):
     """
     A sofa.
     """
@@ -1113,56 +1113,56 @@ class HoneyWafers(Food, IsPerceivable):
 
 
 @dataclass(eq=False)
-class Grapes(Food, IsPerceivable):
+class Grapes(Fruit, IsPerceivable):
     """
     A bunch of grapes.
     """
 
 
 @dataclass(eq=False)
-class Peach(Food, IsPerceivable):
+class Peach(Fruit, IsPerceivable):
     """
     A peach.
     """
 
 
 @dataclass(eq=False)
-class Plum(Food, IsPerceivable):
+class Plum(Fruit, IsPerceivable):
     """
     A plum.
     """
 
 
 @dataclass(eq=False)
-class Strawberry(Food, IsPerceivable):
+class Strawberry(Fruit, IsPerceivable):
     """
     A strawberry.
     """
 
 
 @dataclass(eq=False)
-class Lemon(Food, IsPerceivable):
+class Lemon(Fruit, IsPerceivable):
     """
     A lemon.
     """
 
 
 @dataclass(eq=False)
-class Orange(Food, IsPerceivable):
+class Orange(Fruit, IsPerceivable):
     """
     An orange.
     """
 
 
 @dataclass(eq=False)
-class Cucumber(Food, IsPerceivable):
+class Cucumber(Vegetable, IsPerceivable):
     """
     A cucumber.
     """
 
 
 @dataclass(eq=False)
-class Zucchini(Food, IsPerceivable):
+class Zucchini(Vegetable, IsPerceivable):
     """
     A zucchini.
     """
@@ -1183,7 +1183,7 @@ class Muesli(Food, IsPerceivable):
 
 
 @dataclass(eq=False)
-class Corn(Food, IsPerceivable):
+class Corn(Fruit, IsPerceivable):
     """
     A can of corn.
     """

@@ -6,6 +6,7 @@ from typing import Callable, Optional, Sequence, Tuple
 
 from pycram.datastructures.dataclasses import Context
 from semantic_digital_twin.adapters.mesh import STLParser
+from semantic_digital_twin.adapters.ros.tf_publisher import TFPublisher
 from semantic_digital_twin.adapters.urdf import URDFParser
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.robots.hsrb import HSRB
@@ -76,7 +77,7 @@ def add_objects_and_semantics(
         )
 
     with world.modify_world():
-        world.add_semantic_annotation(Milk(body=world.get_body_by_name("milk.stl")))
+        world.add_semantic_annotation(Milk(root=world.get_body_by_name("milk.stl")))
 
     return world
 
@@ -106,9 +107,12 @@ def merge_robot_into_environment(
 def try_make_viz(world):
     try:
         import rclpy
-        from semantic_digital_twin.adapters.viz_marker import VizMarkerPublisher
+        from semantic_digital_twin.adapters.ros.visualization.viz_marker import (
+            VizMarkerPublisher,
+        )
 
         node = rclpy.create_node("viz_marker")
+        tf_publisher = TFPublisher(node=node, world=world)
         return VizMarkerPublisher(world, node)
     except Exception:
         logger.info(

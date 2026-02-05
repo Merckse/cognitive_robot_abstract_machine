@@ -85,7 +85,7 @@ class TransportAction(ActionDescription):
                 if sem_anno:
                     SequentialPlan(
                         self.context,
-                        OpenActionDescription(sem_anno[0].handle.body, self.arm),
+                        OpenActionDescription(sem_anno[0].handle.root, self.arm),
                     ).perform()
         SequentialPlan(self.context, ParkArmsActionDescription(Arms.BOTH)).perform()
         pickup_loc = CostmapLocation(
@@ -115,6 +115,7 @@ class TransportAction(ActionDescription):
                     target=self.target_location,
                     reachable_arm=self.arm,
                     reachable_for=self.robot_view,
+                    grasp_descriptions=pickup_pose.grasp_description,
                 ),
                 True,
             ),

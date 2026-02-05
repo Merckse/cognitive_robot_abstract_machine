@@ -5,12 +5,8 @@ from suturo_resources.suturo_map import load_environment
 
 from pycram.datastructures.pose import PoseStamped
 from pycram.language import SequentialPlan
-from pycram.process_module import simulated_robot
+from pycram.process_module import real_robot
 from pycram.robot_plans import NavigateActionDescription
-from pycram.ros_utils.text_to_image import TextToImagePublisher
-
-# Register HSRB motion mapping (side-effects).
-from pycram.alternative_motion_mappings import hsrb_motion_mapping  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -22,19 +18,28 @@ class DriveToPosition(Enum):
     )
 
 
+def _require_ros2() -> None:
+    """Fail fast with a helpful message if we're not running in a ROS2 env."""
+    try:
+        import rclpy  # noqa: F401
+    except Exception as e:
+        raise RuntimeError(
+            "This demo is meant to run on the real robot and requires a ROS2 environment. "
+            "Make sure you've sourced your ROS2 workspace (e.g. `source /opt/ros/<distro>/setup.bash` and your overlay) "
+            "and that `rclpy` is importable in this Python environment."
+        ) from e
+
+
 def main(with_viz: bool = True) -> None:
-    """Drive the robot to the cabinet pose inside the simulation world (no real robot / Nav2)."""
+    _require_ros2()
 
     try:
-        from .simulation_setup import setup_hsrb_in_environment  # type: ignore
+        from simulation_setup import setup_hsrb_in_environment  # type: ignore
     except Exception:
-        try:
-            from simulation_setup import setup_hsrb_in_environment  # type: ignore
-        except Exception:
-            # Fallback to the canonical wrapper used by the HSRB demos.
-            from simulation_setup import (
-                setup_hsrb_in_environment,
-            )
+        # Fallback to the canonical wrapper used by the HSRB demos.
+        from simulation_setup import (
+            setup_hsrb_in_environment,
+        )
 
     result = setup_hsrb_in_environment(
         load_environment=load_environment, with_viz=with_viz
@@ -46,18 +51,27 @@ def main(with_viz: bool = True) -> None:
         result.viz,
     )
 
-    text_pub = TextToImagePublisher() if with_viz else None
+    text_pub = None
+    if with_viz:
+        try:
+            from pycram.ros_utils.text_to_image import TextToImagePublisher
+
+            text_pub = TextToImagePublisher()
+        except Exception:
+            logger.info(
+                "TextToImagePublisher unavailable. Continuing without overlay text."
+            )
 
     for pos in DriveToPosition:
         if text_pub:
-            text_pub.publish_text(f"[SIM] Moving to: {pos.name}")
+            text_pub.publish_text(f"[REAL] Moving to: {pos.name}")
 
         plan = SequentialPlan(
             context,
             NavigateActionDescription(target_location=[pos.value]),
         )
 
-        with simulated_robot:
+        with real_robot:
             plan.perform()
 
 

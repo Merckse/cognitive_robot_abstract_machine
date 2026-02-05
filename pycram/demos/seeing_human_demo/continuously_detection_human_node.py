@@ -13,15 +13,19 @@ def main():
     """Testing"""
     text_pub = TextToImagePublisher()
     found_position = True
-    timeout = 15
+    timeout = time.time() + 20
+    internaltimeout = 15
     # While human is seen print location
-    while found_position:
+    while found_position and time.time() < timeout:
         # Send goal
         position = robokudo.query_current_human_position_in_continues()
-        if position is not None and position.header.stamp.sec > time.time() - timeout:
-            x = round(position.point.x)
-            y = round(position.point.y)
-            z = round(position.point.z)
+        if (
+            position is not None
+            and position.header.stamp.sec > time.time() - internaltimeout
+        ):
+            x = round(position.point.x, 2)
+            y = round(position.point.y, 2)
+            z = round(position.point.z, 2)
             text_pub.publish_text(f"Point x: {x} y: {y} z: {z}")
         else:
             text_pub.publish_text("No Human seen.")

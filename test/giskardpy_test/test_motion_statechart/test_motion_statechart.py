@@ -6,6 +6,7 @@ from typing import Type
 
 import numpy as np
 import pytest
+from giskardpy.motion_statechart.goals.place import Place
 
 from giskardpy.motion_statechart.goals.pick_up import PickUp, PullUp
 from giskardpy.data_types.exceptions import DuplicateNameException
@@ -2080,11 +2081,22 @@ def test_pick_up(hsr_world_setup: World, rclpy_node):
         hsr_world_setup.add_connection(new_connection)
 
     msc_pickup = MotionStatechart()
-    msc_pickup.add_node(PullUp(manipulator=hand, object_geometry=box))
+    msc_pickup.add_node(p := PullUp(manipulator=hand, object_geometry=box))
+    msc_pickup.add_node(EndMotion.when_true(p))
     kin_sim_pickup = Executor(world=hsr_world_setup, pacer=SimulationPacer(1))
     kin_sim_pickup.compile(motion_statechart=msc_pickup)
     kin_sim_pickup.tick_until_end()
 
+    place_pose = HomogeneousTransformationMatrix.from_xyz_rpy(
+        x=0, y=0, z=0.5, roll=0, pitch=0, yaw=0, reference_frame=hsr_world_setup.root
+    )
+
+    msc_place = MotionStatechart()
+    msc_place.add_node(place := Place(manipulator=hand, object_geometry=box, goal_pose=place_pose))
+    msc_place.add_node(EndMotion.when_true(place))
+    kin_sim_place = Executor(world=hsr_world_setup, pacer=SimulationPacer(1))
+    kin_sim_place.compile(motion_statechart=msc_place)
+    kin_sim_place.tick_until_end()
 
 def test_transition_triggers():
     msc = MotionStatechart()

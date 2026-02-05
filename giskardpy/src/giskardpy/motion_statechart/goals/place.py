@@ -6,7 +6,7 @@ from giskardpy.motion_statechart.goals.pick_up import CloseHand
 from giskardpy.motion_statechart.goals.templates import Sequence
 from giskardpy.motion_statechart.graph_node import Goal, NodeArtifacts, CancelMotion
 from giskardpy.motion_statechart.ros2_nodes.force_torque_monitor import ForceImpactMonitor
-from giskardpy.motion_statechart.tasks.cartesian_tasks import CartesianPosition
+from giskardpy.motion_statechart.tasks.cartesian_tasks import CartesianPosition, CartesianPose
 from semantic_digital_twin.robots.abstract_robot import Manipulator
 from semantic_digital_twin.spatial_types import (
     Vector3,
@@ -28,7 +28,6 @@ class Place(Sequence):
 
     manipulator: Manipulator = field(kw_only=True)
     object_geometry: Body = field(kw_only=True)
-    cartesian_pose: Pose = field(kw_only=True)
     ft: bool = field(kw_only=True, default=False)
     goal_pose: HomogeneousTransformationMatrix = field(kw_only=True)
     simulated: bool = field(default=True, kw_only=True)
@@ -36,7 +35,7 @@ class Place(Sequence):
     def __post_init__(self):
         super().__post_init__()
         # Note: Retracting seperate from placing
-        approach = ApproachPlacement(manipulator=self.manipulator, object_geometry=self.object_geometry, ft=self.ft)
+        approach = ApproachPlacement(manipulator=self.manipulator, object_geometry=self.object_geometry, goal_pose=self.goal_pose, ft=self.ft)
         close_gripper = CloseHand(ft=self.ft, simulated=self.simulated)
         retracting = Retracting(manipulator=self.manipulator)
 
@@ -46,15 +45,22 @@ class Place(Sequence):
 
 @dataclass(repr=False, eq=False)
 class ApproachPlacement(Goal):
+    # Assumes object is attached to tool frame
     manipulator: Manipulator = field(kw_only=True)
     object_geometry: Body = field(kw_only=True)
+    goal_pose: HomogeneousTransformationMatrix = field(kw_only=True)
     ft: bool = field(kw_only=True, default=False)
 
     def expand(self, context: BuildContext) -> None:
         super().expand(context)
 
+        self.object_goal = CartesianPose(root_link=context.world.root, tip_link=self.object_geometry, goal_pose=self.goal_pose)
+        self.add_node(self.object_goal)
+
     def build(self, context: BuildContext) -> NodeArtifacts:
-        return super().build(context)
+        artifacts =  super().build(context)
+        artifacts.observation = self.object_goal.observation_variable
+        return artifacts
 
 
 @dataclass(repr=False, eq=False)
@@ -66,6 +72,7 @@ class Retracting(Goal):
     distance: float = field(default=0.15, kw_only=True)
     velocity: float = field(default=0.1, kw_only=True)
     weight: float = field(default=DefaultWeights.WEIGHT_ABOVE_CA, kw_only=True)
+    ft: bool = field(default=False, kw_only=True)
 
     def expand(self, context: BuildContext) -> None:
         tip_link = self.manipulator.tool_frame

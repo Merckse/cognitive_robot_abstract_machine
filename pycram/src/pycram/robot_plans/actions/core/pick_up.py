@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import timedelta
 
 from typing_extensions import Union, Optional, Type, Any, Iterable
 
+from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix
 from semantic_digital_twin.world_description.connections import FixedConnection
 from semantic_digital_twin.world_description.world_entity import Body
 from ...motions.gripper import MoveGripperMotion, MoveTCPMotion
@@ -156,6 +158,8 @@ class PickUpAction(ActionDescription):
     def execute(self) -> None:
         SequentialPlan(
             self.context,
+            # TODO: add Codeplan from sprint-2
+            # This opening function is Simulation only
             MoveGripperMotion(motion=GripperState.OPEN, gripper=self.arm),
             ReachActionDescription(
                 target_pose=PoseStamped.from_spatial_type(
@@ -165,22 +169,29 @@ class PickUpAction(ActionDescription):
                 arm=self.arm,
                 grasp_description=self.grasp_description,
             ),
+
+            # TODO: add Codeplan from sprint-2
+            # This close function is Simulation only
             MoveGripperMotion(motion=GripperState.CLOSE, gripper=self.arm),
         ).perform()
         end_effector = ViewManager.get_end_effector_view(self.arm, self.robot_view)
 
         # Attach the object to the end effector
         with self.world.modify_world():
-            self.world.remove_connection(self.object_designator.parent_connection)
-            self.world.add_connection(
-                FixedConnection(
-                    parent=end_effector.tool_frame, child=self.object_designator
-                )
-            )
+            # automatically deletes old connection
+            self.world.move_branch_with_fixed_connection(branch_root=self.object_designator, new_parent=end_effector.tool_frame)
+
+        object_pose = self.object_designator.global_pose
 
         _, _, lift_to_pose = self.grasp_description.grasp_pose_sequence(
             self.object_designator
         )
+
+        # tales the poses of the current object and lifts it up a little bit, so robot can go into ParkArms gracefully
+        lift_to_pose = PoseStamped.from_spatial_type(HomogeneousTransformationMatrix.from_xyz_quaternion(
+            object_pose.x, object_pose.y, object_pose.z + 0.2, reference_frame=self.world.root
+        ))
+
         SequentialPlan(
             self.context,
             MoveTCPMotion(

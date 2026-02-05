@@ -1,5 +1,6 @@
 import os
 
+from geometry_msgs.msg import PoseStamped
 from rclpy.executors import SingleThreadedExecutor
 from sqlalchemy import false
 
@@ -9,7 +10,8 @@ from pycram.datastructures.grasp import GraspDescription
 from pycram.datastructures.pose import PoseStamped
 from pycram.language import SequentialPlan
 from pycram.process_module import simulated_robot
-from pycram.robot_plans import MoveTorsoActionDescription, TransportActionDescription, PickUpActionDescription
+from pycram.robot_plans import MoveTorsoActionDescription, TransportActionDescription, PickUpActionDescription, \
+    PlaceActionDescription
 from pycram.robot_plans import ParkArmsActionDescription
 from pycram.testing import setup_world
 from semantic_digital_twin.adapters.mesh import STLParser
@@ -71,19 +73,27 @@ with world.modify_world():
         ]
     )
 gripper = world.get_semantic_annotations_by_type(ParallelGripper)[0]
+milk_object = world.get_body_by_name("milk.stl")
+milk_pose = PoseStamped.from_spatial_type(milk_object.global_pose.from_xyz_rpy())
+print(milk_pose)
+grasp = GraspDescription(ApproachDirection.FRONT, VerticalAlignment.NoAlignment, manipulator=gripper, manipulation_offset=False)
 
-grasp = GraspDescription(ApproachDirection.LEFT, VerticalAlignment.NoAlignment, manipulator=gripper, manipulation_offset=False)
 plan = SequentialPlan(
     context,
     ParkArmsActionDescription(Arms.BOTH),
     MoveTorsoActionDescription(TorsoState.HIGH),
-    PickUpActionDescription(object_designator=world.get_body_by_name("milk.stl"), arm=Arms.LEFT, grasp_description=grasp),
+    PickUpActionDescription(object_designator=milk_object, arm=Arms.LEFT, grasp_description=grasp),
+    # ParkArmsActionDescription(Arms.BOTH),
 
-    TransportActionDescription(
-        world.get_body_by_name("milk.stl"),
-        PoseStamped.from_list([4.9, 3.3, 0.8], frame=world.root),
-        Arms.LEFT,
-    ),
+
+    #
+    PlaceActionDescription(object_designator=milk_object,target_location=milk_pose, arm=Arms.LEFT),
+
+    #TransportActionDescription(
+    #    world.get_body_by_name("milk.stl"),
+    #    PoseStamped.from_list([4.9, 3.3, 0.8], frame=world.root),
+    #    Arms.LEFT,
+    #),
 )
 
 with simulated_robot:

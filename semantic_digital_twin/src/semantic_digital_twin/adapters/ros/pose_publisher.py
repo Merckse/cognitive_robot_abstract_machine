@@ -56,7 +56,7 @@ class PosePublisher(StateChangeCallback):
     """
     fixed_frame: str = field(init=False)
     """
-    The frame in which the marker are published, is set to the world root
+    The frame in which the marker are published, is set to world root
     """
 
     def _notify(self):
@@ -68,11 +68,11 @@ class PosePublisher(StateChangeCallback):
         self.publisher.publish(marker_array)
 
     def __post_init__(self):
+        self.fixed_frame = str(self.world.root.name)
         self.publisher = self.node.create_publisher(MarkerArray, self.topic_name, 10)
         time.sleep(0.2)
         self.end_time = time.time() + self.lifetime
         self._notify()
-        self.fixed_frame = str(self.world.root)
 
     def _create_marker_array(
         self, global_pose: HomogeneousTransformationMatrix
@@ -130,7 +130,7 @@ class PosePublisher(StateChangeCallback):
                     ),
                     color=ColorRGBA(r=1.0, g=1.0, b=1.0, a=1.0),
                     header=Header(
-                        frame_id=str(self.world.root.name),
+                        frame_id=self.fixed_frame,
                     ),
                 )
             )
@@ -156,7 +156,7 @@ class PosePublisher(StateChangeCallback):
         m.action = Marker.ADD
         m.type = Marker.ARROW
         m.id = _id
-        m.header.frame_id = str(self.world.root.name)
+        m.header.frame_id = self.fixed_frame
         m.pose = pose
         m.lifetime = Duration(
             sec=round(self.end_time - time.time()) if self.lifetime > 0 else 0

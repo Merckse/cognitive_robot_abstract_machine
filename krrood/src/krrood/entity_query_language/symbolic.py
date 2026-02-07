@@ -56,6 +56,7 @@ from .failures import (
     HavingUsedBeforeWhereError,
     NonAggregatorInHavingConditionsError,
     UnsupportedAggregationOfAGroupedByVariable,
+    NestedAggregationError,
 )
 from .failures import VariableCannotBeEvaluated
 from .result_quantification_constraint import (
@@ -739,8 +740,25 @@ class Aggregator(ResultProcessor[T], ABC):
     """
 
     def __post_init__(self):
+        if isinstance(self._child_, Aggregator):
+            raise NestedAggregationError(self)
         super().__post_init__()
         self._var_ = self
+
+    def evaluate(self) -> Iterator[T]:
+        yield from An(_child_=Entity(_selected_variables=[self])).evaluate()
+
+    def grouped_by(self, *variables: Variable) -> Entity[T]:
+        """
+        Group the results by the given variables.
+        """
+        return Entity(_selected_variables=[self]).grouped_by(*variables)
+
+    def where(self, *conditions: ConditionType) -> Entity[T]:
+        """
+        Filter the results by the given conditions.
+        """
+        return Entity(_selected_variables=[self]).where(*conditions)
 
     def _process_result_(
         self, result: OperationResult

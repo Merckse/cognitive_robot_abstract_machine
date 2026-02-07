@@ -145,6 +145,27 @@ class NoConditionsProvidedToWhereStatementOfDescriptor(UsageError):
 
 
 @dataclass
+class NestedAggregationError(UsageError):
+    """
+    Raised when an aggregation is nested within another aggregation.
+    """
+
+    parent_aggregator: Aggregator
+    """
+    The parent aggregator.
+    """
+
+    def __post_init__(self):
+        self.message = (
+            f"Aggregator {self.parent_aggregator} has a child aggregator {self.parent_aggregator._child_}."
+            f"Aggregations cannot be nested within another aggregation unless the inner aggregation is explicitly "
+            f"grouped, E.g. eql.max(eql.count(...).grouped_by(...)) ), or wrapped in an entity query descriptor, "
+            f"E.g. eql.max(entity(eql.count(...)))"
+        )
+        super().__post_init__()
+
+
+@dataclass
 class AggregationUsageError(UsageError):
     """
     Raised when there is an incorrect usage of aggregation in the entity query language API.

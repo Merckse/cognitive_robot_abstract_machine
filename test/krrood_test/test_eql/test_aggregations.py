@@ -3,7 +3,6 @@ from collections import defaultdict
 import pytest
 
 import krrood.entity_query_language.entity_result_processors as eql
-from krrood.entity_query_language.entity_result_processors import an, a
 from krrood.entity_query_language.entity import (
     variable,
     variable_from,
@@ -11,10 +10,13 @@ from krrood.entity_query_language.entity import (
     set_of,
     contains,
 )
+from krrood.entity_query_language.entity_result_processors import an, a
 from krrood.entity_query_language.failures import (
     NonAggregatedSelectedVariablesError,
     AggregatorInWhereConditionsError,
+    NestedAggregationError,
 )
+from krrood.entity_query_language.symbolic import Having, GroupBy
 from ..dataset.department_and_employee import Department, Employee
 from ..dataset.semantic_world_like_classes import Cabinet, Body, Container, Drawer
 
@@ -27,16 +29,15 @@ def test_count(handles_and_containers_world):
             contains(body.name, "Handle"),
         )
     )
-    assert list(query.evaluate())[0] == len(
-        [b for b in world.bodies if "Handle" in b.name]
-    )
+    assert query.tolist()[0] == len([b for b in world.bodies if "Handle" in b.name])
 
 
 def test_sum(handles_and_containers_world):
     heights = [1, 2, 3, 4, 5]
     heights_var = variable(int, domain=heights)
     query = an(entity(eql.sum(heights_var)))
-    assert list(query.evaluate())[0] == sum(heights)
+    assert query.tolist()[0] == sum(heights)
+    assert eql.sum(heights_var).tolist()[0] == sum(heights)
 
 
 def test_average(handles_and_containers_world):
@@ -44,13 +45,15 @@ def test_average(handles_and_containers_world):
     heights_var = variable(int, domain=heights)
     query = an(entity(eql.average(heights_var)))
     assert list(query.evaluate())[0] == sum(heights) / len(heights)
+    assert eql.average(heights_var).tolist()[0] == sum(heights) / len(heights)
 
 
 def test_sum_on_empty_list(handles_and_containers_world):
     empty_list = []
     empty_var = variable(int, domain=empty_list)
     query = an(entity(eql.sum(empty_var)))
-    assert len(list(query.evaluate())) == 0
+    assert len(query.tolist()) == 0
+    assert eql.sum(empty_var).tolist() == []
 
 
 def test_non_aggregated_selectables_with_aggregated_ones(handles_and_containers_world):
@@ -203,6 +206,33 @@ def test_count_all_or_without_a_specific_child(handles_and_containers_world):
         assert result[count] == expected[result[cabinet]]
 
 
+def test_count_variable_in_grouped_by_variables(handles_and_containers_world):
+    world = handles_and_containers_world
+    cabinet = variable(Cabinet, domain=world.views)
+    query = set_of(count := eql.count(cabinet), cabinet).grouped_by(cabinet)
+    results = query.tolist()
+    expected = defaultdict(lambda: 0)
+    for c in world.views:
+        if isinstance(c, Cabinet):
+            expected[c] += 1
+    for result in results:
+        assert result[count] == expected[result[cabinet]]
+
+
+def test_count_variable_in_grouped_by_variables_selectnig_only_the_count(
+    handles_and_containers_world,
+):
+    world = handles_and_containers_world
+    cabinet = variable(Cabinet, domain=world.views)
+    query = eql.count(cabinet).grouped_by(cabinet)
+    results = query.tolist()
+    expected = defaultdict(lambda: 0)
+    for c in world.views:
+        if isinstance(c, Cabinet):
+            expected[c] += 1
+    assert results == list(expected.values())
+
+
 def test_count_with_duplicates(handles_and_containers_world):
     world = handles_and_containers_world
     cabinet_with_duplicate_drawers = Cabinet(
@@ -236,10 +266,8 @@ def test_max_count_grouped_by(handles_and_containers_world):
     world = handles_and_containers_world
     cabinet = variable(Cabinet, domain=world.views)
     cabinet_drawers = variable_from(cabinet.drawers)
-    count_query = an(entity(eql.count(cabinet_drawers)).grouped_by(cabinet))
-    query = an(entity(eql.max(count_query)))
-    # query = an(entity(eql.max(eql.count(cabinet_drawers)).grouped_by(cabinet)))
-    result = list(query.evaluate())
+    query = eql.max(entity(eql.count(cabinet_drawers)).grouped_by(cabinet))
+    result = query.tolist()
     assert len(result) == 1
     result_max = result[0]
     expected = 0
@@ -249,37 +277,60 @@ def test_max_count_grouped_by(handles_and_containers_world):
     assert result_max == expected
 
 
+def test_max_count_grouped_by_without_explicit_entity(handles_and_containers_world):
+    world = handles_and_containers_world
+    cabinet = variable(Cabinet, domain=world.views)
+    cabinet_drawers = variable_from(cabinet.drawers)
+    query = eql.max(eql.count(cabinet_drawers).grouped_by(cabinet))
+    result = query.tolist()
+    assert len(result) == 1
+    result_max = result[0]
+    expected = 0
+    for c in world.views:
+        if isinstance(c, Cabinet) and len(c.drawers) > expected:
+            expected = len(c.drawers)
+    assert result_max == expected
+
+
+def test_max_count_grouped_by_wrong(handles_and_containers_world):
+    world = handles_and_containers_world
+    cabinet = variable(Cabinet, domain=world.views)
+    cabinet_drawers = variable_from(cabinet.drawers)
+    with pytest.raises(NestedAggregationError):
+        query = eql.max(eql.count(cabinet_drawers))
+
+
 def test_max_min_no_variable():
     values = [2, 1, 3, 5, 4]
     value = variable(int, domain=values)
 
-    max_query = an(entity(eql.max(entity(value))))
-    assert list(max_query.evaluate())[0] == max(values)
+    max_query = eql.max(entity(value))
+    assert max_query.tolist()[0] == max(values)
 
-    min_query = an(entity(eql.min(entity(value))))
-    assert list(min_query.evaluate())[0] == min(values)
+    min_query = eql.min(entity(value))
+    assert min_query.tolist()[0] == min(values)
 
 
 def test_max_min_without_entity():
     values = [2, 1, 3, 5, 4]
     value = variable(int, domain=values)
 
-    max_query = an(entity(eql.max(value)))
-    assert list(max_query.evaluate())[0] == max(values)
+    max_query = eql.max(value)
+    assert max_query.tolist()[0] == max(values)
 
-    min_query = an(entity(eql.min(value)))
-    assert list(min_query.evaluate())[0] == min(values)
+    min_query = eql.min(value)
+    assert min_query.tolist()[0] == min(values)
 
 
 def test_max_min_with_empty_list():
     empty_list = []
     value = variable(int, domain=empty_list)
 
-    max_query = an(entity(eql.max(entity(value))))
-    assert len(list(max_query.evaluate())) == 0
+    max_query = eql.max(entity(value))
+    assert len(max_query.tolist()) == 0
 
-    min_query = an(entity(eql.min(entity(value))))
-    assert len(list(min_query.evaluate())) == 0
+    min_query = eql.min(entity(value))
+    assert len(min_query.tolist()) == 0
 
 
 @pytest.fixture
@@ -381,7 +432,6 @@ def test_multiple_aggregations_per_group_on_same_variable(departments_and_employ
 
 
 def test_having_node_hierarchy(departments_and_employees):
-    from krrood.entity_query_language.symbolic import Having, GroupBy
 
     emp = variable(Employee, domain=None)
     department = emp.department

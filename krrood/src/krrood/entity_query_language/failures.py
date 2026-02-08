@@ -31,6 +31,8 @@ class QuantificationNotSatisfiedError(DataclassException, ABC):
 
     This exception is used to indicate errors related to the quantification
     of the query results.
+
+    For further details, see :doc:`/krrood/doc/eql/result_quantifiers`.
     """
 
     expression: ResultQuantifier
@@ -48,6 +50,8 @@ class GreaterThanExpectedNumberOfSolutions(QuantificationNotSatisfiedError):
     """
     Represents an error when the number of solutions exceeds the
     expected threshold.
+
+    For further details, see :doc:`/krrood/doc/eql/result_quantifiers`.
     """
 
     def __post_init__(self):
@@ -60,6 +64,8 @@ class LessThanExpectedNumberOfSolutions(QuantificationNotSatisfiedError):
     """
     Represents an error that occurs when the number of solutions found
     is lower than the expected number.
+
+    For further details, see :doc:`/krrood/doc/eql/result_quantifiers`.
     """
 
     found_number: int
@@ -80,6 +86,8 @@ class MultipleSolutionFound(GreaterThanExpectedNumberOfSolutions):
     """
     Raised when a query unexpectedly yields more than one solution where a single
     result was expected.
+
+    For further details, see :doc:`/krrood/doc/eql/result_quantifiers`.
     """
 
     expected_number: int = 1
@@ -89,6 +97,8 @@ class MultipleSolutionFound(GreaterThanExpectedNumberOfSolutions):
 class NoSolutionFound(LessThanExpectedNumberOfSolutions):
     """
     Raised when a query does not yield any solution.
+
+    For further details, see :doc:`/krrood/doc/eql/result_quantifiers`.
     """
 
     expected_number: int = 1
@@ -132,6 +142,8 @@ class UsageError(DataclassException):
 class UnsupportedExpressionTypeForDistinct(UsageError):
     """
     Raised when an expression type is not supported for distinct operation.
+
+    For further details, see the section on `distinct` and its usage in aggregations in :doc:`/krrood/doc/eql/result_processors`.
     """
 
     unsupported_expression_type: Type[SymbolicExpression]
@@ -145,6 +157,8 @@ class UnsupportedExpressionTypeForDistinct(UsageError):
 class NoConditionsProvidedToWhereStatementOfDescriptor(UsageError):
     """
     Raised when no conditions are provided to the where statement of a query descriptor.
+
+    For further details, see the section on writing queries and `where` clauses in :doc:`/krrood/doc/eql/writing_queries`.
     """
 
     descriptor: QueryObjectDescriptor
@@ -161,6 +175,8 @@ class NoConditionsProvidedToWhereStatementOfDescriptor(UsageError):
 class NestedAggregationError(UsageError):
     """
     Raised when an aggregation is nested within another aggregation.
+
+    For further details, see the "Features and Constraints" section regarding nested aggregations in :doc:`/krrood/doc/eql/result_processors`.
     """
 
     parent_aggregator: Aggregator
@@ -182,6 +198,8 @@ class NestedAggregationError(UsageError):
 class AggregationUsageError(UsageError):
     """
     Raised when there is an incorrect usage of aggregation in the entity query language API.
+
+    For further details, see :doc:`/krrood/doc/eql/result_processors`.
     """
 
     descriptor: QueryObjectDescriptor
@@ -194,6 +212,8 @@ class AggregationUsageError(UsageError):
 class UnsupportedAggregationOfAGroupedByVariable(AggregationUsageError):
     """
     Raised when there is an aggregation over a grouped_by variable that is not Count.
+
+    For further details, see :doc:`/krrood/doc/eql/result_processors`.
     """
 
     group_by: GroupBy
@@ -214,6 +234,8 @@ class UnsupportedAggregationOfAGroupedByVariable(AggregationUsageError):
 class HavingUsedBeforeWhereError(AggregationUsageError):
     """
     raised when having is used before where.
+
+    For further details, see :doc:`/krrood/doc/eql/result_processors`.
     """
 
     def __post_init__(self):
@@ -225,6 +247,8 @@ class HavingUsedBeforeWhereError(AggregationUsageError):
 class NonAggregatedSelectedVariablesError(AggregationUsageError):
     """
     Raised when a non-aggregated and not grouped_by variable(s) is selected along with an aggregated variable.
+
+    For further details, see :doc:`/krrood/doc/eql/result_processors`.
     """
 
     non_aggregated_variables: List[Selectable]
@@ -249,6 +273,8 @@ class NonAggregatedSelectedVariablesError(AggregationUsageError):
 class NonAggregatorInHavingConditionsError(AggregationUsageError):
     """
     Raised when a non-aggregator is used in a having condition.
+
+    For further details, see :doc:`/krrood/doc/eql/result_processors`.
     """
 
     non_aggregators: List[Selectable]
@@ -262,6 +288,8 @@ class NonAggregatorInHavingConditionsError(AggregationUsageError):
 class AggregatorInWhereConditionsError(AggregationUsageError):
     """
     Raised when an aggregator is used in a where condition.
+
+    For further details, see :doc:`/krrood/doc/eql/result_processors`.
     """
 
     aggregators: List[Aggregator]
@@ -281,6 +309,8 @@ class AggregatorInWhereConditionsError(AggregationUsageError):
 class NoKwargsInMatchVar(UsageError):
     """
     Raised when a match_variable is used without any keyword arguments.
+
+    For further details, see the notes on using `match_variable` vs `variable` in :doc:`/krrood/doc/eql/match`.
     """
 
     match_variable: Match
@@ -297,6 +327,8 @@ class NoKwargsInMatchVar(UsageError):
 class WrongSelectableType(UsageError):
     """
     Raised when a wrong variable type is given to the select() statement.
+
+    For further details, see the sections on `entity()`, `set_of()`, and `variable()` in :doc:`/krrood/doc/eql/writing_queries`.
     """
 
     wrong_variable_type: Type
@@ -320,6 +352,8 @@ class LiteralConditionError(UsageError):
         >>> predicate = HasType(Body("Body1"), Body)
         >>> query = an(entity(let(Body, None), predicate))
     So make sure that at least one of the arguments to the predicate or symbolic function are variables.
+
+    For further details, see the warning about literal conditions in :doc:`/krrood/doc/eql/logical_operators`.
     """
 
     query_descriptor: QueryObjectDescriptor
@@ -344,6 +378,8 @@ class LiteralConditionError(UsageError):
 class CannotProcessResultOfGivenChildType(UsageError):
     """
     Raised when the entity query language API cannot process the results of a given child type during evaluation.
+
+    For further details, see :doc:`/krrood/doc/eql/result_processors`.
     """
 
     unsupported_child_type: Type
@@ -363,6 +399,8 @@ class CannotProcessResultOfGivenChildType(UsageError):
 class NonPositiveLimitValue(UsageError):
     """
     Raised when a limit value for the query results is not positive.
+
+    For further details, see :doc:`/krrood/doc/eql/result_processors`.
     """
 
     wrong_limit_value: int
@@ -379,6 +417,8 @@ class NonPositiveLimitValue(UsageError):
 class UnsupportedOperation(UsageError):
     """
     Raised when an operation is not supported by the entity query language API.
+
+    For further details, see :doc:`/krrood/doc/eql/logical_operators` and :doc:`/krrood/doc/eql/comparators`.
     """
 
     ...
@@ -388,6 +428,8 @@ class UnsupportedOperation(UsageError):
 class UnSupportedOperand(UnsupportedOperation):
     """
     Raised when an operand is not supported by the operation.
+
+    For further details, see :doc:`/krrood/doc/eql/logical_operators` and :doc:`/krrood/doc/eql/comparators`.
     """
 
     operation: Type[SymbolicExpression]
@@ -408,6 +450,8 @@ class UnSupportedOperand(UnsupportedOperation):
 class UnsupportedNegation(UnsupportedOperation):
     """
     Raised when negating quantifiers.
+
+    For further details, see the section on negation in :doc:`/krrood/doc/eql/logical_operators`.
     """
 
     operation_type: Type[SymbolicExpression]
@@ -431,6 +475,8 @@ class UnsupportedNegation(UnsupportedOperation):
 class QuantificationSpecificationError(UsageError):
     """
     Raised when the quantification constraints specified on the query results are invalid or inconsistent.
+
+    For further details, see :doc:`/krrood/doc/eql/result_quantifiers`.
     """
 
 
@@ -438,6 +484,8 @@ class QuantificationSpecificationError(UsageError):
 class QuantificationConsistencyError(QuantificationSpecificationError):
     """
     Raised when the quantification constraints specified on the query results are inconsistent.
+
+    For further details, see :doc:`/krrood/doc/eql/result_quantifiers`.
     """
 
     ...
@@ -447,6 +495,8 @@ class QuantificationConsistencyError(QuantificationSpecificationError):
 class NegativeQuantificationError(QuantificationConsistencyError):
     """
     Raised when the quantification constraints specified on the query results have a negative value.
+
+    For further details, see :doc:`/krrood/doc/eql/result_quantifiers`.
     """
 
     message: str = f"ResultQuantificationConstraint must be a non-negative integer."
@@ -456,6 +506,8 @@ class NegativeQuantificationError(QuantificationConsistencyError):
 class InvalidChildType(UsageError):
     """
     Raised when an invalid entity type is given to the quantification operation.
+
+    For further details, see :doc:`/krrood/doc/eql/writing_queries`.
     """
 
     invalid_child_type: Type
@@ -476,6 +528,8 @@ class InvalidChildType(UsageError):
 class InvalidEntityType(InvalidChildType):
     """
     Raised when an invalid entity type is given to the quantification operation.
+
+    For further details, see :doc:`/krrood/doc/eql/writing_queries`.
     """
 
     ...
@@ -485,6 +539,8 @@ class InvalidEntityType(InvalidChildType):
 class ClassDiagramError(DataclassException):
     """
     An error related to the class diagram.
+
+    For further details, see :doc:`/krrood/doc/eql/domain_mapping`.
     """
 
 
@@ -492,6 +548,8 @@ class ClassDiagramError(DataclassException):
 class NoneWrappedFieldError(ClassDiagramError):
     """
     Raised when a field of a class is not wrapped by a WrappedField.
+
+    For further details, see :doc:`/krrood/doc/eql/domain_mapping`.
     """
 
     clazz: Type

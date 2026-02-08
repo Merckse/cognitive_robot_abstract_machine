@@ -736,7 +736,7 @@ class ResultProcessor(CanBehaveLikeAVariable[T], ABC):
 
     def __post_init__(self):
         if isinstance(self._child_, QueryObjectDescriptor):
-            self._child_._build__()
+            self._child_._build_()
         super().__post_init__()
 
     def tolist(self):
@@ -1189,6 +1189,11 @@ A dictionary for grouped bindings which maps a group key to its corresponding bi
 
 @dataclass(eq=False, repr=False)
 class GroupBy(SymbolicExpression[T]):
+    """
+    Represents a group-by operation in the entity query language. This operation groups the results of a query by
+    specific variables. This is useful for aggregating results separately for each group.
+    """
+
     query_descriptor: QueryObjectDescriptor[T]
     """
     The query object descriptor that is being grouped.
@@ -1466,19 +1471,16 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
     """
     The where expression of the query object descriptor.
     """
+    _limit_: Optional[int] = field(default=None, init=False)
+    """
+    The limit on the number of results returned by the query.
+    """
 
     def __post_init__(self):
         super().__post_init__()
         if self._aggregated_and_non_aggregated_variables_in_selection_[0]:
             self._group_ = True
-        self._enclose_plotted_nodes_of_selected_variables__()
-
-    def _enclose_plotted_nodes_of_selected_variables__(self):
-        """
-        Enclose the selected variables in the query object descriptor.
-        """
-        for variable in self._selected_variables:
-            variable._var_._node_.enclosed = True
+        self._enclose_plotted_nodes_of_selected_variables_()
 
     def tolist(self) -> List[T]:
         """
@@ -1488,8 +1490,218 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         """
         return list(An(_child_=self).evaluate())
 
-    @lru_cache(maxsize=None)
-    def _assert_correct_selected_variables__(self):
+    def where(self, *conditions: ConditionType) -> Self:
+        """
+        Set the conditions that describe the query object. The conditions are chained using AND.
+
+        :param conditions: The conditions that describe the query object.
+        :return: This query object descriptor.
+        """
+
+        self._where_condition_list_ = list(conditions)
+
+        self._assert_correct_where_conditions_()
+
+        # Build the expression from the conditions
+        expression = (
+            chained_logic(AND, *self._where_condition_list_)
+            if len(self._where_condition_list_) > 1
+            else self._where_condition_list_[0]
+        )
+
+        self._where_expression_ = Where(expression)
+        return self
+
+    def having(self, *conditions: ConditionType) -> Self:
+        """
+        Set the conditions that describe the query object. The conditions are chained using AND.
+
+        :param conditions: The conditions that describe the query object.
+        :return: This query object descriptor.
+        """
+        self._having_condition_list_ = list(conditions)
+
+        self._assert_correct_having_conditions_()
+
+        # Build the expression from the conditions
+        expression = (
+            chained_logic(AND, *self._having_condition_list_)
+            if len(self._having_condition_list_) > 1
+            else self._having_condition_list_[0]
+        )
+        self._having_conditions_expression_ = expression
+        return self
+
+    def order_by(
+        self,
+        variable: TypingUnion[Selectable[T], Any],
+        descending: bool = False,
+        key: Optional[Callable] = None,
+    ) -> Self:
+        """
+        Order the results by the given variable, using the given key function in descending or ascending order.
+
+        :param variable: The variable to order by.
+        :param descending: Whether to order the results in descending order.
+        :param key: A function to extract the key from the variable value.
+        """
+        self._order_by = OrderByParams(variable, descending, key)
+        return self
+
+    def distinct(
+        self,
+        *on: TypingUnion[Selectable, Any],
+    ) -> TypingUnion[Self, T]:
+        """
+        Apply distinctness constraint to the query object descriptor results.
+
+        :param on: The variables to be used for distinctness.
+        :return: This query object descriptor.
+        """
+        self._distinct_on = on if on else self._selected_variables
+        self._seen_results = SeenSet(keys=self._distinct_on_ids_)
+        self._results_mapping.append(self._get_distinct_results_)
+        return self
+
+    def grouped_by(
+        self, *variables: TypingUnion[Selectable, Any]
+    ) -> TypingUnion[Self, T]:
+        """
+        Specify the variables to group the results by.
+
+        :param variables: The variables to group the results by.
+        :return: This query object descriptor.
+        """
+        self._variables_to_group_by_ = tuple(variables)
+        return self
+
+    def _build_(self):
+        """
+        Build the query object descriptor by wiring the nodes together in the correct order of evaluation.
+        """
+        group_by = None
+        having = None
+        if self._group_:
+            group_by = GroupBy(self)
+            if self._having_conditions_expression_:
+                having = Having(
+                    group_by=group_by, _child_=self._having_conditions_expression_
+                )
+        if having:
+            self._update_child_(having)
+        elif group_by:
+            self._update_child_(group_by)
+        elif self._where_expression_:
+            self._update_child_(self._where_expression_)
+
+    def _evaluate__(
+        self,
+        sources: Bindings,
+    ) -> Iterable[OperationResult]:
+        """
+        Evaluate the query descriptor by constraining values, updating conclusions,
+        and selecting variables.
+        """
+        self._assert_correct_selected_variables_()
+
+        if all(var._binding_id_ in sources for var in self._selected_variables):
+            yield OperationResult(sources, False, self)
+            return
+
+        results_generator = self._generate_results_(sources)
+
+        if self._order_by:
+            yield from self._order_(results_generator)
+        else:
+            yield from results_generator
+
+        if self._seen_results is not None:
+            self._seen_results.clear()
+
+    def _generate_results_(self, sources: Dict[int, Any]) -> Iterator[OperationResult]:
+        """
+        Internal generator to process constrained values and selected variables.
+        """
+        for values in self._get_constrained_values_(sources):
+
+            selected_vars_bindings = self._evaluate_selected_variables(values)
+
+            yield from (
+                OperationResult({**values, **result}, False, self)
+                for result in self._apply_results_mapping_(selected_vars_bindings)
+            )
+
+    def _order_(
+        self, results: Iterator[OperationResult] = None
+    ) -> List[OperationResult]:
+        """
+        Order the results by the given order variable.
+
+        :param results: The results to be ordered.
+        :return: The ordered results.
+        """
+
+        def key(result: OperationResult) -> Any:
+            var = self._order_by.variable
+            var_id = var._binding_id_
+            if var_id not in result:
+                result[var_id] = next(var._evaluate_(result.bindings, self)).value
+            variable_value = result.bindings[var_id]
+            if self._order_by.key:
+                return self._order_by.key(variable_value)
+            else:
+                return variable_value
+
+        return sorted(
+            results,
+            key=key,
+            reverse=self._order_by.descending,
+        )
+
+    @cached_property
+    def _distinct_on_ids_(self) -> Tuple[int, ...]:
+        """
+        Get the IDs of variables used for distinctness.
+        """
+        return tuple(k._binding_id_ for k in self._distinct_on)
+
+    def _get_distinct_results_(
+        self, results_gen: Iterable[Dict[int, Any]]
+    ) -> Iterator[Dict[int, Any]]:
+        """
+        Apply distinctness constraint to the query object descriptor results.
+
+        :param results_gen: Generator of result dictionaries.
+        :return: Generator of distinct result dictionaries.
+        """
+        for res in results_gen:
+            self._update_res_with_distinct_on_variables_(res)
+            if self._seen_results.check(res):
+                continue
+            self._seen_results.add(res)
+            yield res
+
+    def _update_res_with_distinct_on_variables_(self, res: Dict[int, Any]):
+        """
+        Update the result dictionary with values from distinct-on variables if not already present.
+
+        :param res: The result dictionary to update.
+        """
+        for i, id_ in enumerate(self._distinct_on_ids_):
+            if id_ in res:
+                continue
+            var_value = self._distinct_on[i]._evaluate_(copy(res), parent=self)
+            res[id_] = next(var_value).value
+
+    def _enclose_plotted_nodes_of_selected_variables_(self):
+        """
+        Enclose the selected variables in the query object descriptor.
+        """
+        for variable in self._selected_variables:
+            variable._var_._node_.enclosed = True
+
+    @lru_cache
+    def _assert_correct_selected_variables_(self):
         """
         Assert that the selected variables are correct.
 
@@ -1538,49 +1750,7 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         """
         return len(self._aggregated_and_non_aggregated_variables_in_selection_[0]) > 0
 
-    def where(self, *conditions: ConditionType) -> Self:
-        """
-        Set the conditions that describe the query object. The conditions are chained using AND.
-
-        :param conditions: The conditions that describe the query object.
-        :return: This query object descriptor.
-        """
-
-        self._where_condition_list_ = list(conditions)
-
-        self._assert_correct_where_conditions__()
-
-        # Build the expression from the conditions
-        expression = (
-            chained_logic(AND, *self._where_condition_list_)
-            if len(self._where_condition_list_) > 1
-            else self._where_condition_list_[0]
-        )
-
-        self._where_expression_ = Where(expression)
-        return self
-
-    def having(self, *conditions: ConditionType) -> Self:
-        """
-        Set the conditions that describe the query object. The conditions are chained using AND.
-
-        :param conditions: The conditions that describe the query object.
-        :return: This query object descriptor.
-        """
-        self._having_condition_list_ = list(conditions)
-
-        self._assert_correct_having_conditions__()
-
-        # Build the expression from the conditions
-        expression = (
-            chained_logic(AND, *self._having_condition_list_)
-            if len(self._having_condition_list_) > 1
-            else self._having_condition_list_[0]
-        )
-        self._having_conditions_expression_ = expression
-        return self
-
-    def _assert_correct_conditions__(self, conditions: List[ConditionType]):
+    def _assert_correct_conditions_(self, conditions: List[ConditionType]):
         """
         :param conditions: The conditions that describe the query object.
         :raises UsageError: If the conditions are not valid.
@@ -1596,7 +1766,7 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         if literal_expressions:
             raise LiteralConditionError(self, literal_expressions)
 
-    def _assert_correct_where_conditions__(self):
+    def _assert_correct_where_conditions_(self):
         """
         Assert that the where conditions are correct.
 
@@ -1604,7 +1774,7 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         """
         if self._having_condition_list_:
             raise HavingUsedBeforeWhereError(self)
-        self._assert_correct_conditions__(self._where_condition_list_)
+        self._assert_correct_conditions_(self._where_condition_list_)
         aggregators, non_aggregators = (
             self._aggregators_and_non_aggregators_in_conditions_(
                 tuple(self._where_condition_list_)
@@ -1613,13 +1783,13 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         if aggregators:
             raise AggregatorInWhereConditionsError(self, aggregators)
 
-    def _assert_correct_having_conditions__(self):
+    def _assert_correct_having_conditions_(self):
         """
         Assert that the having conditions are correct.
 
         :raises UsageError: If the having conditions are not valid.
         """
-        self._assert_correct_conditions__(self._having_condition_list_)
+        self._assert_correct_conditions_(self._having_condition_list_)
         aggregators, non_aggregators = (
             self._aggregators_and_non_aggregators_in_conditions_(
                 tuple(self._having_condition_list_)
@@ -1628,12 +1798,12 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         if non_aggregators:
             raise NonAggregatorInHavingConditionsError(self, non_aggregators)
 
-    # @lru_cache
     def _aggregators_and_non_aggregators_in_conditions_(
         self, conditions: Tuple[ConditionType, ...]
     ) -> Tuple[List[Aggregator], List[Selectable]]:
         """
-        Get the aggregators and non-aggregators in the where condition.
+        :param conditions: The conditions that describe the query object.
+        :return: A tuple containing the aggregators and non-aggregators in the where condition.
         """
         aggregators, non_aggregators = [], []
         for cond in conditions:
@@ -1652,166 +1822,8 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
                     non_aggregators.append(var)
         return aggregators, non_aggregators
 
-    def order_by(
-        self,
-        variable: TypingUnion[Selectable[T], Any],
-        descending: bool = False,
-        key: Optional[Callable] = None,
-    ) -> Self:
-        """
-        Order the results by the given variable, using the given key function in descending or ascending order.
-
-        :param variable: The variable to order by.
-        :param descending: Whether to order the results in descending order.
-        :param key: A function to extract the key from the variable value.
-        """
-        self._order_by = OrderByParams(variable, descending, key)
-        return self
-
-    def _order(
-        self, results: Iterator[OperationResult] = None
-    ) -> List[OperationResult]:
-        """
-        Order the results by the given order variable.
-
-        :param results: The results to be ordered.
-        :return: The ordered results.
-        """
-
-        def key(result: OperationResult) -> Any:
-            var = self._order_by.variable
-            var_id = var._binding_id_
-            if var_id not in result:
-                result[var_id] = next(var._evaluate_(result.bindings, self)).value
-            variable_value = result.bindings[var_id]
-            if self._order_by.key:
-                return self._order_by.key(variable_value)
-            else:
-                return variable_value
-
-        return sorted(
-            results,
-            key=key,
-            reverse=self._order_by.descending,
-        )
-
-    def distinct(
-        self,
-        *on: TypingUnion[Selectable, Any],
-    ) -> TypingUnion[Self, T]:
-        """
-        Apply distinctness constraint to the query object descriptor results.
-
-        :param on: The variables to be used for distinctness.
-        :return: This query object descriptor.
-        """
-        self._distinct_on = on if on else self._selected_variables
-        self._seen_results = SeenSet(keys=self._distinct_on_ids)
-        self._results_mapping.append(self._get_distinct_results__)
-        return self
-
-    @cached_property
-    def _distinct_on_ids(self) -> Tuple[int, ...]:
-        """
-        Get the IDs of variables used for distinctness.
-        """
-        return tuple(k._binding_id_ for k in self._distinct_on)
-
-    def _get_distinct_results__(
-        self, results_gen: Iterable[Dict[int, Any]]
-    ) -> Iterator[Dict[int, Any]]:
-        """
-        Apply distinctness constraint to the query object descriptor results.
-
-        :param results_gen: Generator of result dictionaries.
-        :return: Generator of distinct result dictionaries.
-        """
-        for res in results_gen:
-            self._update_res_with_distinct_on_variables__(res)
-            if self._seen_results.check(res):
-                continue
-            self._seen_results.add(res)
-            yield res
-
-    def _update_res_with_distinct_on_variables__(self, res: Dict[int, Any]):
-        """
-        Update the result dictionary with values from distinct-on variables if not already present.
-
-        :param res: The result dictionary to update.
-        """
-        for i, id_ in enumerate(self._distinct_on_ids):
-            if id_ in res:
-                continue
-            var_value = self._distinct_on[i]._evaluate_(copy(res), parent=self)
-            res[id_] = next(var_value).value
-
-    def grouped_by(
-        self, *variables: TypingUnion[Selectable, Any]
-    ) -> TypingUnion[Self, T]:
-        """
-        Specify the variables to group the results by.
-
-        :param variables: The variables to group the results by.
-        :return: This query object descriptor.
-        """
-        self._variables_to_group_by_ = tuple(variables)
-        return self
-
-    def _build__(self):
-        group_by = None
-        having = None
-        if self._group_:
-            group_by = GroupBy(self)
-            if self._having_conditions_expression_:
-                having = Having(
-                    group_by=group_by, _child_=self._having_conditions_expression_
-                )
-        if having:
-            self._update_child_(having)
-        elif group_by:
-            self._update_child_(group_by)
-        elif self._where_expression_:
-            self._update_child_(self._where_expression_)
-
-    def _evaluate__(
-        self,
-        sources: Bindings,
-    ) -> Iterable[OperationResult]:
-        """
-        Evaluate the query descriptor by constraining values, updating conclusions,
-        and selecting variables.
-        """
-        self._assert_correct_selected_variables__()
-
-        if all(var._binding_id_ in sources for var in self._selected_variables):
-            yield OperationResult(sources, False, self)
-            return
-
-        results_generator = self._generate_results__(sources)
-
-        if self._order_by:
-            yield from self._order(results_generator)
-        else:
-            yield from results_generator
-
-        if self._seen_results is not None:
-            self._seen_results.clear()
-
-    def _generate_results__(self, sources: Dict[int, Any]) -> Iterator[OperationResult]:
-        """
-        Internal generator to process constrained values and selected variables.
-        """
-        for values in self.get_constrained_values(sources):
-
-            selected_vars_bindings = self._evaluate_selected_variables(values)
-
-            yield from (
-                OperationResult({**values, **result}, False, self)
-                for result in self._apply_results_mapping(selected_vars_bindings)
-            )
-
     @staticmethod
-    def variable_is_inferred(var: Selectable[T]) -> bool:
+    def _variable_is_inferred_(var: Selectable[T]) -> bool:
         """
         Whether the variable is inferred or not.
 
@@ -1820,7 +1832,7 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         """
         return isinstance(var, Variable) and var._is_inferred_
 
-    def any_selected_variable_is_inferred_and_unbound(self, values: Bindings) -> bool:
+    def _any_selected_variable_is_inferred_and_unbound_(self, values: Bindings) -> bool:
         """
         Check if any of the selected variables is inferred and is not bound.
 
@@ -1828,15 +1840,15 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
         :return: True if any of the selected variables is inferred and is not bound, otherwise False.
         """
         return any(
-            not self.variable_is_bound_or_its_children_are_bound(
+            not self._variable_is_bound_or_its_children_are_bound_(
                 var, tuple(values.keys())
             )
             for var in self._selected_variables
-            if self.variable_is_inferred(var)
+            if self._variable_is_inferred_(var)
         )
 
-    @lru_cache(maxsize=None)
-    def variable_is_bound_or_its_children_are_bound(
+    @lru_cache
+    def _variable_is_bound_or_its_children_are_bound_(
         self, var: Selectable[T], result: Tuple[int, ...]
     ) -> bool:
         """
@@ -1850,13 +1862,13 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
             return True
         unique_vars = [uv for uv in var._unique_variables_ if uv is not var]
         if unique_vars and all(
-            self.variable_is_bound_or_its_children_are_bound(uv, result)
+            self._variable_is_bound_or_its_children_are_bound_(uv, result)
             for uv in unique_vars
         ):
             return True
         return False
 
-    def evaluate_conclusions_and_update_bindings(
+    def _evaluate_conclusions_and_update_bindings_(
         self, child_result: Bindings
     ) -> Bindings:
         """
@@ -1873,7 +1885,7 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
             ).bindings
         return child_result
 
-    def get_constrained_values(self, sources: Bindings) -> Iterator[Bindings]:
+    def _get_constrained_values_(self, sources: Bindings) -> Iterator[Bindings]:
         """
         Evaluate the child (i.e., the conditions that constrain the domain of the selected variables).
 
@@ -1887,9 +1899,9 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
 
         for res in self._get_child_true_results__(sources):
 
-            self.evaluate_conclusions_and_update_bindings(res.bindings)
+            self._evaluate_conclusions_and_update_bindings_(res.bindings)
 
-            if self.any_selected_variable_is_inferred_and_unbound(res.bindings):
+            if self._any_selected_variable_is_inferred_and_unbound_(res.bindings):
                 continue
 
             yield res.bindings
@@ -1957,7 +1969,9 @@ class QueryObjectDescriptor(SymbolicExpression[T], ABC):
 
         yield from chain_stages(var_val_gen, sources)
 
-    def _apply_results_mapping(self, results: Iterator[Bindings]) -> Iterable[Bindings]:
+    def _apply_results_mapping_(
+        self, results: Iterator[Bindings]
+    ) -> Iterable[Bindings]:
         """
         Process and transform an iterable of results based on predefined mappings and ordering.
 
@@ -2019,7 +2033,7 @@ class SetOf(QueryObjectDescriptor[T]):
 
         :param selected_variable: The selected variable from the set of variables.
         """
-        self._build__()
+        self._build_()
         return SetOfSelectable(self, selected_variable)
 
 

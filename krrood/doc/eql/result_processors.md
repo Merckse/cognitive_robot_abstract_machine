@@ -63,6 +63,24 @@ world = World([
 ])
 ```
 
+## Evaluation
+
+The result processors can be evaluated using `.evaluate()` which returns a lazy iterator over the results. `evaluate()` 
+ of the result quantifier `an` takes an optional `limit` argument to limit the number of results returned.
+
+```{code-cell} ipython3
+body = variable(type_=Body, domain=world.bodies)
+query = an(entity(body).where(contains(body.name, "Handle")))
+print(list(query.evaluate())) # -> 2 results (all handle bodies)
+print(list(query.evaluate(limit=2))) # -> 2 results
+print(list(query.evaluate(limit=1))) # -> 1 result
+print(list(query.evaluate(limit=3))) # -> 2 results (only 2 total results available, limit is not a hard limit but a maximum)
+try:
+    list(query.evaluate(limit=0))
+except NonPositiveLimitValue as e:
+    print(e) # -> NonPositiveLimitValue: 0, limit must be a positive integer
+```
+
 ## Aggregators
 
 The core aggregators are `count`, `sum`, `average`, `max`, and `min`. All aggregators support:

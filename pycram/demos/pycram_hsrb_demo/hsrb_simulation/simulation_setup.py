@@ -116,7 +116,6 @@ def try_make_viz(world):
 
         node = rclpy.create_node("viz_marker")
         tf_publisher = TFPublisher(node=node, world=world)
-        print(world.root.name)
         viz = VizMarkerPublisher(node=node, world=world, use_visuals=True)
         return viz
     except Exception:
@@ -157,7 +156,7 @@ def setup_hsrb_in_environment(
 ) -> SetupResult:
     p = paths or default_paths()
 
-    hsrb_world : World= build_hsrb_world(p.hsrb_urdf)
+    hsrb_world: World = build_hsrb_world(p.hsrb_urdf)
 
     env_world = load_environment()
     env_world = add_objects_and_semantics(

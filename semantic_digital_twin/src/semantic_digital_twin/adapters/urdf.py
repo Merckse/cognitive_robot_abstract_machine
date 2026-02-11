@@ -124,9 +124,6 @@ class AmentPackageLocator(PackageLocator):
     """
 
     def resolve(self, package_name: str) -> str:
-        """
-        Resolves a package name to its local filesystem path.
-        """
         try:
             from ament_index_python.packages import get_package_share_directory
 
@@ -144,9 +141,6 @@ class ROSPackagePathLocator(PackageLocator):
     """
 
     def resolve(self, package_name: str) -> str:
-        """
-        Resolves a package name to its local filesystem path.
-        """
         for root in os.environ.get("ROS_PACKAGE_PATH", "").split(":"):
             if not root:
                 continue
@@ -159,37 +153,16 @@ class ROSPackagePathLocator(PackageLocator):
 
 
 @dataclass
-class DictPackageLocator(PackageLocator):
-    """
-    Resolves packages using a dictionary.
-    """
-
-    packages: Dict[str, str]
-
-    def resolve(self, package_name: str) -> str:
-        """
-        Resolves a package name to its local filesystem path.
-        """
-        try:
-            return self.packages[package_name]
-        except KeyError:
-            raise ParsingError(
-                message=f"Package '{package_name}' not found in dict locator."
-            )
-
-
-@dataclass
-class CompositePackageLocator(PackageLocator):
+class ROSPackageLocator(PackageLocator):
     """
     Tries multiple package locators in order.
     """
 
-    locators: List[PackageLocator] = field(default_factory=list)
+    locators: List[PackageLocator] = field(
+        default_factory=lambda: [AmentPackageLocator(), ROSPackagePathLocator()]
+    )
 
     def resolve(self, package_name: str) -> str:
-        """
-        Resolves a package name to its local filesystem path.
-        """
         errors = []
         for locator in self.locators:
             try:
@@ -225,18 +198,12 @@ class PackageUriResolver(PathResolver):
     Resolves package:// URIs.
     """
 
-    locator: PackageLocator
+    locator: PackageLocator = field(default_factory=ROSPackageLocator)
 
     def supports(self, uri: str) -> bool:
-        """
-        Checks if the URI is supported by this resolver.
-        """
         return uri.startswith("package://")
 
     def resolve(self, uri: str) -> str:
-        """
-        Resolves a package:// URI to an absolute local file path.
-        """
         rest = uri[len("package://") :]
         if "/" not in rest:
             package_name, relative_path = rest, ""
@@ -253,15 +220,9 @@ class FileUriResolver(PathResolver):
     """
 
     def supports(self, uri: str) -> bool:
-        """
-        Checks if the URI is supported by this resolver.
-        """
         return uri.startswith("file://") or uri.startswith("/") or "://" not in uri
 
     def resolve(self, uri: str) -> str:
-        """
-        Resolves a file:// URI or plain path to a local file path.
-        """
         path = uri
         if uri.startswith("file://"):
             path = (
@@ -278,7 +239,12 @@ class CompositePathResolver(PathResolver):
     Tries multiple path resolvers in order.
     """
 
-    resolvers: List[PathResolver] = field(default_factory=list)
+    resolvers: List[PathResolver] = field(
+        default_factory=lambda: [
+            FileUriResolver(),
+            PackageUriResolver(),
+        ]
+    )
 
     def supports(self, uri: str) -> bool:
         """
@@ -324,21 +290,7 @@ class URDFParser:
     The prefix for every name used in this world.
     """
 
-    path_resolver: PathResolver = field(
-        default_factory=lambda: CompositePathResolver(
-            [
-                PackageUriResolver(
-                    CompositePackageLocator(
-                        [
-                            AmentPackageLocator(),
-                            ROSPackagePathLocator(),
-                        ]
-                    )
-                ),
-                FileUriResolver(),
-            ]
-        )
-    )
+    path_resolver: PathResolver = field(default_factory=CompositePathResolver)
     """
     The path resolver to use for resolving URIs in the URDF file.
     """

@@ -10,6 +10,39 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from std_msgs.msg import String
+from enum import Enum
+
+"""
+---Roles:---
+NatrualPerson = Person,  
+drink = Drink, 
+food = Food, 
+Room = Location, 
+DesignedFurniture = Furniture, 
+Interest = Hobby, 
+Clothing = Clothes, 
+Transportable = Item
+
+response = [
+                sentence,
+                intent,
+                entities[entity_elem[]]
+            ], mit
+            entity_elem = [role, value, entity, propertyAttributes[], actionAttributes[], numberAttributes[]
+
+"""
+class FilterOptions(Enum):
+    SENTENCE = 1
+    INTENT = 2
+    PERSON = "Person"
+    DRINK = "Drink"
+    FOOD = "Food"
+    ROOM = "Room"
+    FURNITURE = "Furniture"
+    HOBBY = "Hobby"
+    CLOTHES = "Clothes"
+    ITEM = "Item"
+    TOPIC = "Topic"
 
 
 # TODO: replace print with talking function
@@ -86,22 +119,39 @@ class NlpInterface(ABC):
     """
 
     @abstractmethod
-    def filter_response(self, response: list[Any], challenge: str):
+    def filter_response(self, response: list[Any], filter_for: FilterOptions):
         """
         Filters and post-processes the NLP response depending on the challenge.
 
         Parameters:
             response (list[Any]): Parsed NLP response
-            challenge (str): Challenge type (e.g. GPSR)
+            filter_for (FilterOptions): what attribute to filter for
         """
 
-        """ draft start
-        match challenge:
-            case "GPSR":
-                raise NotImplementedError()
-            """
+        if response is None:
+            return None
 
-        raise NotImplementedError()
+        if not response:
+            return None
+
+        if filter_for is None:
+            return response
+
+        match filter_for:
+            case FilterOptions.SENTENCE:
+                return response[0]
+
+            case FilterOptions.INTENT:
+                return response[1]
+
+            case _:
+                for elem in response[2]:
+                    if elem[0] == filter_for.value:
+                        return elem[1]
+
+                return None
+
+
 
     def input_confirmation_loop(self, tries: int):
         """

@@ -46,6 +46,7 @@ grasp = GraspDescription(
 #     [robot_view.root.global_pose.x.to_list()[0],robot_view.root.global_pose.y.to_list()[0]+20,robot_view.root.global_pose.z.to_list()[0]]
 #     ))
 
+# test
 plan = SequentialPlan(
     context,
     # ParkArmsActionDescription(Arms.BOTH),

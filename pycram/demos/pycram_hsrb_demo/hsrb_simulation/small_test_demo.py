@@ -9,13 +9,13 @@ from semantic_digital_twin.robots.abstract_robot import ParallelGripper
 from suturo_resources.suturo_map import load_environment
 
 from pycram.datastructures.enums import (
-    TorsoState,
     Arms,
     VerticalAlignment,
     ApproachDirection,
 )
+from semantic_digital_twin.datastructures.definitions import TorsoState
 from pycram.language import SequentialPlan
-from pycram.process_module import simulated_robot
+from pycram.motion_executor import simulated_robot
 from pycram.robot_plans import (
     MoveTorsoActionDescription,
     ParkArmsActionDescription,

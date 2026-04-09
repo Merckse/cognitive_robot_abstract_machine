@@ -1,7 +1,8 @@
-from __future__ import annotations
+from __future__ import annotations, absolute_import
 
-from dataclasses import dataclass
-from typing import Dict
+import traceback
+from dataclasses import dataclass, field
+from typing import Dict, Callable
 from uuid import UUID
 
 from typing_extensions import (
@@ -16,24 +17,29 @@ from typing_extensions import (
 
 from krrood.adapters.exceptions import JSONSerializationError
 from krrood.utils import DataclassException
-from .datastructures.definitions import JointStateType
-from .datastructures.prefixed_name import PrefixedName
+from semantic_digital_twin.datastructures.definitions import JointStateType
+from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 
 if TYPE_CHECKING:
-    from .world import World
-    from .world_description.geometry import Scale
-    from .world_description.world_entity import (
+    from semantic_digital_twin.world import World
+    from semantic_digital_twin.world_description.geometry import Scale
+    from semantic_digital_twin.world_description.world_entity import (
         SemanticAnnotation,
         WorldEntity,
         KinematicStructureEntity,
     )
-    from .spatial_types.spatial_types import (
+    from semantic_digital_twin.spatial_types.spatial_types import (
         FloatVariable,
         SymbolicMathType,
         SpatialType,
     )
-    from .spatial_types import Vector3
-    from .world_description.degree_of_freedom import DegreeOfFreedomLimits
+    from semantic_digital_twin.spatial_types import Vector3
+    from semantic_digital_twin.world_description.degree_of_freedom import (
+        DegreeOfFreedomLimits,
+    )
+    from semantic_digital_twin.world_description.world_modification import (
+        WorldModification,
+    )
 
 
 @dataclass
@@ -66,10 +72,56 @@ class UnknownWorldModification(DataclassException):
 
 
 @dataclass
+class MismatchingIDsInWorldModification(DataclassException):
+    """
+    Raised when the UUIDs of a world modification during application are not consistent with the UUIDs assigned during initialization.
+    """
+
+    modification_type: Type[WorldModification]
+
+    original_uuids: list[UUID]
+    """
+    The original UUIDs of the Modification.
+    """
+
+    actual_uuids: list[UUID]
+    """
+    The actual UUIDs of the Modification.
+    """
+
+    def __post_init__(self):
+        self.message = (
+            f"The world modification of type {self.modification_type.__name__} was initialized the following UUIDs: {self.original_uuids}"
+            f"But during the application of those modifications, the UUIDs were {self.actual_uuids}."
+            f"Somehow the original UUIDs were overridden, which should not happen."
+        )
+
+
+@dataclass
 class LogicalError(DataclassException):
     """
     An error that happens due to mistake in the logical operation or usage of the API during runtime.
     """
+
+
+@dataclass
+class NegativeConnectionVelocity(DataclassException):
+    """
+    An error that happens when a negative velocity limit is provided for a connection.
+    """
+
+    connection_name: Union[str, PrefixedName]
+    """
+    The name of the connection for which the velocity limit is negative.
+    """
+
+    velocity: float
+    """
+    The negative velocity limit.
+    """
+
+    def __post_init__(self):
+        self.message = f"Velocity limit must be non-negative, got {self.velocity} for joint {self.connection_name}"
 
 
 @dataclass
@@ -254,6 +306,14 @@ class AddingAnExistingSemanticAnnotationError(UsageError):
 
 
 @dataclass
+class SemanticAnnotationNotInWorldError(UsageError):
+    semantic_annotation: SemanticAnnotation
+
+    def __post_init__(self):
+        self.message = f"Semantic annotation {self.semantic_annotation} does not belong to a world."
+
+
+@dataclass
 class MissingWorldModificationContextError(UsageError):
     function: Callable
 
@@ -269,6 +329,33 @@ class IncorrectScaleError(ValueError):
     def __init__(self, scale):
         self.scale = scale
         super().__init__(f"Scale {scale} is invalid: x must be smaller than y and z.")
+
+
+@dataclass
+class MismatchingPublishChangesAttribute(UsageError):
+    """
+    Raised when trying to enter a world modification context with a different publish_changes policy than the currently active world modification context.
+    """
+
+    active_publish_changes: bool
+    """
+    The publish_changes of the currently active world modification context.
+    """
+    proposed_publish_changes: bool
+    """
+    The publish_changes of the world modification context that is being entered.
+    """
+
+    def __post_init__(self):
+        self.message = f"Cannot enter context with publish_changes={self.proposed_publish_changes} when the currently active modification context has publish_changes={self.active_publish_changes}. Make sure to not nest contexts with different publish_changes states."
+
+
+@dataclass
+class MissingPublishChangesKWARG(UsageError):
+    kwargs: Dict[str, Any]
+
+    def __post_init__(self):
+        self.message = f"publish_changes must be provided as a keyword argument, but got {self.kwargs}. If you see this exception you probably notified a synchronizer without setting publish_changes, which will cause hard to debug issues."
 
 
 @dataclass
@@ -388,3 +475,84 @@ class AmbiguousNameError(ValueError):
 
 class UnresolvedNameError(ValueError):
     """Raised when no semantic annotation class matches a given name."""
+
+
+@dataclass
+class RootNodeNotFoundError(DataclassException):
+    """
+    Raised when the root node cannot be found or is ambiguous in a scene graph.
+    """
+
+    candidates: List[str]
+    """The candidate node names that were considered as potential roots."""
+
+    def __post_init__(self):
+        self.message = (
+            f"Could not determine unique root node. Candidates: {self.candidates}"
+        )
+
+
+@dataclass
+class CollisionCheckingError(DataclassException):
+    message: str = field(kw_only=True, default=None, init=False)
+
+
+@dataclass
+class InvalidCollisionCheckError(CollisionCheckingError):
+    collision_check: CollisionCheck
+
+
+@dataclass
+class NegativeCollisionCheckingDistanceError(InvalidCollisionCheckError):
+    def __post_init__(self):
+        super().__post_init__()
+        self.message = f"Distance must be positive, got {self.collision_check.distance}"
+
+
+@dataclass
+class InvalidBodiesInCollisionCheckError(InvalidCollisionCheckError):
+    def __post_init__(self):
+        super().__post_init__()
+        self.message = f"Body_a and body_b must be different, got {self.collision_check.body_a} and {self.collision_check.body_b}"
+
+
+@dataclass
+class BodyHasNoGeometryError(InvalidCollisionCheckError):
+    def __post_init__(self):
+        super().__post_init__()
+        self.message = ""
+        if not self.collision_check.body_a.has_collision():
+            self.message += (
+                f"Body {self.collision_check.body_a.name} has collision geometry."
+            )
+        if not self.collision_check.body_b.has_collision():
+            self.message += (
+                f"Body {self.collision_check.body_b.name} has collision geometry."
+            )
+
+
+@dataclass
+class AtomicWorldModificationNotAtomic(DataclassException):
+    """
+    Exception raised when atomic world modifications are overlapping.
+    If this exception is raised, it means that somewhere in the code a function decorated with @atomic_world_modification
+    triggered another function decorated with it. This must not happen ever!
+    """
+
+    modification: Callable
+    """
+    The callable that tried to atomically modify the world.
+    """
+
+    world: World
+    """
+    The world where this happened.
+    """
+
+    def __post_init__(self):
+        self.message = (
+            f"World {self.world} is already being modified atomically by "
+            f"{self.world._current_active_atomic_world_modification.__name__}.\n"
+            f"{self.modification.__name__} tried to perform an atomic world modification anyways."
+        )
+        super().__post_init__()

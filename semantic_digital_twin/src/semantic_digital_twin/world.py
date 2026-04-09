@@ -3,18 +3,19 @@ from __future__ import annotations
 
 import inspect
 import logging
-from copy import deepcopy
+import threading
+import uuid
+from copy import deepcopy, copy
 from dataclasses import dataclass, field
-from enum import IntEnum
 from functools import wraps, lru_cache, cached_property
-from itertools import combinations_with_replacement
 from uuid import UUID
 
 import numpy as np
 import rustworkx as rx
 import rustworkx.visualization
-from lxml import etree
+from PIL.Image import Image
 from rustworkx import NoEdgeBetweenNodes
+from rustworkx.visualization import graphviz_draw
 from typing_extensions import (
     Dict,
     Tuple,
@@ -29,37 +30,52 @@ from typing_extensions import (
 from typing_extensions import List
 from typing_extensions import Type, Set
 
-from .mixin import HasSimulatorProperties
-from .callbacks.callback import ModelChangeCallback
-from .collision_checking.collision_detector import CollisionDetector
-from .collision_checking.trimesh_collision_detector import TrimeshCollisionDetector
-from .datastructures.prefixed_name import PrefixedName
-from .datastructures.types import NpMatrix4x4
-from .exceptions import (
+from semantic_digital_twin.callbacks.callback import ModelChangeCallback
+from semantic_digital_twin.collision_checking.collision_manager import CollisionManager
+from semantic_digital_twin.collision_checking.pybullet_collision_detector import (
+    BulletCollisionDetector,
+)
+from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
+from semantic_digital_twin.datastructures.types import NpMatrix4x4
+from semantic_digital_twin.exceptions import (
     DuplicateWorldEntityError,
     WorldEntityNotFoundError,
     AlreadyBelongsToAWorldError,
     MissingWorldModificationContextError,
     WorldEntityWithIDNotFoundError,
     MissingReferenceFrameError,
+    MismatchingPublishChangesAttribute,
+    AtomicWorldModificationNotAtomic,
 )
-from .robots.abstract_robot import AbstractRobot
-from .spatial_computations.forward_kinematics import ForwardKinematicsManager
-from .spatial_computations.ik_solver import InverseKinematicsSolver
-from .spatial_computations.raytracer import RayTracer
-from .spatial_types import HomogeneousTransformationMatrix, Quaternion
-from .spatial_types.derivatives import Derivatives
-from .utils import IDGenerator
-from .world_description.connections import (
+from semantic_digital_twin.mixin import HasSimulatorProperties
+from semantic_digital_twin.robots.abstract_robot import SemanticRobotAnnotation
+from semantic_digital_twin.spatial_computations.forward_kinematics import (
+    ForwardKinematicsManager,
+)
+from semantic_digital_twin.spatial_computations.ik_solver import InverseKinematicsSolver
+from semantic_digital_twin.spatial_computations.raytracer import RayTracer
+from semantic_digital_twin.spatial_types import (
+    HomogeneousTransformationMatrix,
+    Quaternion,
+)
+from semantic_digital_twin.spatial_types.derivatives import Derivatives
+from semantic_digital_twin.utils import IDGenerator
+from semantic_digital_twin.world_description.connections import (
     Connection6DoF,
     ActiveConnection1DOF,
     FixedConnection,
     ActiveConnection,
 )
-from .world_description.connections import HasUpdateState
-from .world_description.degree_of_freedom import DegreeOfFreedom, DegreeOfFreedomLimits
-from .world_description.visitors import CollisionBodyCollector, ConnectionCollector
-from .world_description.world_entity import (
+from semantic_digital_twin.world_description.connections import HasUpdateState
+from semantic_digital_twin.world_description.degree_of_freedom import (
+    DegreeOfFreedom,
+    DegreeOfFreedomLimits,
+)
+from semantic_digital_twin.world_description.visitors import (
+    CollisionBodyCollector,
+    ConnectionCollector,
+)
+from semantic_digital_twin.world_description.world_entity import (
     Connection,
     SemanticAnnotation,
     WorldEntityWithID,
@@ -67,31 +83,30 @@ from .world_description.world_entity import (
     Region,
     GenericKinematicStructureEntity,
     GenericConnection,
-    CollisionCheckingConfig,
     Body,
     WorldEntity,
     GenericWorldEntity,
     Actuator,
 )
-from .world_description.world_modification import (
-    WorldModelModification,
+from semantic_digital_twin.world_description.world_modification import (
+    WorldModification,
     WorldModelModificationBlock,
     SetDofHasHardwareInterface,
     AddDegreeOfFreedomModification,
     RemoveDegreeOfFreedomModification,
     AddKinematicStructureEntityModification,
+    RemoveKinematicStructureEntityModification,
     AddConnectionModification,
     RemoveConnectionModification,
-    RemoveBodyModification,
     AddSemanticAnnotationModification,
     RemoveSemanticAnnotationModification,
     AddActuatorModification,
     RemoveActuatorModification,
 )
-from .world_description.world_state import WorldState
+from semantic_digital_twin.world_description.world_state import WorldState
 
 if TYPE_CHECKING:
-    from .spatial_types import GenericSpatialType
+    from semantic_digital_twin.spatial_types import GenericSpatialType
 
 logger = logging.getLogger(__name__)
 
@@ -102,11 +117,6 @@ GenericSemanticAnnotation = TypeVar(
 )
 
 FunctionStack = List[Tuple[Callable, Dict[str, Any]]]
-
-
-class PlotAlignment(IntEnum):
-    HORIZONTAL = 0
-    VERTICAL = 1
 
 
 class ResetStateContextManager:
@@ -124,7 +134,7 @@ class ResetStateContextManager:
         self.world = world
 
     def __enter__(self) -> None:
-        self.state = deepcopy(self.world.state)
+        self.state = self.world.state._data.copy()
 
     def __exit__(
         self,
@@ -132,9 +142,11 @@ class ResetStateContextManager:
         exc_val: Optional[Exception],
         exc_tb: Optional[type],
     ) -> None:
-        if exc_type is None:
-            self.world.state = self.state
-            self.world.notify_state_change()
+        if exc_val:
+            raise exc_val
+
+        self.world.state._data[:] = self.state
+        self.world.notify_state_change()
 
 
 @dataclass
@@ -145,51 +157,70 @@ class WorldModelUpdateContextManager:
     desired updates have been performed.
     """
 
+    publish_changes: bool = True
+    """
+    Whether to publish the changes made to the world after exiting the context.
+    """
+
     world: World = field(kw_only=True, repr=False)
     """
     The world to manage updates for.
     """
 
-    first: bool = True
+    _id: UUID = field(default_factory=uuid.uuid4)
     """
-    First time flag.
+    Unique identifier for this context manager instance, used to track active world model updates.
     """
 
     def __enter__(self):
-        if self.world.world_is_being_modified:
-            self.first = False
-        self.world.world_is_being_modified = True
-
-        if self.first:
-            self.world.get_world_model_manager().current_model_modification_block = (
-                WorldModelModificationBlock()
+        self.world._world_lock.acquire()
+        model_manager = self.world._model_manager
+        if model_manager._current_modifications_will_be_published is None:
+            model_manager._current_modifications_will_be_published = (
+                self.publish_changes
             )
+
+        if (
+            not model_manager._current_modifications_will_be_published
+            == self.publish_changes
+        ):
+            raise MismatchingPublishChangesAttribute(
+                model_manager._current_modifications_will_be_published,
+                self.publish_changes,
+            )
+
+        self.world.world_is_being_modified = True
+        model_manager._active_world_model_update_context_manager_ids.append(self._id)
 
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.first:
-            self.world.delete_orphaned_dofs()
-            self.world.get_world_model_manager().model_modification_blocks.append(
-                self.world.get_world_model_manager().current_model_modification_block
+
+        if exc_val:
+            raise exc_val
+
+        self.world.delete_orphaned_dofs()
+        model_manager = self.world._model_manager
+        model_manager._active_world_model_update_context_manager_ids.remove(self._id)
+
+        if not model_manager._active_world_model_update_context_manager_ids:
+            model_manager.model_modification_blocks.append(
+                model_manager.current_model_modification_block
             )
-            self.world.get_world_model_manager().current_model_modification_block = None
+            model_manager.current_model_modification_block = (
+                WorldModelModificationBlock()
+            )
             if exc_type is None:
-                self.world._notify_model_change()
+                self.world._notify_model_change(publish_changes=self.publish_changes)
+
             self.world.world_is_being_modified = False
+            model_manager._current_modifications_will_be_published = None
+
+        # keep outside the if block, as it needs to be released as many times as it was acquired
+        self.world._world_lock.release()
 
 
-class AtomicWorldModificationNotAtomic(Exception):
-    """
-    Exception raised when atomic world modifications are overlapping.
-    If this exception is raised, it means that somewhere in the code a function decorated with @atomic_world_modification
-    triggered another function decorated with it. This must not happen ever!
-    """
-
-
-def atomic_world_modification(
-    func=None, modification: Type[WorldModelModification] = None
-):
+def atomic_world_modification(func=None, modification: Type[WorldModification] = None):
     """
     Decorator for ensuring atomicity in world modification operations.
 
@@ -207,11 +238,9 @@ def atomic_world_modification(
 
         @wraps(func)
         def wrapper(current_world: World, *args, **kwargs):
-            if current_world._atomic_modification_is_being_executed:
-                raise AtomicWorldModificationNotAtomic(
-                    f"World {current_world} is locked."
-                )
-            current_world._atomic_modification_is_being_executed = True
+            if current_world._current_active_atomic_world_modification is not None:
+                raise AtomicWorldModificationNotAtomic(func, current_world)
+            current_world._current_active_atomic_world_modification = func
 
             # bind args and kwargs
             bound = sig.bind_partial(
@@ -224,8 +253,7 @@ def atomic_world_modification(
             bound_args = dict(bound.arguments)
             bound_args.pop("self", None)
             if (
-                current_world.get_world_model_manager().current_model_modification_block
-                is None
+                not current_world._model_manager._active_world_model_update_context_manager_ids
             ):
                 raise MissingWorldModificationContextError(func)
             current_world.get_world_model_manager().current_model_modification_block.append(
@@ -234,7 +262,7 @@ def atomic_world_modification(
 
             result = func(current_world, *args, **kwargs)
 
-            current_world._atomic_modification_is_being_executed = False
+            current_world._current_active_atomic_world_modification = None
             return result
 
         return wrapper
@@ -243,161 +271,6 @@ def atomic_world_modification(
         return _decorate
 
     return _decorate(func)
-
-
-@dataclass
-class CollisionPairManager:
-    """
-    Manages disabled collision pairs in the world.
-    """
-
-    world: World
-    """
-    The world to manage collision pairs for.
-    """
-
-    _disabled_collision_pairs: Set[Tuple[Body, Body]] = field(
-        default_factory=set, repr=False
-    )
-    """
-    Collisions for these Body pairs is disabled.f
-    """
-
-    _temp_disabled_collision_pairs: Set[Tuple[Body, Body]] = field(
-        default_factory=set, repr=False
-    )
-    """
-    A set of Body pairs for which collisions are temporarily disabled.
-    """
-
-    def reset_temporary_collision_config(self):
-        self._temp_disabled_collision_pairs = set()
-        for body in self.world.bodies_with_enabled_collision:
-            body.reset_temporary_collision_config()
-
-    @property
-    def disabled_collision_pairs(
-        self,
-    ) -> Set[Tuple[Body, Body]]:
-        return self._disabled_collision_pairs | self._temp_disabled_collision_pairs
-
-    @property
-    def enabled_collision_pairs(self) -> Set[Tuple[Body, Body]]:
-        """
-        The complement of disabled_collision_pairs with respect to all possible body combinations with enabled collision.
-        """
-        all_combinations = set(
-            combinations_with_replacement(self.world.bodies_with_enabled_collision, 2)
-        )
-        return all_combinations - self.disabled_collision_pairs
-
-    def add_temp_disabled_collision_pair(
-        self, body_a: KinematicStructureEntity, body_b: KinematicStructureEntity
-    ):
-        """
-        Disable collision checking between two bodies
-        """
-        pair = tuple(sorted([body_a, body_b], key=lambda b: b.id))
-        self._temp_disabled_collision_pairs.add(pair)
-
-    def load_collision_srdf(self, file_path: str):
-        """
-        Creates a CollisionConfig instance from an SRDF file.
-
-        Parse an SRDF file to configure disabled collision pairs or bodies for a given world.
-        Process SRDF elements like `disable_collisions`, `disable_self_collision`,
-        or `disable_all_collisions` to update collision configuration
-        by referencing bodies in the provided `world`.
-
-        :param file_path: The path to the SRDF file used for collision configuration.
-        """
-        SRDF_DISABLE_ALL_COLLISIONS: str = "disable_all_collisions"
-        SRDF_DISABLE_SELF_COLLISION: str = "disable_self_collision"
-        SRDF_MOVEIT_DISABLE_COLLISIONS: str = "disable_collisions"
-
-        srdf = etree.parse(file_path)
-        srdf_root = srdf.getroot()
-
-        children_with_tag = [child for child in srdf_root if hasattr(child, "tag")]
-
-        child_disable_collisions = [
-            c for c in children_with_tag if c.tag == SRDF_DISABLE_ALL_COLLISIONS
-        ]
-
-        for c in child_disable_collisions:
-            body = self.world.get_body_by_name(c.attrib["link"])
-            body.set_static_collision_config(CollisionCheckingConfig(disabled=True))
-
-        child_disable_moveit_and_self_collision = [
-            c
-            for c in children_with_tag
-            if c.tag in {SRDF_MOVEIT_DISABLE_COLLISIONS, SRDF_DISABLE_SELF_COLLISION}
-        ]
-
-        disabled_collision_pairs = [
-            (body_a, body_b)
-            for child in child_disable_moveit_and_self_collision
-            if (
-                body_a := self.world.get_body_by_name(child.attrib["link1"])
-            ).has_collision()
-            and (
-                body_b := self.world.get_body_by_name(child.attrib["link2"])
-            ).has_collision()
-        ]
-
-        for body_a, body_b in disabled_collision_pairs:
-            self.add_disabled_collision_pair(body_a, body_b)
-
-    def disable_collisions_for_adjacent_bodies(self):
-        """
-        Computes pairs of bodies that should not be collision checked because they have no controlled connections
-        between them.
-
-        When all connections between two bodies are not controlled, these bodies cannot move relative to each
-        other, so collision checking between them is unnecessary.
-
-        :return: Set of body pairs that should have collisions disabled
-        """
-
-        body_combinations = combinations_with_replacement(
-            self.world.bodies_with_enabled_collision, 2
-        )
-
-        for body_a, body_b in (
-            (a, b)
-            for a, b in body_combinations
-            if not self.world.is_controlled_connection_in_chain(a, b)
-        ):
-            self.add_disabled_collision_pair(body_a, body_b)
-
-    def disable_non_robot_collisions(self) -> None:
-        """
-        Disable collision checks between bodies that do not belong to any robot.
-        """
-        # Bodies that are part of any robot and participate in collisions
-        robot_bodies: Set[Body] = {
-            body
-            for robot in self.world.get_semantic_annotations_by_type(AbstractRobot)
-            for body in robot.bodies_with_collisions
-        }
-
-        # Bodies with collisions that are NOT part of a robot
-        non_robot_bodies: Set[Body] = (
-            set(self.world.bodies_with_enabled_collision) - robot_bodies
-        )
-        if not non_robot_bodies:
-            return
-
-        # Disable every unordered pair (including self-collisions) exactly once
-        for a, b in combinations_with_replacement(non_robot_bodies, 2):
-            self.add_disabled_collision_pair(a, b)
-
-    def add_disabled_collision_pair(self, body_a: Body, body_b: Body):
-        """
-        Disable collision checking between two bodies
-        """
-        pair = tuple(sorted([body_a, body_b], key=lambda body: body.id))
-        self._disabled_collision_pairs.add(pair)
 
 
 @dataclass
@@ -413,7 +286,7 @@ class WorldModelManager:
     """
 
     model_modification_blocks: List[WorldModelModificationBlock] = field(
-        default_factory=list, repr=False, init=False
+        default_factory=list, repr=False, kw_only=True
     )
     """
     All atomic modifications applied to the world. Tracked by @atomic_world_modification.
@@ -421,21 +294,35 @@ class WorldModelManager:
     The inner list is a block of modifications where change callbacks must not be called in between.
     """
 
-    current_model_modification_block: Optional[WorldModelModificationBlock] = field(
-        default=None, repr=False, init=False
+    current_model_modification_block: WorldModelModificationBlock = field(
+        default_factory=WorldModelModificationBlock, repr=False, init=False
     )
     """
     The current modification block called within one context of @atomic_world_modification.
     """
 
     model_change_callbacks: List[ModelChangeCallback] = field(
-        default_factory=list, repr=False
+        default_factory=list, repr=False, init=False
     )
     """
     Callbacks to be called when the model of the world changes.
     """
 
-    def update_model_version_and_notify_callbacks(self) -> None:
+    _active_world_model_update_context_manager_ids: List[UUID] = field(
+        init=False, default_factory=list, repr=False
+    )
+    """
+    List of active world model managers currently modifying this world
+    """
+
+    _current_modifications_will_be_published: Optional[bool] = field(
+        init=False, default=None
+    )
+    """
+    Indicates if the current modifications will be published via a synchronizer. If None, then there are no active contexts.
+    """
+
+    def update_model_version_and_notify_callbacks(self, **kwargs) -> None:
         """
         Notifies the system of a model change and updates necessary states, caches,
         and forward kinematics expressions while also triggering registered callbacks
@@ -443,7 +330,7 @@ class WorldModelManager:
         """
         self.version += 1
         for callback in self.model_change_callbacks:
-            callback.notify()
+            callback.notify(**kwargs)
 
 
 _LRU_CACHE_SIZE: int = 2048
@@ -498,15 +385,23 @@ class World(HasSimulatorProperties):
     Name of the world. May act as default namespace for all bodies and semantic annotations in the world which do not have a prefix.
     """
 
-    _atomic_modification_is_being_executed: bool = field(init=False, default=False)
+    collision_manager: CollisionManager = field(init=False)
     """
-    Flag that indicates if an atomic world operation is currently being executed.
+    Class that manages collision detection related stuff for this world.
+    """
+
+    _current_active_atomic_world_modification: Optional[Callable] = field(
+        init=False, default=None
+    )
+    """
+    The function that is currently atomically modifying the world and hence locking it.
+    This acts like a flag that indicates if an atomic world operation is currently being executed.
     See `atomic_world_modification` for more information.
     """
 
-    _collision_pair_manager: CollisionPairManager = field(init=False, repr=False)
+    _id: UUID = field(init=False, default_factory=uuid.uuid4)
     """
-    Manages disabled collision pairs in the world.
+    Unique identifier for this world instance.
     """
 
     _model_manager: WorldModelManager = field(
@@ -528,9 +423,19 @@ class World(HasSimulatorProperties):
     Lookup table to get a world entity by its hash
     """
 
+    _world_lock: threading.RLock = field(
+        default_factory=threading.RLock, init=False, repr=False
+    )
+    """
+    Lock used to prevent multiple threads from modifying the world at the same time.
+    """
+
     def __post_init__(self):
-        self._collision_pair_manager = CollisionPairManager(self)
         self.state = WorldState(_world=self)
+        self._forward_kinematic_manager = ForwardKinematicsManager(_world=self)
+        self.collision_manager = CollisionManager(
+            _world=self, collision_detector=BulletCollisionDetector(_world=self)
+        )
 
     def __hash__(self):
         return hash((id(self), self._model_manager.version))
@@ -610,14 +515,8 @@ class World(HasSimulatorProperties):
         return self.get_kinematic_structure_entity_by_type(Body)
 
     @property
-    def bodies_with_enabled_collision(self) -> List[Body]:
-        return [
-            b
-            for b in self.bodies
-            if b.has_collision()
-            and b.get_collision_config
-            and not b.get_collision_config().disabled
-        ]
+    def bodies_with_collision(self) -> List[Body]:
+        return [b for b in self.bodies if b.has_collision()]
 
     @property
     def bodies_topologically_sorted(self) -> List[Body]:
@@ -625,6 +524,13 @@ class World(HasSimulatorProperties):
             body
             for body in self.kinematic_structure_entities_topologically_sorted
             if isinstance(body, Body)
+        ]
+
+    @property
+    def connections_topologically_sorted(self) -> List[Connection]:
+        return [
+            kse.parent_connection
+            for kse in self.kinematic_structure_entities_topologically_sorted[1:]
         ]
 
     @property
@@ -667,9 +573,6 @@ class World(HasSimulatorProperties):
 
         :param connection: The connection to add.
         """
-        logger.debug(
-            f"Adding connection with name {connection.name} between parent {connection.parent.name} and child {connection.child.name}"
-        )
         self._raise_error_if_belongs_to_other_world(connection)
         if not self.is_connection_in_world(connection):
             self.add_kinematic_structure_entity(connection.parent)
@@ -713,9 +616,6 @@ class World(HasSimulatorProperties):
 
         :param kinematic_structure_entity: The kinematic_structure_entity to add.
         """
-        logger.info(
-            f"Trying to add kinematic_structure_entity with name {kinematic_structure_entity.name}"
-        )
         self._raise_error_if_belongs_to_other_world(kinematic_structure_entity)
         if not self.is_kinematic_structure_entity_in_world(kinematic_structure_entity):
             self._add_kinematic_structure_entity(kinematic_structure_entity)
@@ -772,7 +672,6 @@ class World(HasSimulatorProperties):
 
         :raises AddingAnExistingSemanticAnnotationError: If the semantic annotation already exists
         """
-        logger.debug(f"Adding semantic annotation with name {semantic_annotation.name}")
         self._raise_error_if_belongs_to_other_world(semantic_annotation)
         if not self.is_semantic_annotation_in_world(semantic_annotation):
             self._add_semantic_annotation(semantic_annotation)
@@ -881,7 +780,7 @@ class World(HasSimulatorProperties):
         if self.is_kinematic_structure_entity_in_world(kinematic_structure_entity):
             self._remove_kinematic_structure_entity(kinematic_structure_entity)
 
-    @atomic_world_modification(modification=RemoveBodyModification)
+    @atomic_world_modification(modification=RemoveKinematicStructureEntityModification)
     def _remove_kinematic_structure_entity(
         self, kinematic_structure_entity: KinematicStructureEntity
     ) -> None:
@@ -922,8 +821,8 @@ class World(HasSimulatorProperties):
         """
         The atomic method that removes a semantic annotation from the current list of semantic annotations.
         """
-        semantic_annotation.remove_from_world()
         self.semantic_annotations.remove(semantic_annotation)
+        semantic_annotation.remove_from_world()
 
     def remove_actuator(self, actuator: Actuator) -> None:
         """
@@ -1248,11 +1147,15 @@ class World(HasSimulatorProperties):
         :param pose: world_root_T_other_root, the pose of the other world's root with respect to the current world's root
         """
         with self.modify_world():
+            other_root_id = other.root.id
             root_connection = Connection6DoF.create_with_dofs(
                 parent=self.root, child=other.root, world=self
             )
             self.merge_world(other, root_connection)
-            root_connection.origin = pose
+        root_connection = self.get_kinematic_structure_entity_by_id(
+            other_root_id
+        ).parent_connection
+        root_connection.origin = pose
 
     def merge_world(
         self,
@@ -1271,13 +1174,20 @@ class World(HasSimulatorProperties):
 
         with self.modify_world(), other.modify_world():
             self_root = self.root
-            other_root = other.root
-            self._merge_dofs_with_state_of_world(other)
-            self._merge_connections_of_world(other)
-            self._remove_kinematic_structure_entities_of_world(other)
-            self._merge_semantic_annotations_of_world(other)
+            other_state = deepcopy(other.state)
+
+            other_root_id = other.root.id
+            other._clear_world_entities()
+            for modification in other._model_manager.model_modification_blocks:
+                modification.apply(self)
+
+            self.state.merge_state(other_state)
+
+            if root_connection is not None:
+                root_connection.update_references_for_world(self)
 
             if not root_connection and self_root:
+                other_root = self.get_kinematic_structure_entity_by_id(other_root_id)
                 root_connection = Connection6DoF.create_with_dofs(
                     parent=self_root, child=other_root, world=self
                 )
@@ -1285,40 +1195,7 @@ class World(HasSimulatorProperties):
             if root_connection:
                 self.add_connection(root_connection)
 
-    def _merge_dofs_with_state_of_world(self, other: World):
-        old_state = deepcopy(other.state)
-        for dof in other.degrees_of_freedom.copy():
-            other.remove_degree_of_freedom(dof)
-            self.add_degree_of_freedom(dof)
-        for dof_id in old_state.keys():
-            self.state[dof_id] = old_state[dof_id]
-
-    def _merge_connections_of_world(self, other: World):
-        other_root = other.root
-        other_connections = other.connections
-        for connection in other_connections:
-            other.remove_connection(connection)
-            other.remove_kinematic_structure_entity(connection.parent)
-            other.remove_kinematic_structure_entity(connection.child)
-            self.add_connection(connection)
-        other.remove_kinematic_structure_entity(other_root)
-        self.add_kinematic_structure_entity(other_root)
-
-    @staticmethod
-    def _remove_kinematic_structure_entities_of_world(other: World):
-        other_kse_with_world = [
-            kse for kse in other.kinematic_structure_entities if kse._world is not None
-        ]
-        for kinematic_structure_entity in other_kse_with_world:
-            other.remove_kinematic_structure_entity(kinematic_structure_entity)
-
-    def _merge_semantic_annotations_of_world(self, other: World):
-        other_semantic_annotations = [
-            semantic_annotation for semantic_annotation in other.semantic_annotations
-        ]
-        for semantic_annotation in other_semantic_annotations:
-            other.remove_semantic_annotation(semantic_annotation)
-            self.add_semantic_annotation(semantic_annotation)
+            other.clear()
 
     # %% Subgraph Targeting
 
@@ -1374,17 +1251,15 @@ class World(HasSimulatorProperties):
             self.kinematic_structure[index] for index in descendants_indices
         ]
 
-    def get_direct_child_bodies_with_collision(
-        self, connection: Connection
-    ) -> Set[Body]:
+    def get_direct_child_bodies_with_collision(self, start_body: Body) -> Set[Body]:
         """
         Collect all child Bodies until a movable connection is found.
 
-        :param connection: The connection from the kinematic structure whose child bodies will be traversed.
+        :param start_body: The starting body of the branch
         :return: A set of Bodies that are moved directly by only this connection.
         """
         visitor = CollisionBodyCollector(self)
-        self._travel_branch(connection.child, visitor)
+        self._travel_branch(start_body, visitor)
         return visitor.bodies
 
     def _travel_branch(
@@ -1489,31 +1364,30 @@ class World(HasSimulatorProperties):
         return new_world
 
     # %% Change Notifications
-    def notify_state_change(self) -> None:
+    def notify_state_change(self, publish_changes: bool = True, **kwargs) -> None:
         """
         If you have changed the state of the world, call this function to trigger necessary events and increase
         the state version.
         """
         if not self.is_empty():
             self._forward_kinematic_manager.recompute()
-        self.state._notify_state_change()
+        self.state._notify_state_change(publish_changes=publish_changes, **kwargs)
 
-    def _notify_model_change(self) -> None:
+    def _notify_model_change(self, publish_changes: bool = True, **kwargs) -> None:
         """
         Notifies the system of a model change and updates the necessary states, caches,
         and forward kinematics expressions while also triggering registered callbacks
         for model changes.
         """
-        self._model_manager.update_model_version_and_notify_callbacks()
-        self._compile_forward_kinematics_expressions()
-        self.notify_state_change()
+        self._model_manager.update_model_version_and_notify_callbacks(
+            publish_changes=publish_changes, **kwargs
+        )
+        self.notify_state_change(publish_changes=publish_changes, **kwargs)
 
         for callback in self.state.state_change_callbacks:
             callback.update_previous_world_state()
 
         self.validate()
-        self._collision_pair_manager.disable_non_robot_collisions()
-        self._collision_pair_manager.disable_collisions_for_adjacent_bodies()
 
     def delete_orphaned_dofs(self):
         actual_dofs = {
@@ -1557,7 +1431,6 @@ class World(HasSimulatorProperties):
             self.kinematic_structure.successors(kinematic_structure_entity.index)
         )
 
-
     def compute_parent_connection(
         self, kinematic_structure_entity: KinematicStructureEntity
     ) -> Optional[Connection]:
@@ -1576,7 +1449,6 @@ class World(HasSimulatorProperties):
                 parent.index, kinematic_structure_entity.index
             )
         )
-
 
     def compute_parent_kinematic_structure_entity(
         self, kinematic_structure_entity: KinematicStructureEntity
@@ -1781,17 +1653,6 @@ class World(HasSimulatorProperties):
         return shortest_paths[0]
 
     # %% Forward Kinematics
-    def _compile_forward_kinematics_expressions(self) -> None:
-        """
-        Traverse the kinematic structure and compile forward kinematics expressions for fast evaluation.
-        """
-
-        if self.is_empty():
-            return
-        if self._forward_kinematic_manager is None:
-            self._forward_kinematic_manager = ForwardKinematicsManager(self)
-        self._forward_kinematic_manager.recompile()
-
     def compute_forward_kinematics(
         self, root: KinematicStructureEntity, tip: KinematicStructureEntity
     ) -> HomogeneousTransformationMatrix:
@@ -1834,13 +1695,6 @@ class World(HasSimulatorProperties):
         """
         return self._forward_kinematic_manager.compute_np(root, tip).copy()
 
-    def compute_forward_kinematics_of_all_collision_bodies(self) -> np.ndarray:
-        """
-        Computes a 4 by X matrix, with the forward kinematics of all collision bodies stacked on top each other.
-        The entries are sorted by name of body.
-        """
-        return self._forward_kinematic_manager.collision_fks
-
     def update_forward_kinematics(self) -> None:
         """
         Recompile and recompute forward kinematics of the world.
@@ -1851,7 +1705,7 @@ class World(HasSimulatorProperties):
             crashes if its not the case. Also using this in a method that is called a lot, it may cause performance
             issues because of unnecessary recompilations.
         """
-        self._forward_kinematic_manager.recompile()
+        self._forward_kinematic_manager._notify()
         self._forward_kinematic_manager.recompute()
 
     # %% Inverse Kinematics
@@ -1894,15 +1748,28 @@ class World(HasSimulatorProperties):
         Clears all stored data and resets the state of the instance.
         """
         kse = self.kinematic_structure_entities
-        with self.modify_world():
-            for body in kse:
-                self.remove_kinematic_structure_entity(body)
-
-            self.semantic_annotations.clear()
-            self.degrees_of_freedom.clear()
-            self.state = WorldState(_world=self)
+        self._clear_world_entities()
+        self.state.clear()
         self._world_entity_hash_table.clear()
         self._model_manager.model_modification_blocks.clear()
+
+    def _clear_world_entities(self):
+        """
+        Clears all world entities from the world.
+        ..warning::
+            Super destructive, world will be unusable after this call.
+        """
+        for kinematic_structure_entity in self.kinematic_structure_entities:
+            self.remove_kinematic_structure_entity(kinematic_structure_entity)
+
+        for connection in self.connections:
+            self.remove_connection(connection)
+
+        for degree_of_freedom in copy(self.degrees_of_freedom):
+            self.remove_degree_of_freedom(degree_of_freedom)
+
+        for semantic_annotation in self.semantic_annotations:
+            self.remove_semantic_annotation(semantic_annotation)
 
     def is_empty(self):
         """
@@ -1961,11 +1828,10 @@ class World(HasSimulatorProperties):
                 new_body = Body(
                     name=body.name,
                     id=body.id,
+                    visual=body.visual.copy_for_world(new_world),
+                    collision=body.collision.copy_for_world(new_world),
                 )
                 new_world.add_kinematic_structure_entity(new_body)
-                new_body.visual = body.visual.copy_for_world(new_world)
-                new_body.collision = body.collision.copy_for_world(new_world)
-                new_body.collision_config = deepcopy(body.collision_config)
             for region in self.regions:
                 new_region = Region(
                     name=region.name,
@@ -1984,31 +1850,50 @@ class World(HasSimulatorProperties):
                 )
                 new_world.add_degree_of_freedom(new_dof)
                 new_world.state[dof.id] = self.state[dof.id].data
+                new_dof.has_hardware_interface = dof.has_hardware_interface
             for connection in self.connections:
                 new_connection = connection.copy_for_world(new_world)
                 new_world.add_connection(new_connection)
         return new_world
 
-    # %% Associations
-    def load_collision_srdf(self, file_path: str):
-        self._collision_pair_manager.load_collision_srdf(file_path)
+    def visualize_world_structure(self) -> Image:
+        """
+        Visualizes the kinematic structure of the world using Graphviz in a topological way.
+        This is not meant to be a beautiful visualization, but a functional way at all to quickly inspect the structure.
 
-    def modify_world(self) -> WorldModelUpdateContextManager:
-        return WorldModelUpdateContextManager(world=self)
+        Each node in the graph represents a KinematicStructureEntity, and each edge represents a Connection between entities.
+        The nodes are labeled with the names of the entities, and the edges are labeled with the types of connections.
+
+        Plot by calling `world.plot_world_structure().show()`.
+
+        :return: An Image object containing the visualization of the world's kinematic structure.
+        """
+        return graphviz_draw(
+            self.kinematic_structure,
+            node_attr_fn=lambda kinematic_structure_entity: {
+                "label": kinematic_structure_entity.name.name,
+                "style": "filled",
+                "fillcolor": "lightgray",
+            },
+            edge_attr_fn=lambda connection: {
+                "label": str(connection.__class__.__name__)
+            },
+        )
+
+    # %% Associations
+
+    def modify_world(
+        self, publish_changes: bool = True
+    ) -> WorldModelUpdateContextManager:
+        return WorldModelUpdateContextManager(
+            world=self, publish_changes=publish_changes
+        )
 
     def reset_state_context(self) -> ResetStateContextManager:
         return ResetStateContextManager(self)
 
     def get_world_model_manager(self) -> WorldModelManager:
         return self._model_manager
-
-    @cached_property
-    def collision_detector(self) -> CollisionDetector:
-        """
-        A collision detector for the world.
-        :return: A collision detector for the world.
-        """
-        return TrimeshCollisionDetector(self)
 
     @cached_property
     def ray_tracer(self) -> RayTracer:

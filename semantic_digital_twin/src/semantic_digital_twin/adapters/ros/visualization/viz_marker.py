@@ -1,16 +1,47 @@
+from __future__ import annotations
 import time
 from dataclasses import dataclass, field
+from enum import Enum
+from typing import Optional
+from uuid import UUID
 
+import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
 from visualization_msgs.msg import MarkerArray
 
-from ..msg_converter import SemDTToRos2Converter
-from ..tf_publisher import TFPublisher
-from ....callbacks.callback import ModelChangeCallback
+from semantic_digital_twin.adapters.ros.msg_converter import SemDTToRos2Converter
+from semantic_digital_twin.adapters.ros.tf_publisher import TFPublisher
+from semantic_digital_twin.callbacks.callback import ModelChangeCallback
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ....world import World
 
 
-@dataclass
+class ShapeSource(Enum):
+    """
+    Enum to specify which shapes to use for visualization.
+    """
+
+    VISUAL_ONLY = "visual_only"
+    """
+    The shapes to use for visualization are visual shapes only.
+    """
+
+    COLLISION_ONLY = "collision_only"
+    """
+    The shapes to use for visualization are collision shapes only.
+    """
+
+    VISUAL_WITH_COLLISION_BACKUP = "visual_with_collision_backup"
+    """
+    The shapes to use for visualization are visual shapes, but if there are no visual shapes, use collision shapes as a backup.
+    """
+
+
+@dataclass(eq=False)
 class VizMarkerPublisher(ModelChangeCallback):
     """
     Publishes the world model as a visualization marker.
@@ -23,7 +54,7 @@ class VizMarkerPublisher(ModelChangeCallback):
         4. make sure that the fixed frame is the tf root.
     """
 
-    node: Node
+    node: Node = field(kw_only=True)
     """
     The ROS2 node that will be used to publish the visualization marker.
     """
@@ -33,9 +64,16 @@ class VizMarkerPublisher(ModelChangeCallback):
     The name of the topic to which the Visualization Marker should be published.
     """
 
-    use_visuals: bool = field(kw_only=True, default=True)
+    shape_source: ShapeSource = field(
+        kw_only=True, default=ShapeSource.VISUAL_WITH_COLLISION_BACKUP
+    )
     """
-    Whether to use the visual shapes of the bodies or the collision shapes.
+    Which shapes to use for each body
+    """
+
+    alpha: float = field(kw_only=True, default=1.0)
+    """
+    Marker transparency in [0.0, 1.0]. 0.0 is fully transparent.
     """
 
     markers: MarkerArray = field(init=False, default_factory=MarkerArray)
@@ -61,18 +99,28 @@ class VizMarkerPublisher(ModelChangeCallback):
         """
         Launches a tf publisher in conjunction with the VizMarkerPublisher.
         """
-        TFPublisher(self.world, self.node)
+        TFPublisher(_world=self._world, node=self.node)
 
-    def _notify(self):
+    def _select_shapes(self, body):
+        if self.shape_source is ShapeSource.VISUAL_ONLY:
+            return body.visual.shapes
+        if self.shape_source is ShapeSource.COLLISION_ONLY:
+            return body.collision.shapes
+        if self.shape_source is ShapeSource.VISUAL_WITH_COLLISION_BACKUP:
+            return body.visual.shapes if body.visual.shapes else body.collision.shapes
+        raise ValueError(f"Unsupported shape_source: {self.shape_source!r}")
+
+    def _notify(self, **kwargs):
         self.markers = MarkerArray()
-        for body in self.world.bodies:
+        for body in self._world.bodies:
+            shapes = self._select_shapes(body)
+            if not shapes:
+                continue
             marker_ns = str(body.name)
-            if self.use_visuals and len(body.visual) > 0:
-                shapes = body.visual.shapes
-            else:
-                shapes = body.collision.shapes
             for i, shape in enumerate(shapes):
                 marker = SemDTToRos2Converter.convert(shape)
+                if not marker.mesh_use_embedded_materials:
+                    marker.color.a = self.alpha
                 marker.frame_locked = True
                 marker.id = i
                 marker.ns = marker_ns

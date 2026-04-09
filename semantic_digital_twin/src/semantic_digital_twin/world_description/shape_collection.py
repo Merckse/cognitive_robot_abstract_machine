@@ -13,13 +13,15 @@ from typing_extensions import Dict, Any, Self, Optional, List, Iterator
 from typing_extensions import TYPE_CHECKING
 
 from krrood.adapters.json_serializer import SubclassJSONSerializer, to_json, from_json
-from .geometry import Shape, BoundingBox
-from ..datastructures.variables import SpatialVariables
-from ..spatial_types import HomogeneousTransformationMatrix, Point3
+from semantic_digital_twin.world_description.geometry import Shape, BoundingBox, Color
+from semantic_digital_twin.datastructures.variables import SpatialVariables
+from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix, Point3
 
 if TYPE_CHECKING:
-    from .world_entity import KinematicStructureEntity
-    from ..world import World
+    from semantic_digital_twin.world_description.world_entity import (
+        KinematicStructureEntity,
+    )
+    from semantic_digital_twin.world import World
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +50,14 @@ class ShapeCollection(SubclassJSONSerializer):
         if self.reference_frame is not None:
             return self.reference_frame._world
         return None
+
+    def dye_shapes(self, color: Color):
+        """
+        Dye all shapes in this collection with the given color.
+        :param color: The color to dye the shapes with.
+        """
+        for shape in self.shapes:
+            shape.color = color
 
     def transform_all_shapes_to_own_frame(self):
         """
@@ -174,12 +184,7 @@ class ShapeCollection(SubclassJSONSerializer):
 
     def copy_for_world(self, world: World) -> ShapeCollection:
         new_shapes = [s.copy_for_world(world) for s in self.shapes]
-        new_reference_frame = (
-            world.get_kinematic_structure_entity_by_name(self.reference_frame.name)
-            if self.reference_frame
-            else None
-        )
-        return ShapeCollection(new_shapes, new_reference_frame)
+        return ShapeCollection(new_shapes)
 
     @property
     def scale(self):
@@ -190,6 +195,14 @@ class ShapeCollection(SubclassJSONSerializer):
             .bounding_box()
             .scale
         )
+
+    @property
+    def min_point(self) -> Point3:
+        return Point3.from_iterable(self.combined_mesh.bounds[0])
+
+    @property
+    def max_point(self) -> Point3:
+        return Point3.from_iterable(self.combined_mesh.bounds[1])
 
 
 @dataclass
@@ -220,7 +233,9 @@ class BoundingBoxCollection(ShapeCollection):
         """
         :return: The bounding boxes as a random event.
         """
-        return Event(*[box.simple_event for box in self.bounding_boxes])
+        return Event.from_simple_sets(
+            *[box.simple_event for box in self.bounding_boxes]
+        )
 
     def merge(self, other: BoundingBoxCollection) -> BoundingBoxCollection:
         """
@@ -333,10 +348,9 @@ class BoundingBoxCollection(ShapeCollection):
             ), "All shapes must have the same reference frame."
 
         local_bbs = [shape.local_frame_bounding_box for shape in shapes]
-        reference_frame = shapes[0].origin.reference_frame
         return cls(
             [bb.transform_to_origin(bb.origin) for bb in local_bbs],
-            reference_frame,
+            shapes.reference_frame,
         )
 
     def as_shapes(self) -> ShapeCollection:
@@ -367,7 +381,5 @@ class BoundingBoxCollection(ShapeCollection):
             max(all_x),
             max(all_y),
             max(all_z),
-            HomogeneousTransformationMatrix.from_xyz_quaternion(
-                reference_frame=self.reference_frame
-            ),
+            HomogeneousTransformationMatrix(reference_frame=self.reference_frame),
         )

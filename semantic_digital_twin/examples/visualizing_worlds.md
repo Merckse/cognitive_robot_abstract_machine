@@ -23,12 +23,14 @@ Let's load a world first to get started.
 import logging
 import os
 
-from pkg_resources import resource_filename
+from pathlib import Path
+
+import semantic_digital_twin
 
 from semantic_digital_twin.adapters.urdf import URDFParser 
 
 logging.disable(logging.CRITICAL)
-apartment = os.path.join(resource_filename("semantic_digital_twin", "../../"), "resources", "urdf", "apartment.urdf")
+apartment = Path(semantic_digital_twin.__file__).resolve().parents[2] / "resources" / "urdf" / "apartment.urdf"
 world = URDFParser.from_file(apartment).parse()
 
 ```
@@ -47,8 +49,8 @@ node = rclpy.create_node("semantic_digital_twin")
 thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
 thread.start()
 
-tf_publisher = TFPublisher(world=world, node=node)
-viz = VizMarkerPublisher(world=world, node=node)
+tf_publisher = TFPublisher(_world=world, node=node)
+viz = VizMarkerPublisher(_world=world, node=node)
 ```
 
 When you want to stop visualizing, you have to stop the visualizer and afterwards clean up ROS2.

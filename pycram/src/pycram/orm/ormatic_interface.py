@@ -1784,7 +1784,9 @@ class AtomicWorldModificationNotAtomicDAO(
     )
 
 
-class BaseConstraintDAO(Base, DataAccessObject[giskardpy.qp.constraint.BaseConstraint]):
+class BaseConstraintDAO(
+    Base, DataAccessObject[giskardpy.qp.constraint.GiskardConstraint]
+):
 
     __tablename__ = "BaseConstraintDAO"
 

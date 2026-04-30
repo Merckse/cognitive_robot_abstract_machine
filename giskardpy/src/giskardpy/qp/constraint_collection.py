@@ -18,7 +18,9 @@ from giskardpy.qp.constraint import (
     InequalityConstraint,
     DerivativeInequalityConstraint,
     DerivativeEqualityConstraint,
-    BaseConstraint,
+    GiskardConstraint,
+    Integral,
+    EqualityBound,
 )
 from krrood.symbolic_math.symbolic_math import Scalar
 from semantic_digital_twin.spatial_types import Point3, Vector3, RotationMatrix
@@ -32,7 +34,7 @@ Large_Number = 1e4
 
 @dataclass
 class ConstraintCollection:
-    _constraints: list[BaseConstraint] = field(default_factory=list, init=False)
+    _constraints: list[GiskardConstraint] = field(default_factory=list, init=False)
 
     @property
     def equality_constraints(self) -> list[EqualityConstraint]:
@@ -94,7 +96,7 @@ class ConstraintCollection:
         self._constraints.extend(other._constraints)
         self._are_names_unique()
 
-    def add_constraint(self, constraint: BaseConstraint):
+    def add_constraint(self, constraint: GiskardConstraint):
         constraint.name = constraint.name or f"{len(self._constraints)}"
         existing_names = {c.name for c in self._constraints}
         if constraint.name in existing_names:
@@ -161,15 +163,16 @@ class ConstraintCollection:
         upper_slack_limit = (
             upper_slack_limit if upper_slack_limit is not None else float("inf")
         )
-        constraint = EqualityConstraint(
+        constraint = GiskardConstraint(
             name=name,
             expression=task_expression,
-            bound=equality_bound,
+            bound=EqualityBound(equality_bound),
             normalization_factor=reference_velocity,
             quadratic_weight=quadratic_weight,
             lower_slack_limit=lower_slack_limit,
             upper_slack_limit=upper_slack_limit,
             linear_weight=0,
+            enforcement_strategy=Integral(),
         )
         self.add_constraint(constraint)
 

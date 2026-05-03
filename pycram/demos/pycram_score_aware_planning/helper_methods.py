@@ -1,5 +1,6 @@
 import json
 from time import sleep
+from typing import Optional
 
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import WorldEntityNotFoundError
@@ -13,7 +14,7 @@ from semantic_digital_twin.spatial_types import (
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import FixedConnection
-from semantic_digital_twin.world_description.geometry import Scale
+from semantic_digital_twin.world_description.geometry import Scale, Color
 
 
 def extract_name_from_json_string(json_string: str) -> str:
@@ -92,6 +93,27 @@ def spawn_semantic_with_body(
                 scale=scale,
                 world_root_T_self=world_root_T_self,
             )
+    return object_to_spawn
+
+
+def generic_object_spawner(
+        names: list[str] ,
+        pose : list[tuple[int,int,int]] ,
+        world : World,
+        color: Optional[Color] = None,
+):
+    i = 0
+    for name in names:
+        str_ = str(i)
+        pose_xyz = pose[i]
+        pose_point3_ : Point3= Point3(x=pose_xyz[0], y=pose_xyz[1], z=pose_xyz[2], reference_frame=world.root)
+        orientation_quaternion_ : Quaternion = Quaternion(x=0, y=0, z=0, w=1, reference_frame=world.root)
+        pose_ : Pose= Pose(position=pose_point3_, orientation=orientation_quaternion_, reference_frame=world.root)
+        scale_ : Scale= Scale(x=0.2, y=0.2, z=0.2)
+        object_to_spawn = spawn_semantic_with_body(semantic_type=name,name=name,pose=pose_, scale=scale_,world=world)
+        if isinstance(color, Color):
+            object_to_spawn.bodies[0].visual.shapes[0].color = color
+        i=+1
     return object_to_spawn
 
 

@@ -64,14 +64,6 @@ def setup_world() -> World:
         apartment_world.merge_world(hsrb_sem_world, c_root_bf)
         c_root_bf.origin = HomogeneousTransformationMatrix.from_xyz_rpy(1.5, 2.5, 0)
 
-    spawn_semantic_with_body("bowl_collapsable_yellowgrey",
-                             "bowl",
-                             Scale(1,1,1),
-                             Pose(position=Point3(x=1,y=1,z=1,reference_frame=apartment_root),
-                                  orientation=Quaternion(x=0,y=0,z=0,w=1,reference_frame=apartment_root),
-                                  reference_frame=apartment_root), world=apartment_world)
-
-
     print(apartment_world.bodies)
     return apartment_world
 

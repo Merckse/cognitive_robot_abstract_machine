@@ -1,6 +1,7 @@
 import os
 import time
 
+from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from giskardpy.motion_statechart import context
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
@@ -14,6 +15,7 @@ from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorso
 
 from hsrb_testing import setup_world
 from semantic_digital_twin.adapters.mesh import STLParser
+from semantic_digital_twin.collision_checking.collision_detector import CollisionCheckingResult
 from semantic_digital_twin.datastructures.definitions import TorsoState
 from semantic_digital_twin.reasoning.world_reasoner import WorldReasoner
 # from semantic_digital_twin.robots.pr2 import PR2
@@ -29,12 +31,16 @@ from semantic_digital_twin.spatial_types import (
 )
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world_description.connections import FixedConnection
+from semantic_digital_twin.world_description.geometry import Color
 
 # HSRB specified local world setup
 world = setup_world()
 
 hsrb = HSRB.from_world(world)
 context = Context(robot=hsrb,world=world)
+
+generic_object_spawner(["cup"], [(3,1,1)], world, color=Color.RED)
+world.get_semantic_annotation_by_name("cup").bodies[0].remove_from_world()
 plan = sequential([ParkArmsAction(arm=Arms.LEFT)], context=context)
 
 with simulated_robot:

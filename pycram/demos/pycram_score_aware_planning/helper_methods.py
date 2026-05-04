@@ -55,6 +55,7 @@ def spawn_semantic_with_body(
     scale: Scale,
     pose: Pose,
     world: World,
+    color: Optional[Color] = Color.WHITE(),
 ):
     """
     Spawns a semantic annotation with a body in the world based on the provided information.
@@ -65,6 +66,7 @@ def spawn_semantic_with_body(
     :param scale: The scale of the object to spawn
     :param pose: The pose of the object to spawn
     :param world: The world in which to spawn the object
+    :color: The color of the object to spawn
     :return: The spawned semantic annotation
     """
 
@@ -93,6 +95,7 @@ def spawn_semantic_with_body(
                 scale=scale,
                 world_root_T_self=world_root_T_self,
             )
+            object_to_spawn.bodies[0].visual.shapes[0].color = color
     return object_to_spawn
 
 
@@ -104,15 +107,12 @@ def generic_object_spawner(
 ):
     i = 0
     for name in names:
-        str_ = str(i)
         pose_xyz = pose[i]
         pose_point3_ : Point3= Point3(x=pose_xyz[0], y=pose_xyz[1], z=pose_xyz[2], reference_frame=world.root)
         orientation_quaternion_ : Quaternion = Quaternion(x=0, y=0, z=0, w=1, reference_frame=world.root)
         pose_ : Pose= Pose(position=pose_point3_, orientation=orientation_quaternion_, reference_frame=world.root)
         scale_ : Scale= Scale(x=0.2, y=0.2, z=0.2)
-        object_to_spawn = spawn_semantic_with_body(semantic_type=name,name=name,pose=pose_, scale=scale_,world=world)
-        if isinstance(color, Color):
-            object_to_spawn.bodies[0].visual.shapes[0].color = color
+        object_to_spawn = spawn_semantic_with_body(semantic_type=name,name=name,pose=pose_, scale=scale_,world=world, color = color)
         i=+1
     return object_to_spawn
 

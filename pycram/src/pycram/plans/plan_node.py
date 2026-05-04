@@ -267,10 +267,17 @@ class PlanNode(PlanEntity):
         self.status = TaskStatus.RUNNING
         try:
             self.result = self._perform()
-        except PlanFailure as e:
+            print(self.result)
+        # TODO: catch all exceptions and handle them properly
+        except Exception as e:
             self.status = TaskStatus.FAILED
             self.reason = e
             raise e
+        # except PlanFailure as e:
+        #     print("except")
+        #     self.status = TaskStatus.FAILED
+        #     self.reason = e
+        #     raise e
         finally:
             self.end_time = datetime.now()
         self.status = TaskStatus.SUCCEEDED

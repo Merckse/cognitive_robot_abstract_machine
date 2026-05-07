@@ -110,7 +110,7 @@ class TransportAction(ActionDescription):
         self.add_subplan(execute_single(ParkArmsAction(Arms.BOTH))).perform()
 
         pickup_loc = reachability_location(
-            self.object_designator.global_pose,
+            self.object_designator,
             self.context,
             self.arm,
             self.grasp_description,

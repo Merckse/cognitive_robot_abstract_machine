@@ -584,23 +584,16 @@ class VisibilityCostmap(Costmap):
 
         r_t = RayTracer(self.world)
 
-        origin_copy = deepcopy(self.origin)
+        origin_copy = deepcopy(self.origin).to_homogeneous_matrix()
 
         for _ in range(4):
-            # this quaternion is invalid, as it is never normalized. But the test pass with it, and any 90° yaw fails for me
-            # finding out the error is super annoying in the current implementation, and it is not really used atm, so I dont
-            # think its worth the time to fix it. If you disagree, feel free to give it a shot.
-            rotated_origin_copy = (
-                HomogeneousTransformationMatrix.from_point_rotation_matrix(
-                    rotation_matrix=Quaternion(0, 0, 1, 1).to_rotation_matrix()
-                )
-                @ origin_copy
-            )
             images.append(
                 r_t.create_depth_map(
-                    rotated_origin_copy,
-                    resolution=self.width,
+                    origin_copy, resolution=self.width, min_distance=0.1
                 )
+            )
+            origin_copy = origin_copy @ HomogeneousTransformationMatrix.from_xyz_rpy(
+                yaw=np.pi / 2
             )
 
         return images

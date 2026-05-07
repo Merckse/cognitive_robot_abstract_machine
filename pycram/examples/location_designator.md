@@ -94,13 +94,13 @@ with simulated_robot:
 ```
 
 ```python
-from pycram.locations.locations import CostmapLocation, Arms
 from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.motion_executor import simulated_robot
+from pycram.locations.factories import reachability_location
 
-location_description = CostmapLocation(target=world.get_body_by_name("milk.stl").global_pose, reachable=True, reachable_arm=Arms.LEFT, context=context)
+location = reachability_location(world.get_body_by_name("milk.stl"), context=context, arm=Arms.LEFT)
 
-plan = execute_single(NavigateAction(next(iter(location_description))), context=context)
+plan = execute_single(NavigateAction(next(iter(location))), context=context)
 
 with simulated_robot:
     plan.perform()
@@ -120,9 +120,11 @@ designator you can spawn them with the following cell.
 
 ```python
 from semantic_digital_twin.spatial_types.spatial_types import Pose, Point3
-location_description = CostmapLocation(target=Pose(Point3.from_iterable([-1, 0, 1.2]), reference_frame=world.root), visible=True, context=context)
+from pycram.locations.factories import visibility_location
 
-plan = execute_single(NavigateAction(next(iter(location_description))), context=context)
+location = visibility_location(world.get_body_by_name("milk.stl"), context=context)
+
+plan = execute_single(NavigateAction(next(iter(location))), context=context)
 
 with simulated_robot:
     plan.perform()
@@ -138,9 +140,12 @@ already have a milk spawned in you world you can ignore the following cell.
 
 ```python
 
-location_description = CostmapLocation(target=Pose(Point3.from_iterable([-1, 0, 1.2]), reference_frame=world.root), visible=True, context=context)
+location = visibility_location(Pose(Point3.from_iterable([-1, 0, 1.2]), reference_frame=world.root), context=context)
 
-for i, pose in enumerate(location_description):
+
+# location_description = CostmapLocation(target=Pose(Point3.from_iterable([-1, 0, 1.2]), reference_frame=world.root), visible=True, context=context)
+
+for i, pose in enumerate(location):
     print(pose)
     if i > 3:
         break
@@ -156,8 +161,18 @@ At the moment this location designator only works in the apartment environment, 
 spawned it in a previous example. Furthermore, we need a robot, so we also spawn the PR2 if it isn't spawned already.
 
 ```python
-from pycram.locations.locations import AccessingLocation
+from pycram.locations.factories import accessing_location
+from semantic_digital_twin.semantic_annotations.semantic_annotations import Drawer
 
-access_location = AccessingLocation(world.get_body_by_name("handle_cab10_t"), arm=Arms.LEFT, context=context)
-print(next(iter(access_location)))
+with world.modify_world():
+    world.add_semantic_annotation(
+        drawer := Drawer(
+            root=world.get_body_by_name("cabinet10_drawer_middle"),
+            handle=Handle(root=world.get_body_by_name("handle_cab10_m")),
+        )
+    )
+
+location = accessing_location(world.add_semantic_annotation_by_type(Drawer), context=context, arm=Arms.LEFT)
+
+print(next(iter(location)))
 ```

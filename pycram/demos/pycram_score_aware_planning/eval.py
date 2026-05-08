@@ -31,7 +31,6 @@ from pycram.datastructures.enums import TaskStatus
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Table, Plate, Bowl, Knife, Fork, Spoon, \
     Milk, Dishwasher, Cereal
 
-
 # ---------------------------------------------------------------------------
 # Enums
 # ---------------------------------------------------------------------------

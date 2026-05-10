@@ -20,13 +20,25 @@ from semantic_digital_twin.spatial_types import Point3, Quaternion
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world_description.geometry import Color
 
+"""
+PROBABILITY:
+    [ ] - Recognize the task space, what tasks are certainly calculateable under given taks-spaces
+    [ ] - What are base probabilities
+    [ ] - analyse the contexts, like object closeness and misc.
+    [ ] - calculate probability from given positions (Orientation, Position)
+[ ] - 
+[ ] - 
+
+"""
+
+
 # HSRB specified local world setup
 world = setup_world()
 
 hsrb = HSRB.from_world(world)
 context = Context(robot=hsrb, world=world, evaluate_conditions=False)
 
-generic_object_spawner(["Bowl"], [(1.325, 5.99, 4)], world, color=Color.GREEN())
+generic_object_spawner(["Bowl"], [(1.325, 5.99, 0.81)], world, color=Color.GREEN())
 generic_object_spawner(["bowl3"], [(4,2,4)], world, color=Color.GREEN())
 bowl =  world.get_semantic_annotation_by_name("bowl3").bodies[0]
 

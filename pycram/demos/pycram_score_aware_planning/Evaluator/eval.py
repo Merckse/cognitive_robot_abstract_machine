@@ -27,7 +27,12 @@ from dataclasses import dataclass, field, asdict
 from enum import Enum
 from typing import Optional
 
+from numba.cuda.libdeviceimpl import lower
+
 from pycram.datastructures.enums import TaskStatus
+from pycram.robot_plans.actions.base import ActionDescription
+from robokudo.annotators import object_pose_visualizer
+from semantic_digital_twin import semantic_annotations
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Table, Plate, Bowl, Knife, Fork, Spoon, \
     Milk, Dishwasher, Cereal, Furniture
 
@@ -67,44 +72,54 @@ class TaskMode(str, Enum):
 # ---------------------------------------------------------------------------
 
 # Base points awarded on clean success
-BASE_POINTS: dict[tuple[ActionType, Optional[object]], int] = {
+BASE_POINTS: dict[tuple[ActionType, Optional[str]], int]= {
     # PICKUP = 50pts
     # Pickup plate = 100pts
-    (ActionType.PICKUP,   Plate): 50+100,
+    (ActionType.PICKUP,   "plate"): 50 + 100,
+
     # Objects of category CUTLERY = 2x+50
-    (ActionType.PICKUP,   Knife): 50+50,
-    (ActionType.PICKUP,   Fork): 50+50,
-    (ActionType.PICKUP,   Spoon): 50+50,
+    (ActionType.PICKUP,   "knife"): 50 + 50,
+    (ActionType.PICKUP,   "fork"): 50 + 50,
+    (ActionType.PICKUP,   "spoon"): 50 + 50,
+
     # Common object pickup = 2x-20pts
-    (ActionType.PICKUP,   Bowl): 50-20,
-    (ActionType.PICKUP,   Milk): 50-20,
-    (ActionType.PICKUP,   None): 50+0,
+    (ActionType.PICKUP,   "bowl"): 50 - 20,
+    (ActionType.PICKUP,   "milk"): 50 - 20,
+    (ActionType.PICKUP,   ""): 50 + 0,
+
     # Placing objects = 40pts
     # Place in dishwasher = 3x70pts
-    (ActionType.PLACE,    Dishwasher): 40+70,
-    # Place next to similair object = 2x20pts
-    (ActionType.PLACE,    Dishwasher): 40+20,
-    # Common object place = 2x-20pts
-    (ActionType.PLACE, Bowl): 40 - 20,
-    (ActionType.PLACE, Milk): 40 - 20,
-    (ActionType.PLACE, None): 40 + 0,
-    # Open dishwasher =  2x200pts
-    (ActionType.OPEN,     Dishwasher):  200,
-    (ActionType.OPEN,     None):  5,
-    (ActionType.CLOSE,    Dishwasher):  200,
-    (ActionType.CLOSE,    None):  5,
-    # navigate to table = 15pts
-    (ActionType.NAVIGATE, Table):  15,
-    (ActionType.NAVIGATE, None):  5,
-    (ActionType.HAND_OVER,None): 15,
-    # Pour milk / cereal = 200pts
-    (ActionType.POUR,     Cereal): 200,
-    (ActionType.POUR,     Milk): 200,
-    (ActionType.POUR,     None): 10,
+    (ActionType.PLACE,    "dishwasher"): 40 + 70,
 
-    (ActionType.PUSH,     None):  8,
-    (ActionType.DETECT,   None):  5,
-    (ActionType.CUSTOM,   None):  0,
+    # Place next to similar object = 2x20pts
+    (ActionType.PLACE,    "dishwasher"): 40 + 20,
+
+    # Common object place = 2x-20pts
+    (ActionType.PLACE,    "bowl"): 40 - 20,
+    (ActionType.PLACE,    "milk"): 40 - 20,
+    (ActionType.PLACE,    ""): 40 + 0,
+
+    # Open dishwasher = 2x200pts
+    (ActionType.OPEN,     "dishwasher"): 200,
+    (ActionType.OPEN,     ""): 5,
+
+    (ActionType.CLOSE,    "dishwasher"): 200,
+    (ActionType.CLOSE,    ""): 5,
+
+    # navigate to table = 15pts
+    (ActionType.NAVIGATE, "table"): 15,
+    (ActionType.NAVIGATE, ""): 5,
+
+    (ActionType.HAND_OVER, ""): 15,
+
+    # Pour milk / cereal = 200pts
+    (ActionType.POUR,     "cereal"): 200,
+    (ActionType.POUR,     "milk"): 200,
+    (ActionType.POUR,     ""): 10,
+
+    (ActionType.PUSH,     ""): 8,
+    (ActionType.DETECT,   ""): 5,
+    (ActionType.CUSTOM,   ""): 0,
 }
 
 BASE_GRASP_PROBABILITY : dict[type, float] = {
@@ -170,7 +185,7 @@ class RobotScorer:
     Thread-safe reads; not designed for concurrent writes.
     """
     task_name: str = "unnamed_task"
-    task_mode: TaskMode = TaskMode.GPSR
+    task_mode: TaskMode = TaskMode.PP
     events: list[ScoreEvent] = field(default_factory=list)
     _score: int = field(default=0, init=False, repr=False)
 
@@ -182,7 +197,7 @@ class RobotScorer:
         self,
         action_type: ActionType,
         outcome: ActionOutcome | TaskStatus,
-        object_name: Optional[str] = None,
+        object_name: Optional[str] = "",
         custom_points: Optional[int] = None,
         note: Optional[str] = None,
     ) -> ScoreEvent:
@@ -203,11 +218,12 @@ class RobotScorer:
         if self.task_mode == TaskMode.GPSR:
             pass
         if self.task_mode == TaskMode.PP:
-
             pass
         if self.task_mode == TaskMode.FD:
             pass
-        base = custom_points if custom_points is not None else BASE_POINTS.get(action_type, 0)
+
+        # Actual score calculation
+        base : int = custom_points if custom_points is not None else BASE_POINTS.get((action_type, lower(object_name)),0)
         modifier = OUTCOME_MODIFIERS.get(outcome, 0.0)
         penalty = FLAT_PENALTIES.get(outcome, 0)
 

@@ -5,6 +5,7 @@ import unittest
 import numpy as np
 import rclpy
 
+from demos.SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.events.event_handler import EventDispatcher
 from demos.pycram_score_aware_planning.helper_methods import spawn_semantic_with_body
 from semantic_digital_twin.adapters.mesh import STLParser
 from semantic_digital_twin.adapters.urdf import URDFParser
@@ -34,7 +35,6 @@ except ImportError:
 
 
 def setup_world() -> World:
-    rclpy.init()
     logger.setLevel(logging.DEBUG)
 
     hsrb_sem_world = URDFParser.from_file(
@@ -65,7 +65,9 @@ def setup_world() -> World:
         c_root_bf.origin = HomogeneousTransformationMatrix.from_xyz_rpy(1.5, 2.5, 0)
 
     print(apartment_world.bodies)
-    return apartment_world
+    dispatcher = EventDispatcher()
+
+    return apartment_world, dispatcher
 
 
 def _make_sine_scan_poses(

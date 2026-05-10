@@ -29,7 +29,8 @@ from typing import Optional
 
 from pycram.datastructures.enums import TaskStatus
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Table, Plate, Bowl, Knife, Fork, Spoon, \
-    Milk, Dishwasher, Cereal
+    Milk, Dishwasher, Cereal, Furniture
+
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -54,6 +55,7 @@ class ActionOutcome(str, Enum):
     FAILURE_RECOVERABLE  = "failure_recoverable"
     FAILURE_UNRECOVERABLE = "failure_unrecoverable"
     SKIPPED              = "skipped"
+
 
 class TaskMode(str, Enum):
     GPSR = "gpsr"
@@ -104,6 +106,12 @@ BASE_POINTS: dict[tuple[ActionType, Optional[object]], int] = {
     (ActionType.DETECT,   None):  5,
     (ActionType.CUSTOM,   None):  0,
 }
+
+BASE_GRASP_PROBABILITY : dict[type, float] = {
+    Bowl: 0.3,
+    Milk: 0.99,
+    Cereal: 0.95,
+    Plate: 0.05}
 
 # Penalties applied on top of (or instead of) base points
 OUTCOME_MODIFIERS: dict[ActionOutcome|TaskStatus, float] = {

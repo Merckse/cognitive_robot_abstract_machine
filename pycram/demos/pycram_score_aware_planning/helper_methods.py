@@ -101,7 +101,7 @@ def spawn_semantic_with_body(
 
 def generic_object_spawner(
         names: list[str] ,
-        pose : list[tuple[int,int,int]] ,
+        pose : list[tuple[float,float,float]] ,
         world : World,
         color: Optional[Color] = None,
 ):

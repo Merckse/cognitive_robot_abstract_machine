@@ -11,7 +11,10 @@ from pycram.robot_plans.actions.core.pick_up import PickUpAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
 
 from hsrb_testing import setup_world
+from semantic_digital_twin.reasoning.predicates import is_supported_by
+from semantic_digital_twin.reasoning.queries import semantic_annotations_on_surfaces
 from semantic_digital_twin.robots.hsrb import HSRB
+from semantic_digital_twin.semantic_annotations.mixins import HasSupportingSurface
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Table
 from semantic_digital_twin.spatial_types import Point3, Quaternion
 from semantic_digital_twin.spatial_types.spatial_types import Pose
@@ -23,7 +26,7 @@ world = setup_world()
 hsrb = HSRB.from_world(world)
 context = Context(robot=hsrb, world=world, evaluate_conditions=False)
 
-generic_object_spawner(["Bowl"], [(4,1,4)], world, color=Color.GREEN())
+generic_object_spawner(["Bowl"], [(1.325, 5.99, 4)], world, color=Color.GREEN())
 generic_object_spawner(["bowl3"], [(4,2,4)], world, color=Color.GREEN())
 bowl =  world.get_semantic_annotation_by_name("bowl3").bodies[0]
 
@@ -32,8 +35,13 @@ manipulator = hsrb.arm.manipulator
 plan_parkarm = sequential([ParkArmsAction(Arms.LEFT)], context=context)
 robot_scoorer = RobotScorer()
 
-target_table = world.get_semantic_annotations_by_type(Table)[3].bodies[0]
-pose_table = target_table.global_pose.to_homogeneous_matrix().to_pose()
+tables = world.get_semantic_annotations_by_type(HasSupportingSurface)[0]
+target_table_body = world.get_semantic_annotations_by_type(Table)[3].bodies[0]
+target_table_annotations = world.get_semantic_annotations_by_type(Table)[3]
+
+objects = semantic_annotations_on_surfaces(supporting_surfaces=[target_table_annotations], world=world)
+print(objects)
+pose_table = target_table_body.global_pose.to_homogeneous_matrix().to_pose()
 pose_table.reference_frame = world.root
 pose_table.z = 0
 

@@ -118,7 +118,7 @@ def hsrb_setup_world() -> Tuple[World, EventDispatcher]:
     #     apartment_world.add_semantic_annotation(milk_view)
 
     dispatcher = EventDispatcher()
-    # dispatcher.add_listener(update_perceived_objects)  # TODO: IS THIS A PROBLEM?
+    # dispatcher.add_listener(update_perceived_objects)
 
 
     return apartment_world, dispatcher

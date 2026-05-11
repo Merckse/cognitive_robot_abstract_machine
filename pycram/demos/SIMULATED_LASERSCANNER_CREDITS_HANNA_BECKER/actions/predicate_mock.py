@@ -164,8 +164,6 @@ def reachable(object : SemanticAnnotation):
 
     print("Region: ", surface_region, "\n Edges: ", edges)
 
-    # TODO: calculate if the distance to the reachable edge is smaller then a minimum distance to estimate if the robot could reach the object
-
     # # --- distance check ---
     # dx = object_location.x - robot_location.x
     # dy = object_location.y - robot_location.y

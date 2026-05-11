@@ -192,7 +192,6 @@ class SetTableTask(Task):
         preconditions = []
         required_instances = []
 
-        # TODO: check if empty works
         with perf_step(f"{self.name}.precondition table empty check"):
             preconditions.append(
                 is_empty(
@@ -411,7 +410,6 @@ class CleanTableTask(Task):
 class LoadDishwasherTask(Task):
     required_objects: list[SemanticAnnotation]
     world : World
-    # TODO: continue
 
     def __init__(
         self,
@@ -558,8 +556,6 @@ class LoadDishwasherTask(Task):
 class UnloadDishwasherTask(Task):
     required_objects: list[SemanticAnnotation]
     world : World
-
-    # TODO: continue
 
     def __init__(
         self,

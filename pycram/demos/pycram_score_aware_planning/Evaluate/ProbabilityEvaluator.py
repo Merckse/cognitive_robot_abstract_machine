@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from demos.pycram_score_aware_planning.Evaluate.Evaluator import Evaluator
 
+# TODO: implement RobotProbability
 @dataclass(kw_only=True)
 class RobotProbability(Evaluator):
 

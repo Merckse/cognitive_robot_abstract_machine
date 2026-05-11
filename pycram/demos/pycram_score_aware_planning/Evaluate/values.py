@@ -22,6 +22,7 @@ BASE_POINTS: dict[tuple[ActionType, Optional[str]], int]= {
     # Common object pickup = 2x-20pts
     (ActionType.PICKUP,   "bowl"): 50 - 20,
     (ActionType.PICKUP,   "milk"): 50 - 20,
+    (ActionType.PICKUP,   "cereal"): 15,
     (ActionType.PICKUP,   ""): 50 + 0,
 
     # Placing objects = 40pts
@@ -34,6 +35,7 @@ BASE_POINTS: dict[tuple[ActionType, Optional[str]], int]= {
     # Common object place = 2x-20pts
     (ActionType.PLACE,    "bowl"): 40 - 20,
     (ActionType.PLACE,    "milk"): 40 - 20,
+    (ActionType.PLACE,   "cereal"): 15,
     (ActionType.PLACE,    ""): 40 + 0,
 
     # Open dishwasher = 2x200pts
@@ -74,6 +76,7 @@ BASE_TIME_ESTIMATE: dict[tuple[ActionType, Optional[str]], int]= {
     # Common object pickup = 2x-20pts
     (ActionType.PICKUP,   "bowl"): 30,
     (ActionType.PICKUP,   "milk"): 15,
+    (ActionType.PICKUP,   "cereal"): 15,
     (ActionType.PICKUP,   ""): 30,
 
     # Placing objects = 40pts
@@ -83,6 +86,7 @@ BASE_TIME_ESTIMATE: dict[tuple[ActionType, Optional[str]], int]= {
     # Common object place = 2x-20pts
     (ActionType.PLACE,    "bowl"): 40 - 20,
     (ActionType.PLACE,    "milk"): 40 - 20,
+    (ActionType.PLACE,   "cereal"): 15,
     (ActionType.PLACE,    ""): 40 + 0,
 
     # Open dishwasher = 2x200pts
@@ -93,8 +97,8 @@ BASE_TIME_ESTIMATE: dict[tuple[ActionType, Optional[str]], int]= {
     (ActionType.CLOSE,    ""): 50,
 
     # navigate to table = 15pts
-    (ActionType.NAVIGATE, "table"): 15,
-    (ActionType.NAVIGATE, ""): 5,
+    (ActionType.NAVIGATE, "table"): 20,
+    (ActionType.NAVIGATE, ""): 30,
 
     (ActionType.HAND_OVER, ""): 15,
 
@@ -166,7 +170,7 @@ TASKSTEP_GPSR: list[Task] = [Task(task_steps=[TaskStep(ActionType.NAVIGATE), Tas
                            Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PLACE, object_name="cereal")]),]
 
 # All possible tasks for FD
-TASKSTEP_FD: list[Task] = [Task(task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"),TaskStep(ActionType.PLACE, object_name="bowl")]),
+TASKSTEP_FD: list[Task] = [Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"),TaskStep(ActionType.PLACE, object_name="bowl")]),
                            Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="plate"),TaskStep(ActionType.PLACE, object_name="plate")]),
                            Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="milk"),TaskStep(ActionType.PLACE, object_name="milk")]),
                            Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PLACE, object_name="cereal")]),]

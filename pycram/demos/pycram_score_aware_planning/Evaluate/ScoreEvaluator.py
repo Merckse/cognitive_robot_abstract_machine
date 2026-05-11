@@ -22,14 +22,26 @@ Usage:
 from __future__ import annotations
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Any
 
+from OpenGL.raw.GL.KHR import texture_compression_astc_ldr
 from numba.cuda.libdeviceimpl import lower
 
 from demos.pycram_score_aware_planning.Evaluate.Evaluator import Evaluator
-from demos.pycram_score_aware_planning.Evaluate.types import TaskMode, ActionType, ActionOutcome
-from demos.pycram_score_aware_planning.Evaluate.values import MAX_TIME_ESTIMATE, OUTCOME_MODIFIERS, FLAT_PENALTIES, \
-    BASE_POINTS
+from demos.pycram_score_aware_planning.Evaluate.types import (
+    TaskMode,
+    ActionType,
+    ActionOutcome,
+    Task,
+)
+from demos.pycram_score_aware_planning.Evaluate.values import (
+    MAX_TIME_ESTIMATE,
+    BASE_TIME_ESTIMATE,
+    OUTCOME_MODIFIERS,
+    FLAT_PENALTIES,
+    BASE_POINTS,
+    TASKS,
+)
 from pycram.datastructures.enums import TaskStatus
 
 # ---------------------------------------------------------------------------
@@ -50,6 +62,8 @@ This is the actual score event that is recorded.
 :param cumulative_time: The total time so far.
 :param note:           Free-text note attached to this event.
 """
+
+
 @dataclass(kw_only=True)
 class ScoreEvent:
     timestamp: float
@@ -64,6 +78,7 @@ class ScoreEvent:
     cumulative_time: float
     note: Optional[str] = None
 
+
 """
 This is the estimator for the Expected Score.
 
@@ -73,13 +88,18 @@ This is the estimator for the Expected Score.
 :param expected_time:  The expected time spent on the action.
 :param expected_score: The expected score created by completing the action.
 """
+
+
 @dataclass(kw_only=True)
 class ExpectedScoreEvent:
-    action_type: str
+    task_id: int = 0
+    # action_type: str TODO: Do i want to pain or not?
     outcome: str
-    object_name: Optional[str]
-    expected_time: int
+    # object_name: Optional[str] TODO: Well more pain here
+    expected_time: float
     expected_score: int
+    expected_score_per_seconds: float
+    task_step_count: int = 0
 
 
 @dataclass(kw_only=True)
@@ -88,9 +108,10 @@ class RobotScorer(Evaluator):
     Central scoring tracker. Call record() after each action completes.
     Thread-safe reads; not designed for concurrent writes.
     """
+
     task_name: str = "unnamed_task"
     task_mode: TaskMode = TaskMode.PP
-    challenge_starting_time : int = MAX_TIME_ESTIMATE.get(task_mode, 0)
+    challenge_starting_time: int = MAX_TIME_ESTIMATE.get(task_mode, 0)
     events: list[ScoreEvent] = field(default_factory=list)
     _score: int = field(default=0, init=False, repr=False)
     _time: int = field(default=0, init=False, repr=False)
@@ -103,18 +124,51 @@ class RobotScorer(Evaluator):
     """
     Estimating the expected time and score created by completing a task.
     """
-    def estimate(self) -> list[ExpectedScoreEvent]:
 
-        pass
+    def estimate(
+        self, taskmode: TaskMode, finished_task_ids: Optional[list[int]] = []
+    ) -> list[ExpectedScoreEvent]:
+        tasks: list[Task] = TASKS.get(taskmode, [])
+        estimates: list[ExpectedScoreEvent] = []
+
+        for task in tasks:
+            base_score = 0
+            expected_time = 0
+            if task.task_id in finished_task_ids:
+                continue
+            for step in task.task_steps:
+                base_score += BASE_POINTS.get(
+                    (step.action_type, step.object_name or ""), 0
+                )
+                expected_time += BASE_TIME_ESTIMATE.get(
+                    (step.action_type, step.object_name or ""), 0
+                )
+
+            estimates.append(
+                ExpectedScoreEvent(
+                    task_id=task.task_id,
+                    # action_type=step.action_type.value,
+                    outcome=ActionOutcome.SUCCESS.value,
+                    # object_name=step.object_name,
+                    expected_time=expected_time,
+                    expected_score=base_score,
+                    expected_score_per_seconds=base_score / expected_time,
+                    task_step_count=len(task.task_steps),
+                )
+            )
+        estimates = sorted(
+            estimates, key=lambda x: x.expected_score_per_seconds, reverse=True
+        )
+        return estimates
 
     def record(
         self,
-        action_type: ActionType ,
+        action_type: ActionType,
         outcome: ActionOutcome | TaskStatus,
         object_name: Optional[str] = "",
         custom_points: Optional[int] = None,
         note: Optional[str] = None,
-        **kwargs
+        **kwargs,
     ) -> ScoreEvent:
         """
         Record an action result and update the running score.
@@ -130,7 +184,11 @@ class RobotScorer(Evaluator):
             The ScoreEvent that was recorded.
         """
         # Actual score calculation
-        base : int = custom_points if custom_points is not None else BASE_POINTS.get((action_type, lower(object_name)),0)
+        base: int = (
+            custom_points
+            if custom_points is not None
+            else BASE_POINTS.get((action_type, lower(object_name)), 0)
+        )
         modifier = OUTCOME_MODIFIERS.get(outcome, 0.0)
         penalty = FLAT_PENALTIES.get(outcome, 0)
 
@@ -186,10 +244,46 @@ class RobotScorer(Evaluator):
         if not self.events:
             return 0.0
         successes = sum(
-            1 for e in self.events
-            if e.outcome in (ActionOutcome.SUCCESS.value, ActionOutcome.SUCCESS_WITH_ASSIST.value)
+            1
+            for e in self.events
+            if e.outcome
+            in (ActionOutcome.SUCCESS.value, ActionOutcome.SUCCESS_WITH_ASSIST.value)
         )
         return round(successes / len(self.events), 3)
+
+    def summary_estimate(self, estimates: list[ExpectedScoreEvent]) -> None:
+        sum_score = 0
+        sum_time = 0
+        sum_score_per_seconds = 0
+        sum_tasksteps = 0
+
+        if not estimates:
+            print(f"There were no estimates.")
+        best = estimates[0]
+        lines = [
+            f"Estimate",
+            "=" * 56,
+            f"{'Rank':<6} {'Task ID':<10} {'Score':>8} {'Time (s)':>10} {'pts/s':>8} {'Number of tasks':>10}",
+            "-" * 56,
+        ]
+        for rank, e in enumerate(estimates, 1):
+            lines.append(
+                f"{rank:<6} {e.task_id:<10} {e.expected_score:>8} {e.expected_time:>10.1f} {e.expected_score_per_seconds:>8.2f} {e.task_step_count:<10}"
+            )
+            sum_time += e.expected_time
+            sum_score += e.expected_score
+            sum_tasksteps += e.task_step_count
+        sum_score_per_seconds = sum_score / sum_time
+        lines += [
+            "=" * 28 + "SUM" + "=" * 28,
+            f"{"-":<6} {"-":<10} {sum_score:>8} {sum_time:>10.1f} {sum_score_per_seconds:>8.2f} {sum_tasksteps:<10}",
+        ]
+        lines += [
+            "=" * 59,
+            f"  Recommended: Task {best.task_id}  "
+            f"({best.expected_score} pts in {best.expected_time:.1f}s = {best.expected_score_per_seconds:.2f} pts/s)",
+        ]
+        print("\n".join(lines))
 
     def summary(self) -> str:
         lines = [
@@ -219,3 +313,11 @@ class RobotScorer(Evaluator):
             f"{sign}{event.net_points:>4} pts   "
             f"(total: {event.cumulative_score})"
         )
+
+
+if __name__ == "__main__":
+    scorer = RobotScorer()
+    estimates = scorer.estimate(TaskMode.PP)
+    estimate = scorer.summary_estimate(estimates)
+    print(estimate)
+    pass

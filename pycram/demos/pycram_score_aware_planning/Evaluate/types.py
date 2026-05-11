@@ -1,6 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from itertools import count
 from typing import Optional
+
+_task_id_counter = count(1)
 
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 
@@ -38,7 +41,7 @@ class TaskMode(str, Enum):
 
 @dataclass
 class TaskStep:
-    action: ActionType
+    action_type: ActionType
     object_name: Optional[str] = None
     object_pickup: Optional["str"] = None
     object_placement: Optional["str"] = None
@@ -46,3 +49,4 @@ class TaskStep:
 @dataclass
 class Task:
     task_steps: list[TaskStep]
+    task_id: int = field(default_factory=lambda: next(_task_id_counter), init=False)

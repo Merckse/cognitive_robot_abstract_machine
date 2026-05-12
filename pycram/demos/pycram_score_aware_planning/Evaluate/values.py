@@ -12,7 +12,7 @@ from semantic_digital_twin.spatial_types.spatial_types import Pose
 BASE_POINTS: dict[tuple[ActionType, Optional[str]], int]= {
     # PICKUP = 50pts
     # Pickup plate = 100pts
-    (ActionType.PICKUP,   "plate"): 50 + 100,
+    (ActionType.PICKUP, "plate"): 50 + 100,
 
     # Objects of category CUTLERY = 2x+50
     (ActionType.PICKUP,   "knife"): 50 + 50,
@@ -36,7 +36,10 @@ BASE_POINTS: dict[tuple[ActionType, Optional[str]], int]= {
     (ActionType.PLACE,    "bowl"): 40 - 20,
     (ActionType.PLACE,    "milk"): 40 - 20,
     (ActionType.PLACE,   "cereal"): 15,
-    (ActionType.PLACE,    ""): 40 + 0,
+    # random value
+    (ActionType.PICKUP, "plate"): 40,
+    (ActionType.PLACE, ""): 40 + 0,
+    (ActionType.PLACE, ""): 40 + 0,
 
     # Open dishwasher = 2x200pts
     (ActionType.OPEN,     "dishwasher"): 200,
@@ -87,6 +90,9 @@ BASE_TIME_ESTIMATE: dict[tuple[ActionType, Optional[str]], int]= {
     (ActionType.PLACE,    "bowl"): 40 - 20,
     (ActionType.PLACE,    "milk"): 40 - 20,
     (ActionType.PLACE,   "cereal"): 15,
+    # random value
+    (ActionType.PLACE, "plate"): 40,
+
     (ActionType.PLACE,    ""): 40 + 0,
 
     # Open dishwasher = 2x200pts
@@ -113,11 +119,58 @@ BASE_TIME_ESTIMATE: dict[tuple[ActionType, Optional[str]], int]= {
 }
 
 
-BASE_GRASP_PROBABILITY : dict[type, float] = {
-    Bowl: 0.3,
-    Milk: 0.99,
-    Cereal: 0.95,
-    Plate: 0.05}
+
+BASE_PROBABILITY : dict[tuple[ActionType, str], float] = {
+    # PICKUP = 50pts
+    # Pickup plate = 100pts
+    (ActionType.PICKUP, "plate"): 0.5,
+
+    # Objects of category CUTLERY = 2x+50
+    (ActionType.PICKUP, "knife"): 0.01,
+    (ActionType.PICKUP, "fork"): 0.01,
+    (ActionType.PICKUP, "spoon"): 0.01,
+
+    # Common object pickup = 2x-20pts
+    # TODO: geometry analysis or not
+    (ActionType.PICKUP, "bowl"): 0.75,
+    (ActionType.PICKUP, "milk"): 0.95,
+    (ActionType.PICKUP, "cereal"): 0.95,
+    (ActionType.PICKUP, ""): 0.5,
+
+    # Placing objects = 40pts
+    # Place in dishwasher = 3x70pts
+    (ActionType.PLACE, "dishwasher"): 0.4,
+
+    # Common object place = 2x-20pts
+    (ActionType.PLACE, "bowl"): 0.8,
+    (ActionType.PLACE, "milk"): 0.99,
+    (ActionType.PLACE, "cereal"): 0.99,
+    (ActionType.PLACE, "plate"): 0.01,
+    # TODO: geometry analysis or not
+    (ActionType.PLACE, ""): 0.6,
+
+    # Open dishwasher = 2x200pts
+    (ActionType.OPEN, "dishwasher"): 0,
+    (ActionType.OPEN, ""): 0,
+
+    (ActionType.CLOSE, "dishwasher"): 0,
+    (ActionType.CLOSE, ""): 0,
+
+    # navigate to table = 15pts
+    (ActionType.NAVIGATE, "table"): 1,
+    (ActionType.NAVIGATE, ""): 0.98,
+
+    (ActionType.HAND_OVER, ""): 0.95,
+
+    # Pour milk / cereal = 200pts
+    (ActionType.POUR, "cereal"): 0,
+    (ActionType.POUR, "milk"): 0,
+    (ActionType.POUR, ""): 0,
+
+    (ActionType.PUSH, ""): 0,
+    (ActionType.DETECT, ""): 0.8,
+    (ActionType.CUSTOM, ""): 0,
+}
 
 # Penalties applied on top of (or instead of) base points
 OUTCOME_MODIFIERS: dict[ActionOutcome|TaskStatus, float] = {

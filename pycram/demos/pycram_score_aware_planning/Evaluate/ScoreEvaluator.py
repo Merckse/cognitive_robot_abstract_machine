@@ -25,7 +25,6 @@ from dataclasses import dataclass, field
 from typing import Optional, Any
 
 from OpenGL.raw.GL.KHR import texture_compression_astc_ldr
-from numba.cuda.libdeviceimpl import lower
 
 from demos.pycram_score_aware_planning.Evaluate.Evaluator import Evaluator
 from demos.pycram_score_aware_planning.Evaluate.types import (
@@ -88,8 +87,6 @@ This is the estimator for the Expected Score.
 :param expected_time:  The expected time spent on the action.
 :param expected_score: The expected score created by completing the action.
 """
-
-
 @dataclass(kw_only=True)
 class ExpectedScoreEvent:
     task_id: int = 0
@@ -187,7 +184,7 @@ class RobotScorer(Evaluator):
         base: int = (
             custom_points
             if custom_points is not None
-            else BASE_POINTS.get((action_type, lower(object_name)), 0)
+            else BASE_POINTS.get((action_type, object_name.lower()), 0)
         )
         modifier = OUTCOME_MODIFIERS.get(outcome, 0.0)
         penalty = FLAT_PENALTIES.get(outcome, 0)

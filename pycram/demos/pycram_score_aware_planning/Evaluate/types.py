@@ -4,6 +4,7 @@ from itertools import count
 from typing import Optional
 
 _task_id_counter = count(1)
+_taskstep_id_counter = count(1)
 
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 
@@ -41,8 +42,9 @@ class TaskMode(str, Enum):
 
 @dataclass
 class TaskStep:
+    task_step_id: int = field(default_factory=lambda: next(_taskstep_id_counter), init=False)
     action_type: ActionType
-    object_name: Optional[str] = None
+    object_name: Optional[str] = ""
     object_pickup: Optional["str"] = None
     object_placement: Optional["str"] = None
 

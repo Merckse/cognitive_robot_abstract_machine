@@ -40,7 +40,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://code-iai.github.io/krrood/intro.html"
+Homepage = "https://cram2.github.io/cognitive_robot_abstract_machine/krrood/intro.html"
 "Source" = "https://github.com/cram2/cognitive_robot_abstract_machine"
 "Bug Tracker" = "https://github.com/cram2/cognitive_robot_abstract_machine/issues"
 

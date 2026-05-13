@@ -87,6 +87,8 @@ This is the estimator for the Expected Score.
 :param expected_time:  The expected time spent on the action.
 :param expected_score: The expected score created by completing the action.
 """
+
+
 @dataclass(kw_only=True)
 class ExpectedScoreEvent:
     task_id: int = 0
@@ -140,6 +142,7 @@ class RobotScorer(Evaluator):
                 expected_time += BASE_TIME_ESTIMATE.get(
                     (step.action_type, step.object_name or ""), 0
                 )
+            print(task.task_id)
 
             estimates.append(
                 ExpectedScoreEvent(
@@ -310,11 +313,3 @@ class RobotScorer(Evaluator):
             f"{sign}{event.net_points:>4} pts   "
             f"(total: {event.cumulative_score})"
         )
-
-
-if __name__ == "__main__":
-    scorer = RobotScorer()
-    estimates = scorer.estimate(TaskMode.PP)
-    estimate = scorer.summary_estimate(estimates)
-    print(estimate)
-    pass

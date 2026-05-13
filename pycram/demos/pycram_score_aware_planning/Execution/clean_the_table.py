@@ -1,7 +1,11 @@
 import math
 
-from demos.SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.actions.simulate_perception import simulate_perception
-from demos.pycram_score_aware_planning.Evaluate.CompositeEvaluator import CompositeEvaluator
+from demos.SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.actions.simulate_perception import (
+    simulate_perception,
+)
+from demos.pycram_score_aware_planning.Evaluate.CompositeEvaluator import (
+    CompositeEvaluator,
+)
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms
@@ -12,6 +16,7 @@ from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
 
 from demos.pycram_score_aware_planning.hsrb_testing import setup_world
+from pycram_score_aware_planning.Evaluate.ScoreEvaluator import RobotScorer
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Table
 from semantic_digital_twin.spatial_types import Point3, Quaternion
@@ -31,20 +36,19 @@ PROBABILITY:
 
 
 # HSRB specified local world setup
-world, dispatcher= setup_world()
+world, dispatcher = setup_world()
 
 hsrb = HSRB.from_world(world)
 context = Context(world=world, robot=hsrb)
 dispatcher.known_furniture = world.bodies
 
 generic_object_spawner(["Bowl"], [(1.325, 5.99, 0.81)], world, color=Color.GREEN())
-generic_object_spawner(["bowl3"], [(4,2,4)], world, color=Color.GREEN())
+generic_object_spawner(["bowl3"], [(4, 2, 4)], world, color=Color.GREEN())
 
 manipulator = hsrb.arm.manipulator
 plan_parkarm = sequential([ParkArmsAction(Arms.LEFT)], context=context)
 
-
-robot_scoorer = CompositeEvaluator()
+robot_scorer = RobotScorer()
 
 # tables = world.get_semantic_annotations_by_type(HasSupportingSurface)[0]
 target_table_body = world.get_semantic_annotations_by_type(Table)[3].bodies[0]
@@ -57,14 +61,17 @@ pose_table.z = 0
 
 # Pre-table pose: 1 m in front of the table (negative x offset) at floor level
 pre_table_pose = Pose(
-    position=Point3(pose_table.x , pose_table.y- 1.0, 0.0),
-    orientation=Quaternion(0.0, 0.0, math.sin((math.pi / 2) /2), math.cos((math.pi / 2) /2))
-,
+    position=Point3(pose_table.x, pose_table.y - 1.0, 0.0),
+    orientation=Quaternion(
+        0.0, 0.0, math.sin((math.pi / 2) / 2), math.cos((math.pi / 2) / 2)
+    ),
     reference_frame=world.root,
 )
 print(pose_table.x, pose_table.y, pose_table.z)
 
-navigate_to_pre_table = sequential([NavigateAction(pre_table_pose, True)], context=context)
+navigate_to_pre_table = sequential(
+    [NavigateAction(pre_table_pose, True)], context=context
+)
 with simulated_robot:
     navigate_to_pre_table.perform()
 visible_bodies = simulate_perception(world, dispatcher, context, hsrb)

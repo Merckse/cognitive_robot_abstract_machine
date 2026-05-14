@@ -286,7 +286,8 @@ def test_minimal_robot_annotation(pr2_world_state_reset):
 
 
 def test_room_roles():
-    room = Room(floor=Floor(root=Body(name=PrefixedName("room_floor"))))
+    floor = Floor(root=Body(name=PrefixedName("room_floor")))
+    room = Room(floor=floor)
     kitchen = Kitchen.from_role_taker(room)
 
     # Test ability to access Room properties
@@ -308,3 +309,12 @@ def test_room_roles():
 
     assert living_room == kitchen
     assert hash(living_room) == hash(kitchen)
+
+    # Create the room implicitly
+    kitchen = Kitchen(floor=floor)
+    room = kitchen.room
+    assert Role.roles_for(room, Kitchen)[0] == kitchen
+    assert Role.has_role(room, Kitchen)
+    assert not isinstance(room, Kitchen)
+    assert isinstance(kitchen, Room)
+    assert kitchen.floor is room.floor

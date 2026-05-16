@@ -133,6 +133,7 @@ class RobotScorer(Evaluator):
         for task in tasks:
             base_score = 0
             expected_time = 0
+            print(task.task_id)
             if task.task_id in finished_task_ids:
                 continue
             for step in task.task_steps:
@@ -142,7 +143,6 @@ class RobotScorer(Evaluator):
                 expected_time += BASE_TIME_ESTIMATE.get(
                     (step.action_type, step.object_name or ""), 0
                 )
-            print(task.task_id)
 
             estimates.append(
                 ExpectedScoreEvent(

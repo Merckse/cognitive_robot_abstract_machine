@@ -23,8 +23,9 @@ class RobotProbability(Evaluator):
 
         tasks: list[Task] = TASKS.get(task_mode)
         for task in tasks:
+            print(task.task_id)
+
             for action in task.task_steps:
-                print(action.action_type, action.object_name)
                 probability = round(
                     probability
                     * BASE_PROBABILITY.get((action.action_type, action.object_name)),
@@ -72,9 +73,3 @@ class RobotProbability(Evaluator):
             lines.append(f"{rank:<6} {e.task_id:<10} {e.expected_probability:>8} ")
         print("\n".join(lines))
 
-
-if __name__ == "__main__":
-    robot_probability = RobotProbability()
-    val = robot_probability.estimate(TaskMode.PP)
-    robot_probability.summary_estimate(val)
-    print(val)

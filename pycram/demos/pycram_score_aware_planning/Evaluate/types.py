@@ -3,8 +3,6 @@ from enum import Enum
 from itertools import count
 from typing import Optional
 
-_task_id_counter = count(1)
-
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 
 # ---------------------------------------------------------------------------
@@ -52,4 +50,4 @@ class TaskStep:
 @dataclass
 class Task:
     task_steps: list[TaskStep]
-    task_id: int = field(default_factory=lambda: next(_task_id_counter), init=False)
+    task_id: int

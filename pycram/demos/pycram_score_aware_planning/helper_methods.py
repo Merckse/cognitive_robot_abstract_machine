@@ -170,3 +170,9 @@ def perceive_and_spawn_all_objects(world: World):
             pose=object_pose,
             world=world,
         )
+
+def natural_join(array1 : list, array2 : list):
+    result : list = []
+    if arr1 == [] | arr2 == []:
+        return result
+    pass

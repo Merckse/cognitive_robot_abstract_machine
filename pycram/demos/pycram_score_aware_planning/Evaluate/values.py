@@ -211,22 +211,22 @@ MONITOR_ACTION_MAP: dict[str, ActionType] = {
 }
 
 # All possible tasks for PP
-TASKSTEP_PP: list[Task] = [Task(task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"),TaskStep(ActionType.PLACE, object_name="bowl")]),
-                           Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="plate"),TaskStep(ActionType.PLACE, object_name="plate")]),
-                           Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="milk"),TaskStep(ActionType.PLACE, object_name="milk")]),
-                           Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PLACE, object_name="cereal")]),]
+TASKSTEP_PP: list[Task] = [Task(task_id= 0, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"),TaskStep(ActionType.PLACE, object_name="bowl")]),
+                           Task(task_id= 1, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="plate"),TaskStep(ActionType.PLACE, object_name="plate")]),
+                           Task(task_id= 2, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="milk"),TaskStep(ActionType.PLACE, object_name="milk")]),
+                           Task(task_id= 3, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PLACE, object_name="cereal")]),]
 
 # All possible tasks for GPSR
-TASKSTEP_GPSR: list[Task] = [Task(task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"),TaskStep(ActionType.PLACE, object_name="bowl")]),
-                           Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="plate"),TaskStep(ActionType.PLACE, object_name="plate")]),
-                           Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="milk"),TaskStep(ActionType.PLACE, object_name="milk")]),
-                           Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PLACE, object_name="cereal")]),]
+TASKSTEP_GPSR: list[Task] = [Task(task_id= 0, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"),TaskStep(ActionType.PLACE, object_name="bowl")]),
+                           Task(task_id= 1, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="plate"),TaskStep(ActionType.PLACE, object_name="plate")]),
+                           Task(task_id= 2, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="milk"),TaskStep(ActionType.PLACE, object_name="milk")]),
+                           Task(task_id= 3, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PLACE, object_name="cereal")]),]
 
 # All possible tasks for FD
-TASKSTEP_FD: list[Task] = [Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"),TaskStep(ActionType.PLACE, object_name="bowl")]),
-                           Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="plate"),TaskStep(ActionType.PLACE, object_name="plate")]),
-                           Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="milk"),TaskStep(ActionType.PLACE, object_name="milk")]),
-                           Task([TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PLACE, object_name="cereal")]),]
+TASKSTEP_FD: list[Task] = [Task(task_id= 0, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"),TaskStep(ActionType.PLACE, object_name="bowl")]),
+                           Task(task_id= 1, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="plate"),TaskStep(ActionType.PLACE, object_name="plate")]),
+                           Task(task_id= 2, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="milk"),TaskStep(ActionType.PLACE, object_name="milk")]),
+                           Task(task_id= 3, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PLACE, object_name="cereal")]),]
 
 TASKS : dict[TaskMode, list[Task]] = {
     TaskMode.PP: TASKSTEP_PP,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from typing_extensions import List, Optional, Type, Iterable
+from typing_extensions import ClassVar, List, Optional, Type, Iterable
 
 from krrood.entity_query_language.predicate import Symbol, Predicate
 from semantic_digital_twin.mixin import HasSimulatorProperties
@@ -130,6 +130,8 @@ class ContainsType(Predicate):
     """
     Predicate that checks if any object in the iterable is of the given type.
     """
+
+    _verbalization_template_: ClassVar[str] = "{iterable} contains an instance of {obj_type}"
 
     iterable: Iterable
     """

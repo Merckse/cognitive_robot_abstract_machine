@@ -66,6 +66,13 @@ class Predicate(Symbol, ABC):
     """
     Predicates should not be cached for now as they are not persisting.
     """
+    _verbalization_template_: ClassVar[Optional[str]] = None
+    """
+    Optional natural-language template for verbalizing this predicate.
+    Slot names must match the predicate's field names. Example::
+
+        _verbalization_template_ = "{subject} works at {organization}"
+    """
 
     def __new__(cls, *args, **kwargs):
         all_kwargs = merge_args_and_kwargs(
@@ -100,6 +107,8 @@ class HasType(Predicate):
     Python's built-in `isinstance` functionality. It provides methods to retrieve the domain and
     range values and perform direct checks.
     """
+
+    _verbalization_template_: ClassVar[Optional[str]] = "{variable} is of type {types_}"
 
     variable: Any
     """

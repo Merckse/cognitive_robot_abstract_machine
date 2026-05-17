@@ -3,36 +3,21 @@ Natural-language verbalization for EQL expression trees.
 
 Public API mirrors ``explain_inference()``::
 
-    from krrood.entity_query_language.verbalization import verbalize_query, verbalize_expression
+    from krrood.entity_query_language.verbalization import verbalize_expression
 
-    text = verbalize_query(query)
-    text = verbalize_expression(expr)
+    text = verbalize_expression(expression)
 """
-
+from krrood.entity_query_language.query.query import Query
 from krrood.entity_query_language.verbalization.context import VerbalizationContext
 from krrood.entity_query_language.verbalization.verbalizer import EQLVerbalizer
 
 __all__ = [
-    "verbalize_query",
     "verbalize_expression",
     "EQLVerbalizer",
     "VerbalizationContext",
 ]
 
 _default_verbalizer = EQLVerbalizer()
-
-
-def verbalize_query(query) -> str:
-    """
-    Verbalize a built or unbuilt EQL ``Query`` into a human-readable English sentence.
-
-    Calls ``query.build()`` automatically before verbalizing.
-
-    :param query: An EQL ``Query`` object (``Entity`` or ``SetOf``, possibly wrapped by ``an``/``the``).
-    :return: A natural-language description of the query structure.
-    """
-    query.build()
-    return _default_verbalizer.verbalize(query)
 
 
 def verbalize_expression(expr) -> str:
@@ -43,4 +28,6 @@ def verbalize_expression(expr) -> str:
     :param expr: Any ``SymbolicExpression`` instance.
     :return: A natural-language description of the expression.
     """
+    if isinstance(expr, Query):
+        expr.build()
     return _default_verbalizer.verbalize(expr)

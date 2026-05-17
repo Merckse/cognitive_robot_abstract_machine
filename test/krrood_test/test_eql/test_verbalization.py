@@ -44,7 +44,6 @@ from krrood.entity_query_language.verbalization import (
     EQLVerbalizer,
     VerbalizationContext,
     verbalize_expression,
-    verbalize_query,
 )
 from ..dataset.department_and_employee import Department, Employee
 
@@ -75,29 +74,17 @@ from ..dataset.semantic_world_like_classes import (
 )
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
-
-def _v(expr) -> str:
-    """Shorthand: verbalize an expression with a fresh context."""
-    return verbalize_expression(expr)
-
-
-def _vq(query) -> str:
-    """Shorthand: verbalize a query."""
-    return verbalize_query(query)
-
-
 # ── Unit tests: leaves ─────────────────────────────────────────────────────────
 
 
 def test_verbalize_variable_first_mention():
     x = variable(int, [1, 2])
-    assert _v(x) == "an int"
+    assert verbalize_expression(x) == "an int"
 
 
 def test_verbalize_variable_article_consonant():
     x = variable(Body, [])
-    assert _v(x) == "a Body"
+    assert verbalize_expression(x) == "a Body"
 
 
 def test_verbalize_variable_coreference():
@@ -112,17 +99,17 @@ def test_verbalize_variable_coreference():
 
 def test_verbalize_literal_plain_value():
     lit = Literal(_value_=42)
-    assert "42" in _v(lit)
+    assert "42" in verbalize_expression(lit)
 
 
 def test_verbalize_literal_type_object():
     lit = Literal(_value_=Apple)
-    assert _v(lit) == "Apple"
+    assert verbalize_expression(lit) == "Apple"
 
 
 def test_verbalize_literal_tuple_of_types():
     lit = Literal(_value_=(Apple, Body))
-    text = _v(lit)
+    text = verbalize_expression(lit)
     assert "Apple" in text and "Body" in text
 
 
@@ -131,7 +118,7 @@ def test_verbalize_literal_tuple_of_types():
 
 def test_verbalize_attribute_single_hop_is_possessive():
     emp = variable(Employee, [])
-    text = _v(emp.salary)
+    text = verbalize_expression(emp.salary)
     assert "Employee" in text
     assert "salary" in text
     assert "'s" in text
@@ -140,14 +127,14 @@ def test_verbalize_attribute_single_hop_is_possessive():
 def test_verbalize_attribute_multi_hop_uses_of_form():
     # cabinet.container is one hop → possessive
     cab = variable(Cabinet, [])
-    one_hop = _v(cab.container)
+    one_hop = verbalize_expression(cab.container)
     assert "'s" in one_hop
 
     # Simulate a two-hop chain via attribute access
     emp = variable(Employee, [])
     dept = emp.department
     dept_name = dept.name  # two hops: Employee → department → name
-    text = _v(dept_name)
+    text = verbalize_expression(dept_name)
     assert "Employee" in text
     assert "department" in text
     assert "name" in text
@@ -161,7 +148,7 @@ def test_verbalize_index_access_merged_into_attribute():
         tasks: list
 
     r = variable(Robot, [])
-    text = _v(r.tasks[0])
+    text = verbalize_expression(r.tasks[0])
     assert "Robot" in text
     assert "tasks" in text
     assert "[0]" in text
@@ -173,7 +160,7 @@ def test_verbalize_bool_attribute_predicative():
         active: bool
 
     r = variable(_RobotActive, [])
-    text = _v(r.active)
+    text = verbalize_expression(r.active)
     assert "_RobotActive" in text or "Robot" in text
     assert "is" in text
     assert "active" in text
@@ -186,14 +173,14 @@ def test_verbalize_bool_attribute_negated():
         active: bool
 
     r = variable(_RobotActive, [])
-    text = _v(not_(r.active))
+    text = verbalize_expression(not_(r.active))
     assert "is not" in text
     assert "active" in text
 
 
 def test_verbalize_indexed_bool_attribute_predicative():
     r = variable(_Robot, [])
-    text = _v(r.tasks[0].completed)
+    text = verbalize_expression(r.tasks[0].completed)
     assert "first" in text
     assert "tasks" in text
     assert "is" in text
@@ -204,7 +191,7 @@ def test_verbalize_indexed_bool_attribute_predicative():
 
 def test_verbalize_indexed_bool_attribute_negated():
     r = variable(_Robot, [])
-    text = _v(not_(r.tasks[0].completed))
+    text = verbalize_expression(not_(r.tasks[0].completed))
     assert "first" in text
     assert "tasks" in text
     assert "is not" in text
@@ -213,7 +200,7 @@ def test_verbalize_indexed_bool_attribute_negated():
 
 def test_verbalize_second_index_ordinal():
     r = variable(_Robot, [])
-    text = _v(r.tasks[1].completed)
+    text = verbalize_expression(r.tasks[1].completed)
     assert "second" in text
     assert "tasks" in text
     assert "is" in text
@@ -222,7 +209,7 @@ def test_verbalize_second_index_ordinal():
 
 def test_verbalize_non_bool_indexed_attribute_possession():
     r = variable(_Robot, [])
-    text = _v(r.tasks[0].name)
+    text = verbalize_expression(r.tasks[0].name)
     # name is a str — should use possession/of form, NOT "is"
     assert "tasks" in text
     assert "name" in text
@@ -232,7 +219,7 @@ def test_verbalize_non_bool_indexed_attribute_possession():
 def test_verbalize_flat_variable_delegates_to_child():
     cab = variable(Cabinet, [])
     drawer_var = flat_variable(cab.drawers)
-    text = _v(drawer_var)
+    text = verbalize_expression(drawer_var)
     assert "Cabinet" in text
     assert "drawers" in text
 
@@ -251,20 +238,20 @@ def test_verbalize_flat_variable_delegates_to_child():
 def test_verbalize_comparator_operators(op, word):
     x = variable(int, [1])
     comp = getattr(x, op)(5)
-    text = _v(comp)
+    text = verbalize_expression(comp)
     assert word in text
 
 
 def test_verbalize_comparator_greater_than():
     x = variable(int, [])
-    text = _v(x > 10)
+    text = verbalize_expression(x > 10)
     assert "greater than" in text
     assert "10" in text
 
 
 def test_verbalize_comparator_at_least():
     x = variable(int, [])
-    text = _v(x >= 10)
+    text = verbalize_expression(x >= 10)
     assert "at least" in text
 
 
@@ -274,7 +261,7 @@ def test_verbalize_comparator_at_least():
 def test_verbalize_and_chain_flattening():
     x = variable(int, [])
     cond = and_(x > 1, x < 10, x != 5)
-    text = _v(cond)
+    text = verbalize_expression(cond)
     assert "greater than" in text
     assert "less than" in text
     assert "is not" in text
@@ -284,7 +271,7 @@ def test_verbalize_and_chain_flattening():
 def test_verbalize_and_stops_at_or():
     x = variable(int, [])
     cond = and_(x > 1, or_(x < 10, x == 5))
-    text = _v(cond)
+    text = verbalize_expression(cond)
     assert "greater than" in text
     assert "either" in text  # the inner OR produces "either ..."
 
@@ -292,7 +279,7 @@ def test_verbalize_and_stops_at_or():
 def test_verbalize_or_chain():
     x = variable(int, [])
     cond = or_(x > 10, x < 0)
-    text = _v(cond)
+    text = verbalize_expression(cond)
     assert "either" in text
     assert "greater than" in text
     assert "less than" in text
@@ -300,29 +287,29 @@ def test_verbalize_or_chain():
 
 def test_verbalize_not():
     x = variable(int, [])
-    text = _v(not_(x > 5))
+    text = verbalize_expression(not_(x > 5))
     assert "is not greater than" in text
 
 
 def test_verbalize_not_comparator_gt():
     x = variable(int, [])
-    assert "is not greater than" in _v(not_(x > 50))
-    assert "50" in _v(not_(x > 50))
+    assert "is not greater than" in verbalize_expression(not_(x > 50))
+    assert "50" in verbalize_expression(not_(x > 50))
 
 
 def test_verbalize_not_comparator_eq():
     x = variable(int, [])
-    assert "is not" in _v(not_(x == 5))
+    assert "is not" in verbalize_expression(not_(x == 5))
 
 
 def test_verbalize_not_comparator_le():
     x = variable(int, [])
-    assert "is not at most" in _v(not_(x <= 100))
+    assert "is not at most" in verbalize_expression(not_(x <= 100))
 
 
 def test_verbalize_not_complex_fallback():
     x = variable(int, [])
-    text = _v(not_(or_(x > 50, x < 10)))
+    text = verbalize_expression(not_(or_(x > 50, x < 10)))
     assert text.startswith("not (")
     assert "either" in text
 
@@ -332,26 +319,26 @@ def test_verbalize_not_complex_fallback():
 
 def test_verbalize_count():
     x = variable(int, [1, 2])
-    text = _v(eql.count(x))
+    text = verbalize_expression(eql.count(x))
     assert "count" in text and "ints" in text
 
 
 def test_verbalize_average():
     x = variable(int, [1, 2])
-    text = _v(eql.average(x))
+    text = verbalize_expression(eql.average(x))
     assert "average" in text and "ints" in text
 
 
 def test_verbalize_sum():
     x = variable(int, [1, 2])
-    text = _v(eql.sum(x))
+    text = verbalize_expression(eql.sum(x))
     assert "sum" in text and "ints" in text
 
 
 def test_verbalize_max_min():
     x = variable(int, [1, 2])
-    assert "maximum" in _v(eql.max(x)) and "ints" in _v(eql.max(x))
-    assert "minimum" in _v(eql.min(x)) and "ints" in _v(eql.min(x))
+    assert "maximum" in verbalize_expression(eql.max(x)) and "ints" in verbalize_expression(eql.max(x))
+    assert "minimum" in verbalize_expression(eql.min(x)) and "ints" in verbalize_expression(eql.min(x))
 
 
 # ── Integration: target test cases ────────────────────────────────────────────
@@ -364,7 +351,7 @@ def test_verbalize_presentation_example():
     ]
     r = variable(_Robot, robots)
     q = an(entity(r).where(r.battery > 50, not_(r.tasks[0].completed)))
-    text = _vq(q)
+    text = verbalize_expression(q)
 
     assert "Find" in text
     assert "Robot" in text
@@ -388,7 +375,7 @@ def test_verbalize_for_all(handles_and_containers_world):
             for_all(cabinets.container, the_cabinet_container == cabinets.container)
         )
     )
-    text = _vq(query)
+    text = verbalize_expression(query)
 
     assert "for all" in text
     assert "Cabinets'" in text
@@ -411,7 +398,7 @@ def test_verbalize_order_by_aggregation(handles_and_containers_world):
         .grouped_by(cabinet)
         .ordered_by(eql.count(drawer), descending=True)
     )
-    text = _vq(query)
+    text = verbalize_expression(query)
 
     assert "Cabinet" in text
     assert "grouped by" in text
@@ -430,7 +417,7 @@ def test_verbalize_complex_having(departments_and_employees_fixture):
     query = a(
         set_of(department, avg_salary).grouped_by(department).having(avg_salary > 30000)
     )
-    text = _vq(query)
+    text = verbalize_expression(query)
 
     assert "Employees'" in text
     assert "department" in text
@@ -478,7 +465,7 @@ def test_verbalize_condition_graph_example():
     val = variable_from([6])
     item_var = inference(Item)(value=val)
     query = entity(item_var).where(or_(and_(val > 5, val < 10), val == 11))
-    text = _vq(query)
+    text = verbalize_expression(query)
 
     assert "Item" in text
     assert "either" in text
@@ -496,7 +483,7 @@ def test_verbalize_has_type_with_exists():
             exists(fb, HasType(flat_variable(fb.fruits), Apple))
         )
     )
-    text = _vq(query)
+    text = verbalize_expression(query)
 
     assert "FruitBox" in text
     assert "exists" in text
@@ -510,7 +497,7 @@ def test_verbalize_has_type_with_exists():
 def test_verbalize_has_type_template():
     fruit = variable(Body, [])
     pred = HasType(fruit, Apple)
-    text = _v(pred)
+    text = verbalize_expression(pred)
     assert "Body" in text
     assert "is of type" in text
     assert "Apple" in text
@@ -519,7 +506,7 @@ def test_verbalize_has_type_template():
 def test_verbalize_has_type_tuple_of_types():
     fruit = variable(Body, [])
     pred = HasType(fruit, (Apple, Body))
-    text = _v(pred)
+    text = verbalize_expression(pred)
     assert "is of type" in text
     assert "Apple" in text
     assert "Body" in text
@@ -528,7 +515,7 @@ def test_verbalize_has_type_tuple_of_types():
 def test_verbalize_contains_type_template():
     fb = variable(FruitBox, [])
     pred = ContainsType(fb.fruits, Apple)
-    text = _v(pred)
+    text = verbalize_expression(pred)
     assert "contains an instance of" in text
     assert "Apple" in text
     assert "fruits" in text
@@ -546,7 +533,7 @@ def test_verbalize_custom_predicate_robotics_domain(handles_and_containers_world
     world = handles_and_containers_world
     handle = variable(Handle, world.bodies)
     pred = IsReachable(handle)
-    text = _v(pred)
+    text = verbalize_expression(pred)
     assert "Handle" in text
     assert "is reachable" in text
 
@@ -564,7 +551,7 @@ def test_verbalize_custom_predicate_employee_domain():
     emp = variable(Employee, [])
     dept = variable(Department, [])
     pred = WorksInDepartment(emp, dept)
-    text = _v(pred)
+    text = verbalize_expression(pred)
     assert "Employee" in text
     assert "works in" in text
     assert "Department" in text
@@ -581,7 +568,7 @@ def test_verbalize_predicate_no_template_fallback():
 
     emp = variable(Employee, [])
     pred = HasHighSalary(emp, 50000.0)
-    text = _v(pred)
+    text = verbalize_expression(pred)
     # 2-arg predicate without template → triple form "subject predicate-words object"
     assert "Employee" in text
     assert "has high salary" in text
@@ -598,7 +585,7 @@ def test_verbalize_predicate_no_template_no_args_fallback():
 
     emp = variable(Employee, [])
     pred = IsActive(emp)
-    text = _v(pred)
+    text = verbalize_expression(pred)
     assert "IsActive" in text
 
 
@@ -611,7 +598,7 @@ def test_aggregator_coreference_second_mention_is_the(departments_and_employees_
     emp = variable(Employee, domain=None)
     avg_salary = eql.average(emp.salary)
     query = a(set_of(avg_salary).grouped_by(emp.department).having(avg_salary > 30000))
-    text = _vq(query)
+    text = verbalize_expression(query)
 
     # First mention (in set_of): "average of …"
     # Second mention (in having): "the average of …"
@@ -626,7 +613,7 @@ def test_having_comparator_omits_is_copula(departments_and_employees_fixture):
     query = a(
         set_of(emp.department, avg_salary).grouped_by(emp.department).having(avg_salary > 30000)
     )
-    text = _vq(query)
+    text = verbalize_expression(query)
 
     having_part = text[text.index("having"):]
     assert "is greater than" not in having_part
@@ -638,7 +625,7 @@ def test_where_keeps_is_copula(departments_and_employees_fixture):
     _, _ = departments_and_employees_fixture
     emp = variable(Employee, domain=None)
     query = a(entity(emp).where(emp.salary > 30000))
-    text = _vq(query)
+    text = verbalize_expression(query)
 
     where_part = text[text.index("such that"):]
     assert "is greater than" in where_part
@@ -655,7 +642,7 @@ def test_having_compound_condition_all_compact(departments_and_employees_fixture
         .grouped_by(emp.department)
         .having(and_(avg_salary > 30000, count_emp >= 2))
     )
-    text = _vq(query)
+    text = verbalize_expression(query)
 
     having_part = text[text.index("having"):]
     assert "is greater than" not in having_part
@@ -674,7 +661,7 @@ def test_having_negated_comparator_compact(departments_and_employees_fixture):
         .grouped_by(emp.department)
         .having(not_(avg_salary > 30000))
     )
-    text = _vq(query)
+    text = verbalize_expression(query)
 
     having_part = text[text.index("having"):]
     assert "is not greater than" not in having_part
@@ -686,20 +673,20 @@ def test_having_negated_comparator_compact(departments_and_employees_fixture):
 
 def test_verbalize_comparator_eq_uses_is():
     x = variable(int, [])
-    text = _v(x == 5)
+    text = verbalize_expression(x == 5)
     assert "is 5" in text
     assert "equals" not in text
 
 
 def test_verbalize_comparator_ne_uses_is_not():
     x = variable(int, [])
-    text = _v(x != 5)
+    text = verbalize_expression(x != 5)
     assert "is not" in text
 
 
 def test_verbalize_not_comparator_ne():
     x = variable(int, [])
-    text = _v(not_(x != 5))
+    text = verbalize_expression(not_(x != 5))
     assert "is" in text
 
 
@@ -712,7 +699,7 @@ def test_verbalize_having_compact_eq_uses_equals():
         .grouped_by(emp.department)
         .having(count_emp == 2)
     )
-    text = _vq(query)
+    text = verbalize_expression(query)
     having_part = text[text.index("having"):]
     assert "equals" in having_part
     assert "is 2" not in having_part
@@ -846,7 +833,7 @@ def test_verbalize_2arg_predicate_triple_form():
     src = variable(Body, [])
     tgt = variable(Handle, [])
     pred = ConnectsTo(src, tgt)
-    text = _v(pred)
+    text = verbalize_expression(pred)
 
     assert "Body" in text
     assert "connects to" in text
@@ -867,7 +854,7 @@ def test_verbalize_2arg_predicate_camel_converted():
     a_var = variable(Body, [])
     b_var = variable(Container, [])
     pred = IsDirectlyAbove(a_var, b_var)
-    text = _v(pred)
+    text = verbalize_expression(pred)
 
     assert "is directly above" in text
     assert "Body" in text
@@ -885,7 +872,7 @@ def test_verbalize_1arg_predicate_generic_fallback():
 
     emp = variable(Employee, [])
     pred = IsActive(emp)
-    text = _v(pred)
+    text = verbalize_expression(pred)
     assert "IsActive" in text
     assert "Employee" in text
 
@@ -903,7 +890,7 @@ def test_two_same_type_variables_are_disambiguated():
     emp1 = variable(Employee, [])
     emp2 = variable(Employee, [])
     cond = emp1.salary > emp2.salary
-    text = _v(cond)
+    text = verbalize_expression(cond)
     assert "Employee 1" in text, f"Expected 'Employee 1' in: {text!r}"
     assert "Employee 2" in text, f"Expected 'Employee 2' in: {text!r}"
 
@@ -913,7 +900,7 @@ def test_two_same_type_variables_in_query_are_disambiguated():
     emp1 = variable(Employee, [])
     emp2 = variable(Employee, [])
     query = an(entity(emp1).where(emp1.salary > emp2.salary))
-    text = _vq(query)
+    text = verbalize_expression(query)
     assert "Employee 1" in text, f"Expected 'Employee 1' in: {text!r}"
     assert "Employee 2" in text, f"Expected 'Employee 2' in: {text!r}"
 
@@ -924,7 +911,7 @@ def test_three_same_type_variables_are_disambiguated():
     emp2 = variable(Employee, [])
     emp3 = variable(Employee, [])
     query = an(entity(emp1).where(and_(emp1.salary > emp2.salary, emp2.salary > emp3.salary)))
-    text = _vq(query)
+    text = verbalize_expression(query)
     assert "Employee 1" in text, f"Expected 'Employee 1' in: {text!r}"
     assert "Employee 2" in text, f"Expected 'Employee 2' in: {text!r}"
     assert "Employee 3" in text, f"Expected 'Employee 3' in: {text!r}"
@@ -933,7 +920,7 @@ def test_three_same_type_variables_are_disambiguated():
 def test_single_type_variable_not_numbered():
     """A single variable of a type must keep the plain 'an Employee' form — no numbering."""
     emp = variable(Employee, [])
-    text = _v(emp)
+    text = verbalize_expression(emp)
     assert "an Employee" in text, f"Expected 'an Employee' in: {text!r}"
     assert "Employee 1" not in text, f"Did not expect numbering in: {text!r}"
 

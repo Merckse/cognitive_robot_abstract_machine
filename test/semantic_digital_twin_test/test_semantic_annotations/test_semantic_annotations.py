@@ -1,17 +1,12 @@
 import logging
-import operator
 
 from numpy.ma.testutils import (
     assert_equal,
 )  # You could replace this with numpy's regular assert for better compatibility
 
-import semantic_digital_twin
-from krrood.entity_query_language.core.base_expressions import SymbolicExpression
-from krrood.entity_query_language.core.mapped_variable import MappedVariable, Attribute
 from krrood.entity_query_language.core.variable import InstantiatedVariable
 from krrood.entity_query_language.explanation import explain_inference
 from krrood.entity_query_language.factories import entity, variable, in_, inference, an
-from krrood.entity_query_language.operators.comparator import Comparator
 from semantic_digital_twin.adapters.world_entity_kwargs_tracker import (
     WorldEntityWithIDKwargsTracker,
 )
@@ -217,8 +212,8 @@ def test_explain_inferred_semantic_annotations(apartment_world_setup):
     assert explanation is not None
     assert isinstance(explanation.query_root, InstantiatedVariable)
     assert explanation.get_satisfied_conditions_as_string() == (
-                '(FixedConnection.parent == PrismaticConnection.child)'
-                '\nAND (FixedConnection.child == Handle.root)')
+        '(FixedConnection.parent == PrismaticConnection.child)'
+        '\nAND (FixedConnection.child == Handle.root)')
     visualize = False
     if visualize:
         explanation.condition_graph().visualize(filename="drawer_explanation.pdf")

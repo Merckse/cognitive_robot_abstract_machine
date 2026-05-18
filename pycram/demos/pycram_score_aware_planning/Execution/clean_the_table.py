@@ -1,29 +1,43 @@
 import math
 
-from demos.SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.actions.simulate_perception import (
-    simulate_perception,
-)
-from demos.pycram_score_aware_planning.Evaluate.CompositeEvaluator import (
-    CompositeEvaluator,
-)
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms
-
 from pycram.motion_executor import simulated_robot
+
 from pycram.plans.factories import sequential
-from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
 
 from demos.pycram_score_aware_planning.hsrb_testing import setup_world
-from pycram_score_aware_planning.Evaluate.ScoreEvaluator import RobotScorer
+from pycram_score_aware_planning.Evaluate.types import TaskMode
+from pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
+from pycram_score_aware_planning.helper_methods import generate_plan
 from semantic_digital_twin.robots.hsrb import HSRB
+from semantic_digital_twin.semantic_annotations.mixins import HasSupportingSurface
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Table
 from semantic_digital_twin.spatial_types import Point3, Quaternion
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world_description.geometry import Color
 
 """
+TASK comletion under:
+    CERTAINTY:
+    [] - object detection
+    [] - Task rescheduling
+    [] - post-iori changes
+    [] - Navigation time estimation
+    [] - sorting by tasks per room (I do have n tasks in room x, therefor I should go there)
+    
+    UNCERTAINTY:
+    [] - Task space based task completion (e.g. I know there will be milk in the kitchen, but will there be x in the kitchen)
+
+DOs:
+    [] - 
+    [] - navigation duration estimate for spm
+    [] - object closeness for probability
+
+EXECUTION:
+    
 PROBABILITY:
     [ ] - Recognize the task space, what tasks are certainly calculateable under given taks-spaces
     [ ] - What are base probabilities
@@ -40,15 +54,31 @@ world, dispatcher = setup_world()
 
 hsrb = HSRB.from_world(world)
 context = Context(world=world, robot=hsrb)
+task_mode = TaskMode.PP
+context.evaluate_conditions = False
 dispatcher.known_furniture = world.bodies
 
+# COOKING TABLE [X]
+# DINING_TABLE [X]
+# table [X]
+# lowerTable [X]
+# desk [X]
+# SHELF_1 [x]
+# SHELF_2 [X]
+explorable_locations = ["cooking_table", "dining_table", "table", "lowerTable", "desk", "shelf_1", "shelf_2"]
 generic_object_spawner(["Bowl"], [(1.325, 5.99, 0.81)], world, color=Color.GREEN())
-generic_object_spawner(["bowl3"], [(4, 2, 4)], world, color=Color.GREEN())
+generic_object_spawner(["Plate"], [(-0.15,0.88,0.85)], world, color=Color.ORANGE())
+generic_object_spawner(["Milk"], [(1.037,-2.31,0.645)], world, color=Color.RED())
+generic_object_spawner(["Fork"], [(4.45,4.44,1.62)], world, color=Color.BLUE())
+generic_object_spawner(["Knife"], [(4.65,4.84,1.62)], world, color=Color.GREEN())
+generic_object_spawner(["Apple"], [(4.135,1.865,0.54)], world, color=Color.GREEN())
+generic_object_spawner(["Cereal"], [(2.42,0.128,0.945)], world, color=Color.GREEN())
+generic_object_spawner(["Cup"], [(2.33475,5.215,0.83)], world, color=Color.GREEN())
 
 manipulator = hsrb.arm.manipulator
 plan_parkarm = sequential([ParkArmsAction(Arms.LEFT)], context=context)
-
-robot_scorer = RobotScorer()
+support = world.get_semantic_annotations_by_type(HasSupportingSurface)
+print(support)
 
 # tables = world.get_semantic_annotations_by_type(HasSupportingSurface)[0]
 target_table_body = world.get_semantic_annotations_by_type(Table)[3].bodies[0]
@@ -67,20 +97,25 @@ pre_table_pose = Pose(
     ),
     reference_frame=world.root,
 )
-print(pose_table.x, pose_table.y, pose_table.z)
+"""
+Generate a structurized plan - based on standard evaluation 
+"""
+task_structurizer = PlanStructurizer()
+task_plan = task_structurizer.structurize(task_mode=task_mode)
+plan = generate_plan(tasks=task_plan, context=context)
+print(plan)
+"""
+Generate the actual plan
+# """
 
-navigate_to_pre_table = sequential(
-    [NavigateAction(pre_table_pose, True)], context=context
-)
 with simulated_robot:
-    navigate_to_pre_table.perform()
-visible_bodies = simulate_perception(world, dispatcher, context, hsrb)
-perceived_objects = []
-
-if visible_bodies is None:
-    visible_bodies = []
-for visible_body in visible_bodies:
-    if visible_body not in dispatcher.known_furniture:
-        perceived_objects.append(visible_body)
-
-print(perceived_objects)
+    print(plan.plan)
+    plan.perform()
+#
+# if visible_bodies is None:
+#     visible_bodies = []
+# for visible_body in visible_bodies:
+#     if visible_body not in dispatcher.known_furniture:
+#         perceived_objects.append(visible_body)
+#
+# print(perceived_objects)

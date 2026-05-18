@@ -1,6 +1,7 @@
 # ---------------------------------------------------------------------------
 # values
 # ---------------------------------------------------------------------------
+import math
 from typing import Optional
 
 from demos.pycram_score_aware_planning.Evaluate.types import ActionType, ActionOutcome, TaskMode, TaskStep, Task
@@ -10,6 +11,8 @@ from semantic_digital_twin.spatial_types.spatial_types import Pose
 
 # Base points awarded on clean success
 BASE_POINTS: dict[tuple[ActionType, Optional[str]], int]= {
+    (ActionType.PARK, ""): 0,
+
     # PICKUP = 50pts
     # Pickup plate = 100pts
     (ActionType.PICKUP, "plate"): 50 + 100,
@@ -67,9 +70,11 @@ BASE_POINTS: dict[tuple[ActionType, Optional[str]], int]= {
 }
 
 BASE_TIME_ESTIMATE: dict[tuple[ActionType, Optional[str]], int]= {
+    (ActionType.PARK, ""): 0,
+
     # PICKUP = 50pts
     # Pickup plate = 100pts
-    (ActionType.PICKUP,   "plate"): 50,
+    (ActionType.PICKUP, "plate"): 50,
 
     # Objects of category CUTLERY = 2x+50
     (ActionType.PICKUP,   "knife"): 100,
@@ -121,6 +126,7 @@ BASE_TIME_ESTIMATE: dict[tuple[ActionType, Optional[str]], int]= {
 
 
 BASE_PROBABILITY : dict[tuple[ActionType, str], float] = {
+    (ActionType.PARK, "") : 1,
     # PICKUP = 50pts
     # Pickup plate = 100pts
     (ActionType.PICKUP, "plate"): 0.5,
@@ -211,10 +217,10 @@ MONITOR_ACTION_MAP: dict[str, ActionType] = {
 }
 
 # All possible tasks for PP
-TASKSTEP_PP: list[Task] = [Task(task_id= 0, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"),TaskStep(ActionType.PLACE, object_name="bowl")]),
-                           Task(task_id= 1, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="plate"),TaskStep(ActionType.PLACE, object_name="plate")]),
-                           Task(task_id= 2, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="milk"),TaskStep(ActionType.PLACE, object_name="milk")]),
-                           Task(task_id= 3, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PLACE, object_name="cereal")]),]
+TASKSTEP_PP: list[Task] = [Task(task_id= 0, task_steps=[TaskStep(ActionType.NAVIGATE, location="cooking_table"), TaskStep(ActionType.PICKUP, object_name="bowl"), TaskStep(ActionType.PARK), TaskStep(ActionType.PARK), TaskStep(ActionType.NAVIGATE, location="counterTop"), TaskStep(ActionType.PLACE, object_placement="counterTop"), TaskStep(ActionType.PARK)]),
+                           Task(task_id= 1, task_steps=[TaskStep(ActionType.NAVIGATE, location="desk"), TaskStep(ActionType.PICKUP, object_name="plate"),TaskStep(ActionType.PARK), TaskStep(ActionType.NAVIGATE, location="table"), TaskStep(ActionType.PLACE, object_placement="table"), TaskStep(ActionType.PARK)]),
+                           Task(task_id= 2, task_steps=[TaskStep(ActionType.NAVIGATE, location="counterTop"), TaskStep(ActionType.PICKUP, object_name="milk"),TaskStep(ActionType.PARK), TaskStep(ActionType.NAVIGATE, location="shelf_1"), TaskStep(ActionType.PLACE, object_placement="shelf_1"), TaskStep(ActionType.PARK)]),
+                           Task(task_id= 3, task_steps=[TaskStep(ActionType.NAVIGATE, location="shelf_1"), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PARK), TaskStep(ActionType.NAVIGATE, location="shelf_2"), TaskStep(ActionType.PLACE, object_placement="shelf_2"), TaskStep(ActionType.PARK)]),]
 
 # All possible tasks for GPSR
 TASKSTEP_GPSR: list[Task] = [Task(task_id= 0, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"),TaskStep(ActionType.PLACE, object_name="bowl")]),
@@ -232,4 +238,19 @@ TASKS : dict[TaskMode, list[Task]] = {
     TaskMode.PP: TASKSTEP_PP,
     TaskMode.GPSR: TASKSTEP_GPSR,
     TaskMode.FD: TASKSTEP_FD
+}
+
+def _quat(yaw: float) -> tuple[float, float, float, float]:
+    return (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))
+
+# name → (x, y, quaternion(x,y,z,w))
+NAVIGATION_POSES: dict[str, tuple[float, float, tuple[float, float, float, float]]] = {
+    "cooking_table": (1.3, 4.6, _quat( math.pi / 2)),   # south of table, facing north
+    "dining_table":  (2.6, 4.1, _quat( math.pi / 2)),   # south of table, facing north
+    "table":         (3.5, 1.8, _quat(-math.pi / 2)),   # north of table, facing south
+    "lowerTable":    (3.0, 2.2, _quat( 0.0)),           # west of table,  facing east
+    "desk":          (1.3, 1.2, _quat( math.pi)),        # east of desk,   facing west
+    "shelf_1":       (3.3,  4.7,  _quat( 0.0)),          # west of cupboard, facing east
+    "shelf_2":       (3.3,  4.7,  _quat( 0.0)),          # same approach as shelf_1
+    "counterTop":    (1.859, -0.852, _quat(-math.pi / 2)), # north of counter, facing south
 }

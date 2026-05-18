@@ -640,7 +640,7 @@ class PotLid(Lid):
 
 
 @dataclass(eq=False)
-class Plate(HasSupportingSurface):
+class Plate(HasSupportingSurface, IsPerceivable):
     """
     A plate.
     """
@@ -801,14 +801,14 @@ class Carrot(Vegetable):
 
 
 @dataclass(eq=False)
-class Apple(Fruit):
+class Apple(Fruit, IsPerceivable):
     """
     An apple.
     """
 
 
 @dataclass(eq=False)
-class Banana(Fruit):
+class Banana(Fruit, IsPerceivable):
     """
     A banana.
     """
@@ -1009,14 +1009,14 @@ class Cuttlery(HasRootBody): ...
 
 
 @dataclass(eq=False)
-class Fork(Cuttlery):
+class Fork(Cuttlery, IsPerceivable):
     """
     A fork.
     """
 
 
 @dataclass(eq=False)
-class Knife(Cuttlery):
+class Knife(Cuttlery, IsPerceivable):
     """
     A butter knife.
     """

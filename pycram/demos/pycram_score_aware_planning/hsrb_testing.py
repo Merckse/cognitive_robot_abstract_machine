@@ -35,6 +35,7 @@ except ImportError:
 
 
 def setup_world() -> World:
+    rclpy.init()
     logger.setLevel(logging.DEBUG)
 
     hsrb_sem_world = URDFParser.from_file(

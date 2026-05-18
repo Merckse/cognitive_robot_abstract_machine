@@ -20,6 +20,7 @@ class ActionType(str, Enum):
     POUR = "pour"
     PUSH = "push"
     DETECT = "detect"
+    PARK = "park"
     CUSTOM = "custom"
 
 
@@ -42,12 +43,20 @@ class TaskMode(str, Enum):
 class TaskStep:
     # task_step_id: int = field(default_factory=lambda: next(_taskstep_id_counter), init=False)
     action_type: ActionType
+    location : Optional[str] = ""
     object_name: Optional[str] = ""
-    object_pickup: Optional["str"] = None
-    object_placement: Optional["str"] = None
+    object_pickup: Optional["str"] = None # Possible: cooking_table, shelf, lowerTable, table, desk, dining_table, shelf_1, shelf_2
+    object_placement: Optional["str"] = None # Possible:a
 
 
 @dataclass
 class Task:
     task_steps: list[TaskStep]
     task_id: int
+
+@dataclass
+class TaskEstimation:
+    task_id : int
+    task_score: int
+    task_score_per_seconds : float
+    task_probability : float

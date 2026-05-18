@@ -1,19 +1,10 @@
 from __future__ import annotations
 
-import ast
 import datetime as _dt
-import inspect
 import operator
 import re
 from dataclasses import dataclass
-from textwrap import dedent
 from typing import Optional
-
-from krrood.entity_query_language.exceptions import WrongPropertyReturnStatementImplementation
-from krrood.entity_query_language.verbalization.utils import inflect_engine, _camel_to_words, _ordinal, _ensure_plural, \
-    _apply_binding_aliases
-from krrood.patterns.code_parsing_utils import get_accessed_attribute_name_in_return_statement_of_property
-from krrood.singleton import SingletonMeta
 
 from krrood.entity_query_language.core.base_expressions import SymbolicExpression
 from krrood.entity_query_language.core.mapped_variable import (
@@ -56,6 +47,10 @@ from krrood.entity_query_language.verbalization.rule_analysis import (
     RuleAnalyzer,
     RuleStructure,
 )
+from krrood.entity_query_language.verbalization.utils import inflect_engine, _camel_to_words, _ordinal, _ensure_plural, \
+    _apply_binding_aliases
+from krrood.patterns.code_parsing_utils import get_accessed_attribute_name_in_return_statement_of_property
+from krrood.singleton import SingletonMeta
 
 _OP_WORDS = {
     operator.eq: "is",
@@ -155,9 +150,9 @@ class EQLVerbalizer(metaclass=SingletonMeta):
     # ── Dispatcher ─────────────────────────────────────────────────────────────
 
     def verbalize(
-        self,
-        expr: SymbolicExpression,
-        ctx: Optional[VerbalizationContext] = None,
+            self,
+            expr: SymbolicExpression,
+            ctx: Optional[VerbalizationContext] = None,
     ) -> str:
         if ctx is None:
             ctx = VerbalizationContext.from_expression(expr)
@@ -316,7 +311,7 @@ class EQLVerbalizer(metaclass=SingletonMeta):
     # ── Instantiated (predicates / inference variables) ────────────────────────
 
     def _v_InstantiatedVariable_(
-        self, expr: InstantiatedVariable, ctx: VerbalizationContext
+            self, expr: InstantiatedVariable, ctx: VerbalizationContext
     ) -> str:
         """
         Verbalize an InstantiatedVariable (Predicate, or an Inferred Class) using the given template.
@@ -331,7 +326,7 @@ class EQLVerbalizer(metaclass=SingletonMeta):
         return self._verbalize_instantiated_natural_(expr, ctx)
 
     def _verbalize_template_(
-        self, expr: InstantiatedVariable, ctx: VerbalizationContext, template: str
+            self, expr: InstantiatedVariable, ctx: VerbalizationContext, template: str
     ) -> str:
         """
         Verbalize an expression using the given template.
@@ -341,11 +336,6 @@ class EQLVerbalizer(metaclass=SingletonMeta):
         :param template: The template to be verbalized.
         :return: The verbalized expression as a string.
         """
-        if issubclass(expr._type_, Triple):
-            subject_name = get_accessed_attribute_name_in_return_statement_of_property(expr._type_.subject, expr._type_)
-            object_name = get_accessed_attribute_name_in_return_statement_of_property(expr._type_.object, expr._type_)
-            template = template.replace("{subject}", f"{subject_name}")
-            template = template.replace("{object}", f"{object_name}")
         kwargs = {
             name: self.verbalize(child, ctx)
             for name, child in expr._child_vars_.items()
@@ -353,7 +343,7 @@ class EQLVerbalizer(metaclass=SingletonMeta):
         return template.format(**kwargs)
 
     def _verbalize_predicate_no_template_(
-        self, expr: InstantiatedVariable, ctx: VerbalizationContext
+            self, expr: InstantiatedVariable, ctx: VerbalizationContext
     ) -> str:
         type_name = getattr(expr._type_, "__name__", str(expr._type_))
         if len(expr._child_vars_) == 2:
@@ -372,7 +362,7 @@ class EQLVerbalizer(metaclass=SingletonMeta):
         return f"{_article(type_name)} {type_name}"
 
     def _verbalize_instantiated_natural_(
-        self, expr: InstantiatedVariable, ctx: VerbalizationContext
+            self, expr: InstantiatedVariable, ctx: VerbalizationContext
     ) -> str:
         type_name = getattr(expr._type_, "__name__", str(expr._type_))
 
@@ -629,8 +619,8 @@ class EQLVerbalizer(metaclass=SingletonMeta):
         return intro
 
     def _whose_clauses_from_conditions_(
-        self, conditions, root, type_name: str,
-        agg: AggregationStatus, all_antecedents, ctx: VerbalizationContext
+            self, conditions, root, type_name: str,
+            agg: AggregationStatus, all_antecedents, ctx: VerbalizationContext
     ) -> str:
         """Build comma-joined 'whose X is Y' phrases from a list of conditions."""
         parts: list[str] = []
@@ -644,7 +634,7 @@ class EQLVerbalizer(metaclass=SingletonMeta):
         return ", ".join(parts[:-1]) + f", and {parts[-1]}"
 
     def _try_whose_from_condition_(
-        self, cond, antecedents, ctx: VerbalizationContext
+            self, cond, antecedents, ctx: VerbalizationContext
     ) -> Optional[str]:
         """
         If *cond* is ``left == right`` where ``left`` is an Attribute of a known
@@ -771,8 +761,8 @@ class EQLVerbalizer(metaclass=SingletonMeta):
             return self._verbalize_rule_(expr, ctx)
 
         is_the = (
-            expr._quantifier_builder_ is not None
-            and expr._quantifier_builder_.type is The
+                expr._quantifier_builder_ is not None
+                and expr._quantifier_builder_.type is The
         )
         var = expr.selected_variable
 
@@ -806,8 +796,8 @@ class EQLVerbalizer(metaclass=SingletonMeta):
 
         expr.build()
         is_the = (
-            expr._quantifier_builder_ is not None
-            and expr._quantifier_builder_.type is The
+                expr._quantifier_builder_ is not None
+                and expr._quantifier_builder_.type is The
         )
         var = expr.selected_variable
         selected_type = var._type_.__name__ if var and getattr(var, "_type_", None) else "entity"
@@ -962,7 +952,7 @@ class EQLVerbalizer(metaclass=SingletonMeta):
         return ids
 
     def _aggregated_noun_phrases_(
-        self, query_expr, group_key_root_ids: set, ctx: VerbalizationContext
+            self, query_expr, group_key_root_ids: set, ctx: VerbalizationContext
     ) -> list[str]:
         """
         Return plural noun phrases for variables in the selection that are not group keys.

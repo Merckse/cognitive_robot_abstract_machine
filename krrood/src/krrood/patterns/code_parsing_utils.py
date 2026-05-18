@@ -1,5 +1,6 @@
 import ast
 import inspect
+from functools import lru_cache
 from textwrap import dedent
 from typing import Optional
 
@@ -9,6 +10,7 @@ from krrood.entity_query_language.exceptions import WrongPropertyReturnStatement
     NoReturnStatementInProperty
 
 
+@lru_cache
 def get_accessed_attribute_name_in_return_statement_of_property(property_object: property, clazz: Optional[Type] = None) -> str:
     """
     :param property_object: The property to extract the accessed attribute name from.

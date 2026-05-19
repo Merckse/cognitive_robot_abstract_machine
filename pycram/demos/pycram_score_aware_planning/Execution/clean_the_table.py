@@ -8,8 +8,8 @@ from pycram.motion_executor import simulated_robot
 from pycram.plans.factories import sequential
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
 
-from demos.pycram_score_aware_planning.hsrb_testing import setup_world
-from pycram_score_aware_planning.Evaluate.types import TaskMode
+from pycram_score_aware_planning.common.hsrb_testing import setup_world
+from pycram_score_aware_planning.common.types import TaskMode
 from pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
 from pycram_score_aware_planning.helper_methods import generate_plan
 from semantic_digital_twin.robots.hsrb import HSRB
@@ -21,6 +21,8 @@ from semantic_digital_twin.world_description.geometry import Color
 
 """
 TASK comletion under:
+- Query where object is and go to closest location
+
     CERTAINTY:
     [] - object detection
     [] - Task rescheduling
@@ -65,15 +67,22 @@ dispatcher.known_furniture = world.bodies
 # desk [X]
 # SHELF_1 [x]
 # SHELF_2 [X]
-explorable_locations = ["cooking_table", "dining_table", "table", "lowerTable", "desk", "shelf_1", "shelf_2"]
+explorable_locations = ["cooking_table","counterTop", "dining_table", "table", "lowerTable", "desk", "shelf_1", "shelf_2"]
+kitchen_tables = ["table", "counterTop"]
+livingroom_tables = ["lowerTable", "dining_table", "shelf_1", "shelf_2"]
+office_tables = ["desk"]
+some_room = ["cooking_table"]
+
 generic_object_spawner(["Bowl"], [(1.325, 5.99, 0.81)], world, color=Color.GREEN())
 generic_object_spawner(["Plate"], [(-0.15,0.88,0.85)], world, color=Color.ORANGE())
 generic_object_spawner(["Milk"], [(1.037,-2.31,0.645)], world, color=Color.RED())
-generic_object_spawner(["Fork"], [(4.45,4.44,1.62)], world, color=Color.BLUE())
+# generic_object_spawner(["Fork"], [(4.45,4.44,1.62)], world, color=Color.BLUE())
 generic_object_spawner(["Knife"], [(4.65,4.84,1.62)], world, color=Color.GREEN())
 generic_object_spawner(["Apple"], [(4.135,1.865,0.54)], world, color=Color.GREEN())
 generic_object_spawner(["Cereal"], [(2.42,0.128,0.945)], world, color=Color.GREEN())
 generic_object_spawner(["Cup"], [(2.33475,5.215,0.83)], world, color=Color.GREEN())
+
+
 
 manipulator = hsrb.arm.manipulator
 plan_parkarm = sequential([ParkArmsAction(Arms.LEFT)], context=context)
@@ -107,6 +116,8 @@ print(plan)
 """
 Generate the actual plan
 # """
+
+
 
 with simulated_robot:
     print(plan.plan)

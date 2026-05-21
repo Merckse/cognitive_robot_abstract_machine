@@ -1,10 +1,14 @@
+import gc
 import operator
 from dataclasses import dataclass
+
+import pytest
 
 from krrood.entity_query_language.core.base_expressions import SymbolicExpression
 from krrood.entity_query_language.core.mapped_variable import Attribute
 from krrood.entity_query_language.evaluation import is_condition_participant
-from krrood.entity_query_language.explanation import (
+from krrood.entity_query_language._stack import CallStack
+from krrood.entity_query_language.explanation.explanation import (
     explain_inference,
     register_inference, monitored,
 )
@@ -19,16 +23,17 @@ from krrood.entity_query_language.factories import (
 from krrood.entity_query_language.operators.comparator import Comparator
 from krrood.entity_query_language.query.query import Query
 from krrood.entity_query_language.query_graph import QueryGraph
+from krrood.symbol_graph.symbol_graph import Symbol
 from ..dataset.semantic_world_like_classes import Handle, PrismaticConnection, FixedConnection, Drawer
 
 
-@dataclass(frozen=True)
-class Person:
+@dataclass(unsafe_hash=True)
+class Person(Symbol):
     name: str
 
 
-@dataclass(frozen=True)
-class Item:
+@dataclass(unsafe_hash=True)
+class Item(Symbol):
     value: int
 
 
@@ -163,11 +168,11 @@ def test_query_stack_tracking():
     query = entity(person_inf(name="Eve"))
 
     assert hasattr(query, "_creation_stack")
-    assert isinstance(query._creation_stack, list)
+    assert isinstance(query._creation_stack, CallStack)
     # The stack should contain this test function
     filenames = [f.filename for f in query._creation_stack]
     assert any("test_explanation.py" in f for f in filenames)
-    functions = [f.function for f in query._creation_stack]
+    functions = [f.function_name for f in query._creation_stack]
     assert "test_query_stack_tracking" in functions
 
 
@@ -206,7 +211,7 @@ def test_variable_stack_tracking():
     v = variable_from([1, 2, 3])
 
     assert monitored.is_monitored(v)
-    assert isinstance(monitored.get_stack(v), list)
+    assert isinstance(monitored.get_stack(v), CallStack)
     filenames = [f.filename for f in monitored.get_stack(v)]
     assert any("test_explanation.py" in f for f in filenames)
 
@@ -563,13 +568,13 @@ def test_condition_graph_pipeline_multiple_results():
         assert comp_nodes[0].is_satisfied is True
 
 
-def test_condition_graph_pipeline_non_weakly_referenceable():
-    """explain_inference returns None for non-weakly-referenceable values (e.g. int)."""
+def test_condition_graph_pipeline_non_symbol():
+    """explain_inference returns None for non-Symbol values (e.g. plain int)."""
     val = variable_from([6])
     query = entity(val).where(val > 5)
     results = list(query.evaluate())
     assert len(results) == 1
-    # Plain integers cannot be weak-referenced, so register_inference silently fails
+    # Plain integers are not Symbol instances, so register_inference silently skips them
     assert explain_inference(results[0]) is None
 
 
@@ -706,16 +711,8 @@ def test_explanation_condition_graph_and_visualize():
     assert ax is not None
 
 
-def test_nested_rule_explanation(doors_and_drawers_world):
-    world = doors_and_drawers_world
-    handle = variable(Handle, world.bodies)
-    prismatic_connection = variable(PrismaticConnection, world.connections)
-    fixed_connection = match_variable(FixedConnection, world.connections)(
-        parent=prismatic_connection.child, child=handle
-    )
-    found_drawers = inference(Drawer)(
-        container=fixed_connection.parent, handle=fixed_connection.child
-    ).tolist()
+def test_nested_rule_explanation(drawer_rule):
+    found_drawers = drawer_rule.tolist()
     explanation = explain_inference(found_drawers[0])
     assert explanation is not None
     assert isinstance(explanation.query_root, SymbolicExpression)
@@ -739,3 +736,71 @@ def test_nested_rule_explanation(doors_and_drawers_world):
         '(FixedConnection.parent == PrismaticConnection.child)'
         '\nAND (FixedConnection.child == Handle)')
     explanation.condition_graph().visualize(filename="drawer_explanation.pdf")
+
+
+def test_nested_rule_meta_queries(drawer_rule):
+    explanation = explain_inference(drawer_rule)
+
+
+def test_explanation_lifecycle_tied_to_instance():
+    """
+    InferenceExplanation must not keep the inferred instance (or its World) alive
+    after all external references are released.
+
+    The world is created directly inside a helper closure so that no pytest fixture
+    machinery holds an external strong reference — pytest keeps fixture return-values
+    alive for the duration of the test function even after an explicit ``del``.
+    """
+    import weakref
+    from ..test_eql.conf.world.doors_and_drawers import DoorsAndDrawersWorld
+
+    world_ref: weakref.ref
+    drawer_ref: weakref.ref
+
+    def _run():
+        nonlocal world_ref, drawer_ref
+        world = DoorsAndDrawersWorld().create()
+
+        handle = variable(Handle, world.bodies)
+        prismatic_connection = variable(PrismaticConnection, world.connections)
+        fixed_connection = match_variable(FixedConnection, world.connections)(
+            parent=prismatic_connection.child, child=handle
+        )
+        drawers = inference(Drawer)(
+            container=fixed_connection.parent, handle=fixed_connection.child
+        ).tolist()
+        assert drawers, "Need at least one inferred Drawer for this test"
+
+        drawer = drawers[0]
+        explanation = explain_inference(drawer)
+        assert explanation is not None, "Drawer should have an inference explanation"
+
+        world_ref = weakref.ref(world)
+        drawer_ref = weakref.ref(drawer)
+
+    _run()
+    gc.collect()
+
+    # All strong references inside _run() are now gone.  InferenceExplanation is
+    # owned by the drawer (not a global registry), so the entire cluster — drawer,
+    # explanation, world entities — must be collectable.
+    assert world_ref() is None, (
+        "World should be garbage-collected after all local references are released. "
+        "If this fails, something outside the World cluster is keeping it alive — "
+        "likely an InferenceExplanation or a class-level cache holding a strong "
+        "reference to a WorldEntity."
+    )
+    assert drawer_ref() is None, "Drawer should have been garbage-collected together with its World."
+
+
+@pytest.fixture
+def drawer_rule(doors_and_drawers_world):
+    world = doors_and_drawers_world
+    handle = variable(Handle, world.bodies)
+    prismatic_connection = variable(PrismaticConnection, world.connections)
+    fixed_connection = match_variable(FixedConnection, world.connections)(
+        parent=prismatic_connection.child, child=handle
+    )
+    return inference(Drawer)(
+        container=fixed_connection.parent, handle=fixed_connection.child
+    )

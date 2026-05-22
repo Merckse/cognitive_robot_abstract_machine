@@ -19,6 +19,7 @@ from dataclasses import dataclass
 import krrood.entity_query_language.factories as eql
 from krrood.entity_query_language.factories import (
     an,
+    and_,
     entity,
     variable,
     inference,
@@ -160,6 +161,50 @@ def test_literal_carries_literal_role():
     lit = Literal(_value_=42)
     frag = EQLVerbalizer().build(lit)
     assert SemanticRole.LITERAL in _collect_roles(frag)
+
+
+def test_where_clause_condition_preserves_semantic_roles():
+    """Regression: where-clause condition must keep RoleFragment roles in the fragment tree.
+
+    _verbalize_query_body_ was calling delegate.verbalize() (which flattens to plain string)
+    then re-wrapping the result in _word() — stripping all OPERATOR/ATTRIBUTE/LITERAL roles
+    from the condition.  Only 'Find', the selected variable, and 'such that' were colored;
+    the rest of the sentence was one uncolored WordFragment.
+
+    Reproduces: VerbalizationPipeline.ansi().verbalize(query) output where only
+    'Find', 'Robot', and 'such that' appear in color.
+    """
+
+    @dataclass
+    class _Mission:
+        priority: int
+        assigned_to: _Robot
+
+    robot = variable(_Robot, [])
+    mission = variable(_Mission, [])
+    q = an(entity(robot).where(and_(
+        mission.assigned_to == robot,
+        mission.priority > 2,
+    )))
+    frag = EQLVerbalizer().build(q)
+
+    op_texts = _collect_role_texts(frag, SemanticRole.OPERATOR)
+    assert any("greater than" in t for t in op_texts), (
+        f"OPERATOR role ('greater than') missing from where clause — "
+        f"all OPERATOR texts found: {op_texts}"
+    )
+
+    attr_texts = _collect_role_texts(frag, SemanticRole.ATTRIBUTE)
+    assert any("priority" in t for t in attr_texts), (
+        f"ATTRIBUTE role ('priority') missing from where clause — "
+        f"all ATTRIBUTE texts found: {attr_texts}"
+    )
+
+    lit_texts = _collect_role_texts(frag, SemanticRole.LITERAL)
+    assert any("2" in t for t in lit_texts), (
+        f"LITERAL role ('2') missing from where clause — "
+        f"all LITERAL texts found: {lit_texts}"
+    )
 
 
 def test_query_is_block_fragment():

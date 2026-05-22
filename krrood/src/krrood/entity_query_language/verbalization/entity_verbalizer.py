@@ -159,8 +159,10 @@ class EntityVerbalizer:
         clauses: list[VerbFragment] = []
 
         if where_expr is not None:
-            where_text = _apply_binding_aliases(self._d.verbalize(where_expr.condition, ctx), aliases)
-            clauses.append(_phrase(Keywords.SUCH_THAT.as_fragment(), _word(where_text)))
+            clauses.append(_phrase(
+                Keywords.SUCH_THAT.as_fragment(),
+                self._build_clause_frag_(where_expr.condition, ctx, aliases),
+            ))
 
         if grouped_expr is not None and grouped_expr.variables_to_group_by:
             group_key_root_ids = self._root_var_ids_(grouped_expr.variables_to_group_by)
@@ -185,20 +187,34 @@ class EntityVerbalizer:
 
         if having_expr is not None:
             ctx.compact_predicates = True
-            having_text = _apply_binding_aliases(self._d.verbalize(having_expr.condition, ctx), aliases)
+            having_frag = self._build_clause_frag_(having_expr.condition, ctx, aliases)
             ctx.compact_predicates = False
-            clauses.append(_phrase(Keywords.HAVING.as_fragment(), _word(having_text)))
+            clauses.append(_phrase(Keywords.HAVING.as_fragment(), having_frag))
 
         ob = expr._ordered_by_builder_
         if ob is not None:
             direction = SortDirections.DESCENDING.text if ob.descending else SortDirections.ASCENDING.text
-            ordered_text = _apply_binding_aliases(self._d.verbalize(ob.variable, ctx), aliases)
+            ordered_frag = self._build_clause_frag_(ob.variable, ctx, aliases)
             clauses.append(_phrase(
                 Keywords.ORDERED_BY.as_fragment(),
-                _word(f"{ordered_text} ({direction})"),
+                ordered_frag,
+                _word(f"({direction})"),
             ))
 
         return BlockFragment(header=find_header, items=clauses)
+
+    def _build_clause_frag_(self, expr, ctx: VerbalizationContext, aliases: dict) -> VerbFragment:
+        """Build a clause condition as a VerbFragment, preserving all semantic roles.
+
+        When *aliases* is empty (all plain Entity queries) the fragment is returned
+        as-is, keeping full role/colour information.  When aliases are present
+        (InstantiatedVariable selection path) we fall back to string-level
+        substitution — a known limitation tracked for Phase 2.
+        """
+        frag = self._d.build(expr, ctx)
+        if not aliases:
+            return frag
+        return _word(_apply_binding_aliases(_str(frag), aliases))
 
     @staticmethod
     def _root_var_ids_(exprs) -> set:

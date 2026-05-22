@@ -119,39 +119,38 @@ Verbalization really shines on rule trees. The if/then structure is rendered cle
 
 ```{code-cell} ipython3
 from krrood.entity_query_language.factories import (
-    variable, entity, an, deduced_variable, add, inference, refinement, Symbol
+    variable, entity, an, deduced_variable, add, inference, refinement, Symbol, not_
 )
+@dataclass
+class Bird:
+    name: str
 
 @dataclass
-class Connection:
-    parent: Robot
-    child: Robot
-    is_fixed: bool
+class LoveBirds:
+    bird_1: Bird
+    bird_2: Bird
+    strong_love: bool
 
 @dataclass
-class View(Symbol):
-    root: Robot
+class BirdView(Symbol):
+    bird: Bird
 
 @dataclass
-class FixedView(View): pass
+class StrongLoveBird(BirdView): pass
 
 @dataclass
-class RevoluteView(View): pass
+class WeakLoveBird(BirdView): pass
 
-connections = [
-    Connection(robots[0], robots[1], True),
-    Connection(robots[1], robots[2], False),
+birds = [Bird('tweety'), Bird('snappy'), Bird('sleepy')]
+bird = birds[0]
+love_birds = [
+    LoveBirds(birds[0], birds[1], True),
+    LoveBirds(birds[1], birds[2], False),
 ]
 
-conn = variable(Connection, domain=connections)
-view = deduced_variable(View)
-
-rule_query = an(entity(view).where(conn.parent == r))
-
-with rule_query:
-    add(view, inference(FixedView)(root=r))
-    with refinement(conn.is_fixed == False):
-        add(view, inference(RevoluteView)(root=r))
+love_birds = variable(LoveBirds, domain=love_birds)
+bird_view = deduced_variable(BirdView)
+rule_query = an(entity(inference(StrongLoveBird)(bird=love_birds.bird_1)).where(love_birds.strong_love))
 
 HTML(VerbalizationPipeline.html(hierarchical=True).verbalize(rule_query))
 ```

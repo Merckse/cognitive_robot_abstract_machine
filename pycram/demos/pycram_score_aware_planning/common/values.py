@@ -2,18 +2,31 @@
 # values
 # ---------------------------------------------------------------------------
 import math
-from typing import Optional
 
-from demos.pycram_score_aware_planning.Evaluate.types import ActionType, ActionOutcome, TaskMode, TaskStep, Task
+from pycram_score_aware_planning.common.types import ActionType, ActionOutcome, TaskMode, TaskStep, Task
 from pycram.datastructures.enums import TaskStatus
 from semantic_digital_twin.semantic_annotations.semantic_annotations import *
-from semantic_digital_twin.spatial_types.spatial_types import Pose
+from pycram_score_aware_planning.helper_methods import _quat
 
+"""
+Currently implements:
+- ParkArms
+- Pick up/place for:
+    - Plate
+    - knife
+    - Spoon
+    - bowl
+    - milk
+    - cereal
+    -
+- Opening/close of:
+    - dishwasher
+"""
 # Base points awarded on clean success
 BASE_POINTS: dict[tuple[ActionType, Optional[str]], int]= {
     (ActionType.PARK, ""): 0,
 
-    # PICKUP = 50pts
+    # ------------------ PICKUP = 50pts
     # Pickup plate = 100pts
     (ActionType.PICKUP, "plate"): 50 + 100,
 
@@ -28,42 +41,41 @@ BASE_POINTS: dict[tuple[ActionType, Optional[str]], int]= {
     (ActionType.PICKUP,   "cereal"): 15,
     (ActionType.PICKUP,   ""): 50 + 0,
 
-    # Placing objects = 40pts
+    # ------------------ Placing objects = 40pts
     # Place in dishwasher = 3x70pts
     (ActionType.PLACE,    "dishwasher"): 40 + 70,
 
     # Place next to similar object = 2x20pts
     (ActionType.PLACE,    "PLACEHOLDER"): 40 + 20,
 
+    # Objects of category CUTLERY = 2x+50
+    (ActionType.PLACE, "knife"): 50 + 50,
+    (ActionType.PLACE, "fork"): 50 + 50,
+    (ActionType.PLACE, "spoon"): 50 + 50,
+
     # Common object place = 2x-20pts
     (ActionType.PLACE,    "bowl"): 40 - 20,
     (ActionType.PLACE,    "milk"): 40 - 20,
     (ActionType.PLACE,   "cereal"): 15,
     # random value
-    (ActionType.PICKUP, "plate"): 40,
-    (ActionType.PLACE, ""): 40 + 0,
+    (ActionType.PLACE, "plate"): 40,
     (ActionType.PLACE, ""): 40 + 0,
 
-    # Open dishwasher = 2x200pts
+    #  ------------------ Open/Close dishwasher = 2x200pts
     (ActionType.OPEN,     "dishwasher"): 200,
-    (ActionType.OPEN,     ""): 5,
+    (ActionType.OPEN,     ""): 0,
 
     (ActionType.CLOSE,    "dishwasher"): 200,
-    (ActionType.CLOSE,    ""): 5,
+    (ActionType.CLOSE,    ""): 0,
 
-    # navigate to table = 15pts
+    #  ------------------ navigate to table = 15pts
     (ActionType.NAVIGATE, "table"): 0,
     (ActionType.NAVIGATE, ""): 0,
 
+    #  ------------------ Handover
     (ActionType.HAND_OVER, ""): 15,
 
-    # Pour milk / cereal = 200pts
-    (ActionType.POUR,     "cereal"): 200,
-    (ActionType.POUR,     "milk"): 200,
-    (ActionType.POUR,     ""): 10,
-
-    (ActionType.PUSH,     ""): 0,
-
+    #  ------------------ Detect
     # TODO: add points for detecting objects
     (ActionType.DETECT,   ""): 5,
     (ActionType.CUSTOM,   ""): 0,
@@ -72,48 +84,47 @@ BASE_POINTS: dict[tuple[ActionType, Optional[str]], int]= {
 BASE_TIME_ESTIMATE: dict[tuple[ActionType, Optional[str]], int]= {
     (ActionType.PARK, ""): 0,
 
-    # PICKUP = 50pts
-    # Pickup plate = 100pts
+    # ------------------ PICKUP ~30s
+    # Pickup plate is slower (larger, heavier) = ~50s
     (ActionType.PICKUP, "plate"): 50,
 
-    # Objects of category CUTLERY = 2x+50
+    # Objects of category CUTLERY are harder to locate/grasp = ~100s
     (ActionType.PICKUP,   "knife"): 100,
     (ActionType.PICKUP,   "fork"): 100,
     (ActionType.PICKUP,   "spoon"): 100,
 
-    # Common object pickup = 2x-20pts
+    # Common object pickup
     (ActionType.PICKUP,   "bowl"): 30,
     (ActionType.PICKUP,   "milk"): 15,
     (ActionType.PICKUP,   "cereal"): 15,
     (ActionType.PICKUP,   ""): 30,
 
-    # Placing objects = 40pts
-    # Place in dishwasher = 3x70pts
+    # ------------------ Placing objects ~40s
+    # Place in dishwasher requires precision (close proximity) = ~20s
     (ActionType.PLACE,    "dishwasher"): 20,
 
-    # Common object place = 2x-20pts
+    # Common object placement
     (ActionType.PLACE,    "bowl"): 40 - 20,
     (ActionType.PLACE,    "milk"): 40 - 20,
     (ActionType.PLACE,   "cereal"): 15,
-    # random value
     (ActionType.PLACE, "plate"): 40,
-
     (ActionType.PLACE,    ""): 40 + 0,
 
-    # Open dishwasher = 2x200pts
+    #  ------------------ Open/Close dishwasher ~50-60s
     (ActionType.OPEN,     "dishwasher"): 60,
     (ActionType.OPEN,     ""): 50,
 
     (ActionType.CLOSE,    "dishwasher"): 50,
     (ActionType.CLOSE,    ""): 50,
 
-    # navigate to table = 15pts
+    #  ------------------ Navigate ~20-30s
     (ActionType.NAVIGATE, "table"): 20,
     (ActionType.NAVIGATE, ""): 30,
 
+    #  ------------------ Handover
     (ActionType.HAND_OVER, ""): 15,
 
-    # Pour milk / cereal = 200pts
+    #  ------------------ Pour ~200s
     (ActionType.POUR,     "cereal"): 200,
     (ActionType.POUR,     "milk"): 200,
     (ActionType.POUR,     ""): 10,
@@ -127,27 +138,28 @@ BASE_TIME_ESTIMATE: dict[tuple[ActionType, Optional[str]], int]= {
 
 BASE_PROBABILITY : dict[tuple[ActionType, str], float] = {
     (ActionType.PARK, "") : 1,
-    # PICKUP = 50pts
-    # Pickup plate = 100pts
+
+    # ------------------ PICKUP base = 0.5
+    # Pickup plate is challenging (large, heavier object) = 0.5
     (ActionType.PICKUP, "plate"): 0.5,
 
-    # Objects of category CUTLERY = 2x+50
+    # Objects of category CUTLERY are very hard to grasp = 0.01
     (ActionType.PICKUP, "knife"): 0.01,
     (ActionType.PICKUP, "fork"): 0.01,
     (ActionType.PICKUP, "spoon"): 0.01,
 
-    # Common object pickup = 2x-20pts
+    # Common object pickup
     # TODO: geometry analysis or not
     (ActionType.PICKUP, "bowl"): 0.75,
     (ActionType.PICKUP, "milk"): 0.95,
     (ActionType.PICKUP, "cereal"): 0.95,
     (ActionType.PICKUP, ""): 0.5,
 
-    # Placing objects = 40pts
-    # Place in dishwasher = 3x70pts
+    # ------------------ Placing objects base = 0.6
+    # Place in dishwasher requires high precision = 0.4
     (ActionType.PLACE, "dishwasher"): 0.4,
 
-    # Common object place = 2x-20pts
+    # Common object placement
     (ActionType.PLACE, "bowl"): 0.8,
     (ActionType.PLACE, "milk"): 0.99,
     (ActionType.PLACE, "cereal"): 0.99,
@@ -155,20 +167,21 @@ BASE_PROBABILITY : dict[tuple[ActionType, str], float] = {
     # TODO: geometry analysis or not
     (ActionType.PLACE, ""): 0.6,
 
-    # Open dishwasher = 2x200pts
+    #  ------------------ Open/Close dishwasher = 0 (not yet implemented)
     (ActionType.OPEN, "dishwasher"): 0,
     (ActionType.OPEN, ""): 0,
 
     (ActionType.CLOSE, "dishwasher"): 0,
     (ActionType.CLOSE, ""): 0,
 
-    # navigate to table = 15pts
+    #  ------------------ Navigate = ~1.0
     (ActionType.NAVIGATE, "table"): 1,
     (ActionType.NAVIGATE, ""): 0.98,
 
+    #  ------------------ Handover
     (ActionType.HAND_OVER, ""): 0.95,
 
-    # Pour milk / cereal = 200pts
+    #  ------------------ Pour = 0 (not yet implemented)
     (ActionType.POUR, "cereal"): 0,
     (ActionType.POUR, "milk"): 0,
     (ActionType.POUR, ""): 0,
@@ -206,18 +219,8 @@ MAX_TIME_ESTIMATE: dict[TaskMode, int] = {
     TaskMode.FD: 50,
 }
 
-# Optional: monitor name to ActionType mapping for Giskard integration
-MONITOR_ACTION_MAP: dict[str, ActionType] = {
-    "pickup_reached":    ActionType.PICKUP,
-    "place_reached":     ActionType.PLACE,
-    "gripper_opened":    ActionType.OPEN,
-    "gripper_closed":    ActionType.CLOSE,
-    "nav_goal_reached":  ActionType.NAVIGATE,
-    "hand_over_done":    ActionType.HAND_OVER,
-}
-
 # All possible tasks for PP
-TASKSTEP_PP: list[Task] = [Task(task_id= 0, task_steps=[TaskStep(ActionType.NAVIGATE, location="cooking_table"), TaskStep(ActionType.PICKUP, object_name="bowl"), TaskStep(ActionType.PARK), TaskStep(ActionType.PARK), TaskStep(ActionType.NAVIGATE, location="counterTop"), TaskStep(ActionType.PLACE, object_placement="counterTop"), TaskStep(ActionType.PARK)]),
+TASKSTEP_PP: list[Task] = [Task(task_id= 0, task_steps=[TaskStep(ActionType.NAVIGATE, location="cooking_table"), TaskStep(ActionType.PICKUP, object_name="bowl"), TaskStep(ActionType.PARK), TaskStep(ActionType.NAVIGATE, location="counterTop"), TaskStep(ActionType.PLACE, object_placement="counterTop"), TaskStep(ActionType.PARK)]),
                            Task(task_id= 1, task_steps=[TaskStep(ActionType.NAVIGATE, location="desk"), TaskStep(ActionType.PICKUP, object_name="plate"),TaskStep(ActionType.PARK), TaskStep(ActionType.NAVIGATE, location="table"), TaskStep(ActionType.PLACE, object_placement="table"), TaskStep(ActionType.PARK)]),
                            Task(task_id= 2, task_steps=[TaskStep(ActionType.NAVIGATE, location="counterTop"), TaskStep(ActionType.PICKUP, object_name="milk"),TaskStep(ActionType.PARK), TaskStep(ActionType.NAVIGATE, location="shelf_1"), TaskStep(ActionType.PLACE, object_placement="shelf_1"), TaskStep(ActionType.PARK)]),
                            Task(task_id= 3, task_steps=[TaskStep(ActionType.NAVIGATE, location="shelf_1"), TaskStep(ActionType.PICKUP, object_name="cereal"),TaskStep(ActionType.PARK), TaskStep(ActionType.NAVIGATE, location="shelf_2"), TaskStep(ActionType.PLACE, object_placement="shelf_2"), TaskStep(ActionType.PARK)]),]
@@ -239,9 +242,6 @@ TASKS : dict[TaskMode, list[Task]] = {
     TaskMode.GPSR: TASKSTEP_GPSR,
     TaskMode.FD: TASKSTEP_FD
 }
-
-def _quat(yaw: float) -> tuple[float, float, float, float]:
-    return (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))
 
 # name → (x, y, quaternion(x,y,z,w))
 NAVIGATION_POSES: dict[str, tuple[float, float, tuple[float, float, float, float]]] = {

@@ -1,14 +1,13 @@
 from typing import Optional
 
-from demos.pycram_score_aware_planning.Evaluate.Evaluator import Evaluator
 from demos.pycram_score_aware_planning.Evaluate.ProbabilityEvaluator import RobotProbability
 from demos.pycram_score_aware_planning.Evaluate.ScoreEvaluator import RobotScorer, ScoreEvent
 from demos.pycram_score_aware_planning.Evaluate.StabilityEvaluator import RobotPlanStability
-from demos.pycram_score_aware_planning.Evaluate.types import ActionType, ActionOutcome
+from pycram_score_aware_planning.common.types import ActionType, ActionOutcome
 from pycram.datastructures.enums import TaskStatus
 
-
-class CompositeEvaluator(Evaluator):
+# TODO: implement, this hasnt been touched in a week
+class CompositeEvaluator():
 
     def __init__(self):
         self.score_evaluator = RobotScorer()

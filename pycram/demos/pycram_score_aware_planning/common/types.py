@@ -60,3 +60,33 @@ class TaskEstimation:
     task_score: int
     task_score_per_seconds : float
     task_probability : float
+
+@dataclass
+class SurfaceSpace:
+    name: str
+    x_min: float
+    x_max: float
+    y_min: float
+    y_max: float
+    z_surface: float  # top of the surface (z where objects rest)
+
+@dataclass(kw_only=True)
+class ExpectedProbabilityModel:
+    task_id: int
+    expected_probability: float
+    # taskstep_id : int
+    # assisted
+
+@dataclass(kw_only=True)
+class ScoreEvent:
+    timestamp: float
+    action_type: str
+    outcome: str
+    object_name: Optional[str]
+    base_points: int
+    penalty: int
+    time_spent: float
+    net_points: int
+    cumulative_score: int
+    cumulative_time: float
+    note: Optional[str] = None

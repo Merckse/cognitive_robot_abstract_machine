@@ -1,3 +1,4 @@
+import math
 from time import sleep
 from typing import Optional
 
@@ -9,13 +10,13 @@ from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.pick_up import PickUpAction
 from pycram.robot_plans.actions.core.placing import PlaceAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
-from pycram_score_aware_planning.Evaluate.types import TaskEstimation, Task, ActionType
-from pycram_score_aware_planning.Evaluate.values import NAVIGATION_POSES
+from pycram_score_aware_planning.common.types import TaskEstimation, Task, ActionType, SurfaceSpace
+from pycram_score_aware_planning.common.values import NAVIGATION_POSES
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import WorldEntityNotFoundError
 from semantic_digital_twin.reasoning.queries import annotation_class_by_label
 from semantic_digital_twin.robots.abstract_robot import Manipulator
-from semantic_digital_twin.semantic_annotations.mixins import HasRootBody
+from semantic_digital_twin.semantic_annotations.mixins import HasRootBody, HasSupportingSurface
 from semantic_digital_twin.spatial_types import (
     Point3,
     Quaternion,
@@ -25,7 +26,9 @@ from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import FixedConnection
 from semantic_digital_twin.world_description.geometry import Scale, Color
+from semantic_digital_twin.world_description.world_entity import Body
 
+import numpy as np
 
 def move_object_to_new_pose(
     semantic_annotation: HasRootBody, new_transform: HomogeneousTransformationMatrix
@@ -214,14 +217,168 @@ def pickup_subplan(object_name: str, arm: Arms, world: World):
     grasp = GraspDescription(approach_direction=ApproachDirection.FRONT, vertical_alignment=VerticalAlignment.NoAlignment, manipulator=manipulator)
     return PickUpAction(grasp_description=grasp, object_designator=object_body, arm=arm)
 
+def compute_surface_spaces(world) -> list[SurfaceSpace]:
+    surfaces = world.get_semantic_annotations_by_type(HasSupportingSurface)
+    result = []
+
+    for surface in surfaces:
+        # Prefer the pre-calculated supporting_surface Region (upward-facing geometry only)
+        # over the full structural bounding box, which includes legs and support frames.
+        if surface.supporting_surface is not None:
+            bb_collection = surface.supporting_surface.area.as_bounding_box_collection_in_frame(world.root)
+        else:
+            bb_collection = surface.as_bounding_box_collection_in_frame(world.root)
+
+        if not bb_collection.bounding_boxes:
+            continue
+
+        x_min = min(bb.x_interval.lower for bb in bb_collection)
+        x_max = max(bb.x_interval.upper for bb in bb_collection)
+        y_min = min(bb.y_interval.lower for bb in bb_collection)
+        y_max = max(bb.y_interval.upper for bb in bb_collection)
+        z_surface = max(bb.z_interval.upper for bb in bb_collection)
+
+        result.append(SurfaceSpace(
+            name=str(surface.name),
+            x_min=round(x_min, 3),
+            x_max=round(x_max, 3),
+            y_min=round(y_min, 3),
+            y_max=round(y_max, 3),
+            z_surface=round(z_surface, 3),
+        ))
+
+    return result
+
+
+def objects_on_surface(
+    surface: SurfaceSpace,
+    world,
+    z_tolerance: float = 0.05,
+) -> list[tuple[Body, list]]:
+    """
+    Return (body, bounding_boxes) for every body currently resting on the given surface.
+
+    A body is considered "on" the surface when its bottom face is within z_tolerance
+    above the surface's top (z_surface) and its x/y centre falls within the surface footprint.
+    Furniture bodies that make up the supporting surfaces themselves are excluded.
+    """
+    furniture_bodies: set[Body] = {
+        b
+        for ann in world.get_semantic_annotations_by_type(HasSupportingSurface)
+        for b in ann.bodies
+    }
+
+    result = []
+    for body in world.bodies_with_collision:
+        if body in furniture_bodies:
+            continue
+
+        world_T_body = world.compute_forward_kinematics(world.root, body)
+        bb_col = body.collision.as_bounding_box_collection_at_origin(world_T_body)
+        bbs = bb_col.bounding_boxes
+        if not bbs:
+            continue
+        z_bot = min(bb.z_interval.lower for bb in bbs)
+        cx = (min(bb.x_interval.lower for bb in bbs) + max(bb.x_interval.upper for bb in bbs)) / 2
+        cy = (min(bb.y_interval.lower for bb in bbs) + max(bb.y_interval.upper for bb in bbs)) / 2
+        if (
+            surface.x_min <= cx <= surface.x_max
+            and surface.y_min <= cy <= surface.y_max
+            and surface.z_surface - z_tolerance <= z_bot
+        ):
+            result.append((body, bbs))
+    return result
+
+def find_free_placement_pose(
+    surface: SurfaceSpace,
+    object_body: Body,
+    world,
+    grid_step: float = 0.05,
+    padding: float = 0.02,
+) -> Optional[tuple[float, float]]:
+    """
+    Find a free (x, y) position on the surface where object_body can be placed
+    without overlapping any object already on that surface.
+
+    Returns the (x, y) centre of the object's footprint in world frame, or None if
+    no free spot exists. The caller must compute z independently:
+        z = surface.z_surface + object_half_z
+    """
+    # Object half-extents in its local frame (upright assumption)
+    local_bbs = object_body.collision.as_bounding_box_collection_in_frame(object_body).bounding_boxes
+    if local_bbs:
+        half_x = (max(bb.x_interval.upper for bb in local_bbs) - min(bb.x_interval.lower for bb in local_bbs)) / 2 + padding
+        half_y = (max(bb.y_interval.upper for bb in local_bbs) - min(bb.y_interval.lower for bb in local_bbs)) / 2 + padding
+    else:
+        half_x = 0.1 + padding
+        half_y = 0.1 + padding
+
+    # Collect footprints of all objects already on the surface, excluding the object itself
+    occupied: list[tuple[float, float, float, float]] = []
+    for body, bbs in objects_on_surface(surface, world):
+        if body is object_body:
+            continue
+        occupied.append((
+            min(bb.x_interval.lower for bb in bbs),
+            max(bb.x_interval.upper for bb in bbs),
+            min(bb.y_interval.lower for bb in bbs),
+            max(bb.y_interval.upper for bb in bbs),
+        ))
+
+    # Candidate region: inset by the object's half-extents so the object stays on the surface
+    x_lo = surface.x_min + half_x
+    x_hi = surface.x_max - half_x
+    y_lo = surface.y_min + half_y
+    y_hi = surface.y_max - half_y
+
+    if x_lo > x_hi or y_lo > y_hi:
+        return None
+
+    for x in np.arange(x_lo, x_hi + grid_step, grid_step):
+        for y in np.arange(y_lo, y_hi + grid_step, grid_step):
+            obj_x_min, obj_x_max = x - half_x, x + half_x
+            obj_y_min, obj_y_max = y - half_y, y + half_y
+            overlaps = any(
+                obj_x_min < ox_max and obj_x_max > ox_min
+                and obj_y_min < oy_max and obj_y_max > oy_min
+                for ox_min, ox_max, oy_min, oy_max in occupied
+            )
+            if not overlaps:
+                return float(x), float(y)
+
+    return None
+
+
+
 def place_subplan(object_name: str, arm: Arms, target_location: str, world):
     object_body = world.get_body_by_name(object_name)
-    x, y, (qx, qy, qz, qw) = NAVIGATION_POSES[target_location]
+    surface_spaces = compute_surface_spaces(world=world)
+
+    free_spot = None
+    matched_surface = None
+    for surface_space in surface_spaces:
+        if surface_space.name == target_location:
+            matched_surface = surface_space
+            free_spot = find_free_placement_pose(surface=surface_space, world=world, object_body=object_body)
+            break
+
+    if matched_surface is None:
+        raise ValueError(f"No surface named '{target_location}' found in the world.")
+    if free_spot is None:
+        raise RuntimeError(f"No free placement spot found on '{target_location}'.")
+
+    x, y = free_spot
+    z = matched_surface.z_surface
+    if z > 1:
+        z = 1
+
+    _, _, (qx, qy, qz, qw) = NAVIGATION_POSES[target_location]
     pose = Pose(
-        position=Point3(x, y, 0.8, reference_frame=world.root),
+        position=Point3(x, y, z, reference_frame=world.root),
         orientation=Quaternion(qx, qy, qz, qw, reference_frame=world.root),
         reference_frame=world.root,
     )
+    print(x,y,z)
     return PlaceAction(object_designator=object_body, arm=arm, target_location=pose)
 
 def generate_plan(tasks: list[Task], context: Context):
@@ -250,4 +407,8 @@ def generate_plan(tasks: list[Task], context: Context):
                 plan.add_child(make_node(action))
 
     return plan
+
+
+def _quat(yaw: float) -> tuple[float, float, float, float]:
+    return (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))
 

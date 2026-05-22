@@ -20,7 +20,13 @@ from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world_description.geometry import Color
 
 """
-TASK comletion under:
+# ------------- TODO ------------- #
+TASK completion under:
+- [] Go to tables one by one after input
+- [] Evaluate action based on object closeness
+
+- [] Plan stability evaluation - basic
+
 - Query where object is and go to closest location
 
     CERTAINTY:
@@ -34,12 +40,11 @@ TASK comletion under:
     [] - Task space based task completion (e.g. I know there will be milk in the kitchen, but will there be x in the kitchen)
 
 DOs:
-    [] - 
     [] - navigation duration estimate for spm
     [] - object closeness for probability
 
 EXECUTION:
-    
+    [] - outsourcing the execution to the Executionor
 PROBABILITY:
     [ ] - Recognize the task space, what tasks are certainly calculateable under given taks-spaces
     [ ] - What are base probabilities
@@ -48,6 +53,20 @@ PROBABILITY:
 [ ] - 
 [ ] - 
 
+
+# ------------- PARAMETER CONSTRAINTS ------------- #
+\item object distances
+\item object arrangement
+\item object availability
+\item pre-conditioned tasks
+
+# ------------- to implement today ------------- #
+ [] - Distance navigation time
+ [] - estimated time for action based on constraints
+ [] - calculating taken time and time left
+ [] - List of how the tables are explored
+ [] - check for failure after action?
+ [] - Base checks for possibility of action (height, misc.)
 """
 
 
@@ -76,13 +95,10 @@ some_room = ["cooking_table"]
 generic_object_spawner(["Bowl"], [(1.325, 5.99, 0.81)], world, color=Color.GREEN())
 generic_object_spawner(["Plate"], [(-0.15,0.88,0.85)], world, color=Color.ORANGE())
 generic_object_spawner(["Milk"], [(1.037,-2.31,0.645)], world, color=Color.RED())
-# generic_object_spawner(["Fork"], [(4.45,4.44,1.62)], world, color=Color.BLUE())
 generic_object_spawner(["Knife"], [(4.65,4.84,1.62)], world, color=Color.GREEN())
 generic_object_spawner(["Apple"], [(4.135,1.865,0.54)], world, color=Color.GREEN())
 generic_object_spawner(["Cereal"], [(2.42,0.128,0.945)], world, color=Color.GREEN())
 generic_object_spawner(["Cup"], [(2.33475,5.215,0.83)], world, color=Color.GREEN())
-
-
 
 manipulator = hsrb.arm.manipulator
 plan_parkarm = sequential([ParkArmsAction(Arms.LEFT)], context=context)
@@ -117,12 +133,12 @@ print(plan)
 Generate the actual plan
 # """
 
-
-
+# Have to check before some long taking action
 with simulated_robot:
     print(plan.plan)
     plan.perform()
-#
+
+
 # if visible_bodies is None:
 #     visible_bodies = []
 # for visible_body in visible_bodies:

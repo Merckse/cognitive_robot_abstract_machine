@@ -22,18 +22,15 @@ Usage:
 from __future__ import annotations
 import time
 from dataclasses import dataclass, field
-from typing import Optional, Any
+from typing import Optional
 
-from OpenGL.raw.GL.KHR import texture_compression_astc_ldr
-
-from demos.pycram_score_aware_planning.Evaluate.Evaluator import Evaluator
-from demos.pycram_score_aware_planning.Evaluate.types import (
+from pycram_score_aware_planning.common.types import (
     TaskMode,
     ActionType,
     ActionOutcome,
-    Task,
+    Task, ScoreEvent,
 )
-from demos.pycram_score_aware_planning.Evaluate.values import (
+from pycram_score_aware_planning.common.values import (
     MAX_TIME_ESTIMATE,
     BASE_TIME_ESTIMATE,
     OUTCOME_MODIFIERS,
@@ -62,22 +59,6 @@ This is the actual score event that is recorded.
 :param note:           Free-text note attached to this event.
 """
 
-
-@dataclass(kw_only=True)
-class ScoreEvent:
-    timestamp: float
-    action_type: str
-    outcome: str
-    object_name: Optional[str]
-    base_points: int
-    penalty: int
-    time_spent: float
-    net_points: int
-    cumulative_score: int
-    cumulative_time: float
-    note: Optional[str] = None
-
-
 """
 This is the estimator for the Expected Score.
 
@@ -102,7 +83,7 @@ class ExpectedScoreEvent:
 
 
 @dataclass(kw_only=True)
-class RobotScorer(Evaluator):
+class RobotScorer:
     """
     Central scoring tracker. Call record() after each action completes.
     Thread-safe reads; not designed for concurrent writes.

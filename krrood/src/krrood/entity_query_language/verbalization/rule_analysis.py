@@ -6,12 +6,20 @@ a consequent (THEN) so the verbalizer can produce the "If ..., then ..." form.
 """
 from __future__ import annotations
 
+import operator
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import List, FrozenSet, Optional, Tuple, Any
 
 import inflect
+
+from krrood.entity_query_language.core.variable import InstantiatedVariable, Variable
+from krrood.entity_query_language.operators.comparator import Comparator
+from krrood.entity_query_language.operators.core_logical_operators import AND
+from krrood.entity_query_language.query.quantifiers import ResultQuantifier
+from krrood.entity_query_language.query.query import Entity
+from krrood.entity_query_language.verbalization.chain_utils import chain_root
 
 _engine = inflect.engine()
 
@@ -99,9 +107,8 @@ class RuleStructure:
 
 def _antecedent_var_id_(ant: AntecedentInfo) -> Optional[object]:
     """Return the stable _id_ of the underlying variable for an antecedent."""
-    from krrood.entity_query_language.query.query import Entity as _Entity
     root = ant.root
-    if isinstance(root, _Entity):
+    if isinstance(root, Entity):
         root.build()
         sel = root.selected_variable
         return getattr(sel, "_id_", None)
@@ -113,12 +120,7 @@ def _condition_left_owner_id_(cond) -> Optional[object]:
     Return the _id_ of the root variable on the left-hand side of an equality condition,
     or None if the condition is not a simple attribute equality.
     """
-    from krrood.entity_query_language.operators.comparator import Comparator
-    from krrood.entity_query_language.query.quantifiers import ResultQuantifier
-    from krrood.entity_query_language.verbalization.chain_utils import chain_root
-    import operator as _op
-
-    if not isinstance(cond, Comparator) or cond.operation is not _op.eq:
+    if not isinstance(cond, Comparator) or cond.operation is not operator.eq:
         return None
     current = chain_root(cond.left)
     while isinstance(current, ResultQuantifier):
@@ -144,7 +146,6 @@ class RuleAnalyzer:
         :returns: ``True`` if this analyzer can decompose *entity* as an inference rule.
         :rtype: bool
         """
-        from krrood.entity_query_language.core.variable import InstantiatedVariable
         entity.build()
         return isinstance(entity.selected_variable, InstantiatedVariable)
 
@@ -169,8 +170,6 @@ class RuleAnalyzer:
         :rtype: RuleStructure
         :raises AttributeError: If *entity* has not been built or is not an inference-rule query.
         """
-        from krrood.entity_query_language.core.variable import InstantiatedVariable
-
         entity.build()
         inferred: InstantiatedVariable = entity.selected_variable
         type_name = getattr(inferred._type_, "__name__", str(inferred._type_))
@@ -270,11 +269,6 @@ class RuleAnalyzer:
 
     @staticmethod
     def _find_root(expr) -> Optional[Any]:
-        from krrood.entity_query_language.core.variable import Variable
-        from krrood.entity_query_language.query.quantifiers import ResultQuantifier
-        from krrood.entity_query_language.query.query import Entity
-        from krrood.entity_query_language.verbalization.chain_utils import chain_root
-
         current = chain_root(expr)
         while isinstance(current, ResultQuantifier):
             current = current._child_
@@ -285,9 +279,6 @@ class RuleAnalyzer:
     @staticmethod
     def _extract_root_info(root) -> Tuple[str, List[Any]]:
         """Return (type_name, own_conditions) for a root Variable or Entity."""
-        from krrood.entity_query_language.core.variable import Variable
-        from krrood.entity_query_language.query.query import Entity
-
         if isinstance(root, Entity):
             root.build()
             var = root.selected_variable
@@ -305,7 +296,6 @@ class RuleAnalyzer:
 
     @staticmethod
     def _flatten_and(expr) -> List[Any]:
-        from krrood.entity_query_language.operators.core_logical_operators import AND
         if isinstance(expr, AND):
             return RuleAnalyzer._flatten_and(expr.left) + RuleAnalyzer._flatten_and(expr.right)
         return [expr]

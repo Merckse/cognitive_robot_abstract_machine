@@ -21,10 +21,14 @@ from krrood.entity_query_language.verbalization.chain_utils import (
     build_path_parts,
     walk_chain,
 )
+from krrood.entity_query_language.core.variable import Literal, Variable
+from krrood.entity_query_language.query.quantifiers import ResultQuantifier
+from krrood.entity_query_language.query.query import Entity
 from krrood.entity_query_language.verbalization.fragments.base import (
     PhraseFragment,
     RoleFragment,
     VerbFragment,
+    WordFragment,
 )
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
 from krrood.entity_query_language.verbalization.fragments.source_ref import SourceRef
@@ -39,9 +43,7 @@ if TYPE_CHECKING:
     from krrood.entity_query_language.verbalization.context import VerbalizationContext
 
 
-def _word(text: str):
-    from krrood.entity_query_language.verbalization.fragments.base import WordFragment
-
+def _word(text: str) -> WordFragment:
     return WordFragment(text=text)
 
 
@@ -228,9 +230,6 @@ class ChainVerbalizer:
 
     def _verbalize_chain_root_(self, leaf, ctx: VerbalizationContext) -> VerbFragment:
         """Noun phrase for the root of an attribute chain; unwraps ResultQuantifier wrappers."""
-        from krrood.entity_query_language.query.quantifiers import ResultQuantifier
-        from krrood.entity_query_language.query.query import Entity
-
         inner = leaf
         while isinstance(inner, ResultQuantifier):
             inner = inner._child_
@@ -281,8 +280,6 @@ class ChainVerbalizer:
         :returns: ``True`` when the expression is datetime-typed.
         :rtype: bool
         """
-        from krrood.entity_query_language.core.variable import Literal, Variable
-
         if isinstance(expr, Literal):
             return isinstance(expr._value_, _dt.datetime)
         if isinstance(expr, Variable):

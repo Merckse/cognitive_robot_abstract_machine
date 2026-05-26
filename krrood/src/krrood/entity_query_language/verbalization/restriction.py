@@ -19,9 +19,12 @@ import operator
 from abc import ABC, abstractmethod
 from typing import List, Optional, TYPE_CHECKING
 
+from krrood.entity_query_language.core.mapped_variable import Attribute, MappedVariable
+from krrood.entity_query_language.core.variable import Variable
+from krrood.entity_query_language.operators.aggregators import Aggregator
 from krrood.entity_query_language.operators.comparator import Comparator
 from krrood.entity_query_language.operators.core_logical_operators import AND
-from krrood.entity_query_language.verbalization.chain_utils import walk_chain
+from krrood.entity_query_language.verbalization.chain_utils import chain_root, walk_chain
 from krrood.entity_query_language.verbalization.fragments.base import (
     oxford_and,
     PhraseFragment,
@@ -53,12 +56,6 @@ if TYPE_CHECKING:
 
 def _single_hop_attr(expr, subject_var):
     """Return the :class:`Attribute` node when *expr* is exactly ``subject_var.<attr>``, else ``None``."""
-    from krrood.entity_query_language.core.mapped_variable import (
-        Attribute,
-        MappedVariable,
-    )
-    from krrood.entity_query_language.core.variable import Variable
-
     if subject_var is None or not isinstance(expr, MappedVariable):
         return None
     chain, root = walk_chain(expr)
@@ -77,8 +74,6 @@ def _references(expr, subject_var) -> bool:
             for v in expr._unique_variables_
         )
     except AttributeError:
-        from krrood.entity_query_language.verbalization.chain_utils import chain_root
-
         return chain_root(expr) is subject_var
 
 
@@ -219,8 +214,6 @@ class SelectedVariableSubjectRule(RestrictionSubjectRule):
 
     @classmethod
     def applies(cls, expr, selected_var, ctx: "VerbalizationContext") -> bool:
-        from krrood.entity_query_language.core.variable import Variable
-
         return isinstance(selected_var, Variable)
 
     @classmethod
@@ -243,8 +236,6 @@ class AggregationSourceSubjectRule(RestrictionSubjectRule):
 
     @classmethod
     def applies(cls, expr, selected_var, ctx: "VerbalizationContext") -> bool:
-        from krrood.entity_query_language.operators.aggregators import Aggregator
-
         return (
             isinstance(selected_var, Aggregator)
             and aggregation_source_root(expr) is not None

@@ -5,9 +5,17 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Dict, List, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, TYPE_CHECKING
 
 import inflect
+
+from krrood.entity_query_language.core.variable import Variable, Literal
+from krrood.entity_query_language.query.query import Entity, Query
+from krrood.entity_query_language.verbalization.subquery import (
+    aggregation_source_root,
+    selected_aggregator,
+)
+from krrood.entity_query_language.verbalization.vocabulary.english import Pronouns
 
 if TYPE_CHECKING:
     from krrood.entity_query_language.core.base_expressions import SymbolicExpression
@@ -50,12 +58,6 @@ def _aggregation_source_ids(expr) -> set:
     :returns: Set of variable ids to exclude from numbering.
     :rtype: set
     """
-    from krrood.entity_query_language.query.query import Entity
-    from krrood.entity_query_language.verbalization.subquery import (
-        aggregation_source_root,
-        selected_aggregator,
-    )
-
     ids: set = set()
     for node in expr._all_expressions_:
         if isinstance(node, Entity) and selected_aggregator(node) is not None:
@@ -74,9 +76,6 @@ def _build_disambiguation_map(expr) -> Dict[uuid.UUID, str]:
     Literal nodes are excluded, as are variables that only serve as the source
     population of an aggregation sub-query (see :func:`_aggregation_source_ids`).
     """
-    from krrood.entity_query_language.core.variable import Variable, Literal
-    from krrood.entity_query_language.query.query import Query
-
     if isinstance(expr, Query):
         expr.build()
 
@@ -226,8 +225,6 @@ class VerbalizationContext:
 
         :param var: The subject variable being described, or any non-Variable.
         """
-        from krrood.entity_query_language.core.variable import Variable
-
         self.coref_subjects.append(var._id_ if isinstance(var, Variable) else None)
 
     def pop_subject(self) -> None:
@@ -257,11 +254,6 @@ class VerbalizationContext:
         :returns: The *"its"* fragment, or ``None`` when pronominalisation is unsafe.
         :rtype: ~krrood.entity_query_language.verbalization.fragments.base.VerbFragment or None
         """
-        from krrood.entity_query_language.core.variable import Variable
-        from krrood.entity_query_language.verbalization.vocabulary.english import (
-            Pronouns,
-        )
-
         if not isinstance(root, Variable):
             return None
         if root._id_ != self.current_subject_id or root._id_ not in self.seen:

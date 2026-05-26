@@ -3,6 +3,13 @@ from __future__ import annotations
 from enum import Enum
 from typing import Optional
 
+from krrood.entity_query_language.core.mapped_variable import MappedVariable
+from krrood.entity_query_language.core.variable import Variable, Literal
+from krrood.entity_query_language.operators.aggregators import Aggregator
+from krrood.entity_query_language.operators.comparator import Comparator
+from krrood.entity_query_language.operators.core_logical_operators import LogicalOperator
+from krrood.entity_query_language.query.query import Entity, SetOf
+
 
 class SemanticRole(Enum):
     """
@@ -52,12 +59,6 @@ ROLE_COLORS: dict[SemanticRole, Optional[str]] = {
 
 
 def _build_role_map() -> dict[type, SemanticRole]:
-    from krrood.entity_query_language.operators.core_logical_operators import LogicalOperator
-    from krrood.entity_query_language.operators.aggregators import Aggregator
-    from krrood.entity_query_language.operators.comparator import Comparator
-    from krrood.entity_query_language.core.mapped_variable import MappedVariable
-    from krrood.entity_query_language.core.variable import Variable, Literal
-    from krrood.entity_query_language.query.query import Entity, SetOf
     return {
         LogicalOperator: SemanticRole.LOGICAL,
         Aggregator:      SemanticRole.AGGREGATION,

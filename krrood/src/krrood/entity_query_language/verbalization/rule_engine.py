@@ -3,6 +3,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
+from krrood.entity_query_language.verbalization.fragments.base import WordFragment
+
 if TYPE_CHECKING:
     from krrood.entity_query_language.core.base_expressions import SymbolicExpression
     from krrood.entity_query_language.verbalization.context import VerbalizationContext
@@ -114,5 +116,4 @@ class RuleEngine:
         for rule_cls in self._rules:
             if rule_cls.applies(expr, ctx):
                 return rule_cls.transform(expr, ctx, delegate)
-        from krrood.entity_query_language.verbalization.fragments.base import WordFragment
         return WordFragment(text=expr._name_)

@@ -22,6 +22,8 @@ import operator as _operator
 from dataclasses import dataclass
 from enum import Enum
 
+from krrood.entity_query_language.operators.comparator import not_contains as _nc
+
 import inflect
 
 from krrood.entity_query_language.verbalization.fragments.base import (
@@ -461,10 +463,6 @@ class Operators(Enum):
         :rtype: Operators
         :raises KeyError: If *fn* has no registered mapping.
         """
-        from krrood.entity_query_language.operators.comparator import (
-            not_contains as _nc,
-        )
-
         _MAP = {
             _operator.eq: cls.EQ,
             _operator.ne: cls.NE,

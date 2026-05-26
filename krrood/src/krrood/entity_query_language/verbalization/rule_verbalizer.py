@@ -7,10 +7,13 @@ conditions and consequent bindings.
 """
 from __future__ import annotations
 
+import operator
 from typing import Optional, TYPE_CHECKING
 
 from krrood.entity_query_language.core.mapped_variable import Attribute, MappedVariable
+from krrood.entity_query_language.core.variable import Variable
 from krrood.entity_query_language.operators.comparator import Comparator
+from krrood.entity_query_language.query.query import Entity
 from krrood.entity_query_language.verbalization.chain_utils import build_path_parts, verbalize_plural, walk_chain
 from krrood.entity_query_language.verbalization.fragments.base import (
     BlockFragment,
@@ -40,7 +43,6 @@ from krrood.entity_query_language.verbalization.vocabulary.english import (
 )
 
 if TYPE_CHECKING:
-    from krrood.entity_query_language.query.query import Entity
     from krrood.entity_query_language.verbalization.context import VerbalizationContext
 
 
@@ -170,10 +172,9 @@ class RuleVerbalizer:
         :param ant: Antecedent to register.
         :param ctx: Shared verbalization state.
         """
-        from krrood.entity_query_language.query.query import Entity as _Entity
         root = ant.root
         ctx.seen[root._id_] = ant.type_name
-        if isinstance(root, _Entity):
+        if isinstance(root, Entity):
             root.build()
             sel = root.selected_variable
             if sel is not None and hasattr(sel, "_id_"):
@@ -212,7 +213,6 @@ class RuleVerbalizer:
         :returns: A *"whose …"* fragment, or ``None``.
         :rtype: ~krrood.entity_query_language.verbalization.fragments.base.VerbFragment or None
         """
-        import operator
         if not isinstance(cond, Comparator) or cond.operation is not operator.eq:
             return None
         if not isinstance(cond.left, Attribute):
@@ -299,7 +299,6 @@ class RuleVerbalizer:
         return self._d.build(binding.value_expr, ctx)
 
     def _verbalize_group_key_value_(self, expr, ctx: VerbalizationContext) -> VerbFragment:
-        from krrood.entity_query_language.core.variable import Variable
         chain, current = walk_chain(expr)
 
         if not chain or not isinstance(current, Variable):

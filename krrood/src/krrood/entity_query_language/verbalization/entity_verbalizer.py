@@ -26,6 +26,18 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     WordFragment,
 )
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
+from krrood.entity_query_language.verbalization.restriction import (
+    RestrictionClauseBuilder,
+    restriction_subject,
+)
+from krrood.entity_query_language.verbalization.rules.aggregators import _AGGREGATION_KIND
+from krrood.entity_query_language.verbalization.subquery import (
+    aggregation_leaf_attribute,
+    aggregation_source_root,
+    is_aggregation_subquery,
+    is_constrained_query,
+    selected_aggregator,
+)
 from krrood.entity_query_language.verbalization.utils import _str
 from krrood.entity_query_language.verbalization.vocabulary.english import (
     Articles,
@@ -36,6 +48,7 @@ from krrood.entity_query_language.verbalization.vocabulary.english import (
     Prepositions,
     SortDirections,
 )
+from krrood.entity_query_language.verbalization.vocabulary.words import ChildForm
 
 if TYPE_CHECKING:
     from krrood.entity_query_language.verbalization.context import VerbalizationContext
@@ -72,10 +85,6 @@ class EntityVerbalizer:
     """
 
     def __init__(self, delegate) -> None:
-        from krrood.entity_query_language.verbalization.restriction import (
-            RestrictionClauseBuilder,
-        )
-
         self._d = delegate
         self._restrictions = RestrictionClauseBuilder(delegate)
 
@@ -181,10 +190,6 @@ class EntityVerbalizer:
         :returns: A noun-phrase fragment for *expr*.
         :rtype: ~krrood.entity_query_language.verbalization.fragments.base.VerbFragment
         """
-        from krrood.entity_query_language.verbalization.subquery import (
-            is_aggregation_subquery,
-        )
-
         if expr._id_ in ctx.seen:
             return _phrase(
                 Articles.THE.as_fragment(),
@@ -222,18 +227,6 @@ class EntityVerbalizer:
         :returns: Aggregate noun-phrase fragment.
         :rtype: ~krrood.entity_query_language.verbalization.fragments.base.VerbFragment
         """
-        from krrood.entity_query_language.verbalization.rules.aggregators import (
-            _AGGREGATION_KIND,
-        )
-        from krrood.entity_query_language.verbalization.subquery import (
-            aggregation_leaf_attribute,
-            is_constrained_query,
-            selected_aggregator,
-        )
-        from krrood.entity_query_language.verbalization.vocabulary.words import (
-            ChildForm,
-        )
-
         aggregator = selected_aggregator(expr)
         leaf = aggregation_leaf_attribute(expr)
         if leaf is None:
@@ -271,10 +264,6 @@ class EntityVerbalizer:
         :returns: Aggregate phrase extended with its scope and filter.
         :rtype: ~krrood.entity_query_language.verbalization.fragments.base.VerbFragment
         """
-        from krrood.entity_query_language.verbalization.subquery import (
-            aggregation_source_root,
-        )
-
         source = aggregation_source_root(expr)
         source_frag = (
             verbalize_plural(source, ctx, self._d.build)
@@ -465,10 +454,6 @@ class EntityVerbalizer:
         Returns ``(selected, _UNSET)`` when no grouping applies, so
         :meth:`_verbalize_query_body_` computes the WHERE clause itself as before.
         """
-        from krrood.entity_query_language.verbalization.restriction import (
-            restriction_subject,
-        )
-
         where_expr = expr._where_expression_
         subject = restriction_subject(expr, var, ctx)
         if where_expr is None or subject is None:

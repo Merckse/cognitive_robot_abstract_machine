@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from krrood.entity_query_language.core.base_expressions import SymbolicExpression
+from krrood.entity_query_language.query.query import Query
 from krrood.entity_query_language.verbalization.chain_verbalizer import ChainVerbalizer
 from krrood.entity_query_language.verbalization.context import VerbalizationContext
 from krrood.entity_query_language.verbalization.entity_verbalizer import EntityVerbalizer
@@ -110,7 +111,6 @@ def verbalize_expression(expr) -> str:
     :returns: Plain-text natural-language string.
     :rtype: str
     """
-    from krrood.entity_query_language.query.query import Query
     if isinstance(expr, Query):
         expr.build()
     return _default_verbalizer.verbalize(expr)

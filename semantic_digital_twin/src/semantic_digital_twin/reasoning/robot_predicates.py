@@ -21,10 +21,6 @@ from semantic_digital_twin.collision_checking.collision_rules import (
     AllowSelfCollisions,
 )
 from semantic_digital_twin.reasoning.predicates import is_place_occupied
-from semantic_digital_twin.spatial_computations.ik_solver import (
-    MaxIterationsException,
-    UnreachableException,
-)
 from semantic_digital_twin.robots.abstract_robot import (
     AbstractRobot,
     ParallelGripper,

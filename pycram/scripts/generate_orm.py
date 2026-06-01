@@ -1,5 +1,6 @@
 import logging
 import os
+from pathlib import Path
 from dataclasses import is_dataclass
 
 import numpy as np
@@ -73,6 +74,6 @@ logging.getLogger("krrood").setLevel(logging.DEBUG)
 # Generate the ORM classes
 ormatic.make_all_tables()
 
-path = os.path.abspath(os.path.join(os.getcwd(), "../src/pycram/orm/"))
+path = Path(__file__).parents[1] / "src" / "pycram" / "orm"  # Use relative path of script
 with open(os.path.join(path, "ormatic_interface.py"), "w") as f:
     ormatic.to_sqlalchemy_file(f)

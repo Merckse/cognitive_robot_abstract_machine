@@ -10,7 +10,11 @@ from giskardpy.motion_statechart.goals.collision_avoidance import (
     UpdateTemporaryCollisionRules,
     make_external_collision_rules,
 )
-from giskardpy.motion_statechart.goals.pick_up import CloseHand, OpenHand, _AllowObjectCollisions
+from giskardpy.motion_statechart.goals.pick_up import (
+    CloseHand,
+    OpenHand,
+    _AllowObjectCollisions,
+)
 from giskardpy.motion_statechart.goals.templates import Sequence
 from giskardpy.motion_statechart.graph_node import Goal, NodeArtifacts, CancelMotion
 from giskardpy.motion_statechart.monitors.monitors import LocalMinimumReached
@@ -22,7 +26,12 @@ from giskardpy.motion_statechart.tasks.cartesian_tasks import (
     CartesianPosition,
     CartesianPose,
 )
-from krrood.symbolic_math.symbolic_math import trinary_logic_or, trinary_logic_and, trinary_logic_not
+from krrood.symbolic_math.symbolic_math import (
+    trinary_logic_or,
+    trinary_logic_and,
+    trinary_logic_not,
+)
+from pycram.datastructures.enums import ExecutionType
 from semantic_digital_twin.robots.abstract_robot import AbstractRobot, Manipulator
 from semantic_digital_twin.spatial_types import (
     Vector3,
@@ -50,30 +59,38 @@ class Place(Goal):
     object_geometry: Body = field(kw_only=True)
     goal: Union[HomogeneousTransformationMatrix, Point3] = field(kw_only=True)
     ft: bool = field(kw_only=True, default=False)
-    simulated: bool = field(default=True, kw_only=True)
     pre_place_distance: float = field(default=0.05, kw_only=True)
     _motion_sequence: Sequence = field(init=False)
 
     def expand(self, context: MotionStatechartContext) -> None:
         super().expand(context)
         robot = self.manipulator._robot
+        execution_type = context.executionenvironment.execution_type
+        if execution_type == ExecutionType.SIMULATED:
+            simulated_execution = True
+        else:
+            simulated_execution = False
         # Note: Retracting separate from placing
-        self._motion_sequence = Sequence([
-            ApproachPlacement(
-                manipulator=self.manipulator,
-                object_geometry=self.object_geometry,
-                goal=self.goal,
-                ft=self.ft,
-                pre_place_distance=self.pre_place_distance,
-            ),
-            OpenHand(simulated_execution=self.simulated),
-        ])
+        self._motion_sequence = Sequence(
+            [
+                ApproachPlacement(
+                    manipulator=self.manipulator,
+                    object_geometry=self.object_geometry,
+                    goal=self.goal,
+                    ft=self.ft,
+                    pre_place_distance=self.pre_place_distance,
+                ),
+                OpenHand(simulated_execution=simulated_execution),
+            ]
+        )
         self.add_node(self._motion_sequence)
-        arm_buffer = 0.025 # min(0.05, max(self.object_geometry.collision.scale.z / 2 - 0.01, 0.01))
+        arm_buffer = 0.025  # min(0.05, max(self.object_geometry.collision.scale.z / 2 - 0.01, 0.01))
         self.add_node(
             UpdateTemporaryCollisionRules(
                 temporary_rules=[
-                    *make_external_collision_rules(robot=robot, arm_buffer_zone=arm_buffer),
+                    *make_external_collision_rules(
+                        robot=robot, arm_buffer_zone=arm_buffer
+                    ),
                     _AllowObjectCollisions(_object_body=self.object_geometry),
                 ]
             )
@@ -112,7 +129,9 @@ class ApproachPlacement(Goal):
 
             pre_tool_pose = HomogeneousTransformationMatrix.from_point_rotation_matrix(
                 point=goal_pose.to_position()
-                + Vector3(0, 0, self.pre_place_distance, reference_frame=context.world.root),
+                + Vector3(
+                    0, 0, self.pre_place_distance, reference_frame=context.world.root
+                ),
                 rotation_matrix=self.object_geometry.global_pose.to_rotation_matrix(),  # goal_pose.to_rotation_matrix(),
                 reference_frame=context.world.root,
             )
@@ -120,7 +139,7 @@ class ApproachPlacement(Goal):
                 root_link=context.world.root,
                 tip_link=self.object_geometry,
                 goal_pose=pre_tool_pose,
-                threshold=0.02
+                threshold=0.02,
             )
             self.object_goal = CartesianPose(
                 root_link=context.world.root,
@@ -149,7 +168,7 @@ class ApproachPlacement(Goal):
                 root_link=context.world.root,
                 tip_link=self.object_geometry,
                 goal_point=pre_point,
-                threshold=0.02
+                threshold=0.02,
             )
             self.object_goal = CartesianPosition(
                 root_link=context.world.root,

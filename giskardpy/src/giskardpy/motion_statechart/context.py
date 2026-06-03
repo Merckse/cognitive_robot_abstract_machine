@@ -7,13 +7,18 @@ from typing_extensions import Self, Dict, Type, TypeVar
 
 from krrood.symbolic_math.float_variable_data import FloatVariableData
 from krrood.symbolic_math.symbolic_math import FloatVariable
+from pycram.datastructures.enums import ExecutionType
+from pycram.motion_executor import ExecutionEnvironment
 from semantic_digital_twin.collision_checking.collision_manager import CollisionManager
 from semantic_digital_twin.collision_checking.collision_variable_managers import (
     SelfCollisionVariableManager,
     ExternalCollisionVariableManager,
 )
 from semantic_digital_twin.world import World
-from giskardpy.motion_statechart.exceptions import MissingContextExtensionError, DuplicateContextExtensionError
+from giskardpy.motion_statechart.exceptions import (
+    MissingContextExtensionError,
+    DuplicateContextExtensionError,
+)
 from giskardpy.qp.qp_controller_config import QPControllerConfig
 
 
@@ -50,6 +55,13 @@ class MotionStatechartContext:
     """
     Dictionary of extensions used to augment the build context.
     Ros2 extensions are automatically added to the build context when using the Ros2Executor.
+    """
+
+    executionEnvironment: ExecutionEnvironment = field(
+        default=ExecutionType.SIMULATED, kw_only=True
+    )
+    """
+    The execution environment used to execute the Motion Statechart.
     """
 
     @property

@@ -30,6 +30,7 @@ from giskardpy.motion_statechart.tasks.cartesian_tasks import (
     CartesianPosition,
     CartesianOrientation,
 )
+from pycram.datastructures.enums import ExecutionType
 from semantic_digital_twin.collision_checking.collision_rules import (
     AllowCollisionRule,
 )
@@ -104,16 +105,20 @@ AXIS_ALIGNMENT_THRESHOLD = 0.9
 class PickUp(Goal):
     grasp_magic: "GraspMagic" = field(kw_only=True)
     ft: bool = field(kw_only=True, default=False)
-    simulated_execution: bool = field(default=True, kw_only=True)
 
     def expand(self, context: MotionStatechartContext) -> None:
         super().expand(context)
         robot = self.grasp_magic.manipulator._robot
+        execution_type = context.executionenvironment.execution_type
+        if execution_type == ExecutionType.SIMULATED:
+            simulated_execution = True
+        else:
+            simulated_execution = False
         self.sequence = Sequence(
             [
-                OpenHand(simulated_execution=self.simulated_execution),
+                OpenHand(simulated_execution=simulated_execution),
                 sequence := GraspingSequence(grasp_magic=self.grasp_magic),
-                CloseHand(ft=self.ft, simulated_execution=self.simulated_execution),
+                CloseHand(ft=self.ft, simulated_execution=simulated_execution),
             ]
         )
         self.add_node(self.sequence)

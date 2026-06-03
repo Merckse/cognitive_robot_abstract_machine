@@ -174,11 +174,6 @@ class GiskardPlaceAction(ActionDescription):
     Arm that is currently holding the object
     """
 
-    simulated: bool = field(default=True, kw_only=True)
-    """
-    Parsing simulation argument
-    """
-
     ignore_orientation: bool = field(default=False, kw_only=True)
     """
     If True, the orientation of the object will be ignored.
@@ -206,7 +201,6 @@ class GiskardPlaceAction(ActionDescription):
             self.context,
             PlaceMotion(
                 object_designator=self.object_designator,
-                simulated=self.simulated,
                 goal_pose=goal,
                 gripper=manipulator,
                 allow_gripper_collision=False,
@@ -259,7 +253,6 @@ class GiskardPlaceAction(ActionDescription):
         object_designator: Union[Iterable[Body], Body],
         target_location: Union[Iterable[PoseStamped], PoseStamped],
         arm: Union[Iterable[Arms], Arms],
-        simulated: bool = True,
         ignore_orientation: bool = False,
     ) -> PartialDesignator[GiskardPlaceAction]:
         return PartialDesignator[GiskardPlaceAction](
@@ -267,7 +260,6 @@ class GiskardPlaceAction(ActionDescription):
             object_designator=object_designator,
             target_location=target_location,
             arm=arm,
-            simulated=simulated,
             ignore_orientation=ignore_orientation,
         )
 
@@ -293,11 +285,6 @@ class GiskardPlaceAndDetachAction(ActionDescription):
     Arm that is currently holding the object
     """
 
-    simulated: bool = field(default=True, kw_only=True)
-    """
-    Parsing simulation argument
-    """
-
     ignore_orientation: bool = field(default=False, kw_only=True)
     """
     If True, the orientation of the object will be ignored.
@@ -321,7 +308,6 @@ class GiskardPlaceAndDetachAction(ActionDescription):
         SequentialPlan(
             self.context,
             GiskardPlaceActionDescription(
-                simulated=self.simulated,
                 object_designator=self.object_designator,
                 arm=Arms.LEFT,
                 target_location=self.target_location,
@@ -341,7 +327,6 @@ class GiskardPlaceAndDetachAction(ActionDescription):
         SequentialPlan(
             self.context,
             GiskardRetractActionDescription(
-                simulated=self.simulated,
                 arm=self.arm,
                 back_off_pose=robot_pre_action_pose,
             ),
@@ -355,7 +340,6 @@ class GiskardPlaceAndDetachAction(ActionDescription):
         object_designator: Union[Iterable[Body], Body],
         target_location: Union[Iterable[PoseStamped], PoseStamped],
         arm: Union[Iterable[Arms], Arms],
-        simulated: bool = True,
         ignore_orientation: bool = False,
     ) -> PartialDesignator[GiskardPlaceAndDetachAction]:
         return PartialDesignator[GiskardPlaceAndDetachAction](
@@ -363,7 +347,6 @@ class GiskardPlaceAndDetachAction(ActionDescription):
             object_designator=object_designator,
             target_location=target_location,
             arm=arm,
-            simulated=simulated,
             ignore_orientation=ignore_orientation,
         )
 
@@ -377,11 +360,6 @@ class GiskardRetractAction(ActionDescription):
     arm: Arms
     """
     Arm that is currently holding the object
-    """
-
-    simulated: bool = field(default=True, kw_only=True)
-    """
-    Parsing simulation argument
     """
 
     back_off_pose: PoseStamped = field(default=None, kw_only=True)
@@ -402,14 +380,11 @@ class GiskardRetractAction(ActionDescription):
         manipulator = arm.manipulator
         SequentialPlan(
             self.context,
-            GiskardMoveGripperMotion(GripperState.OPEN, self.simulated),
+            GiskardMoveGripperMotion(GripperState.OPEN),
             RetractMotion(
-                simulated=self.simulated,
                 gripper=manipulator,
             ),
-            nav2NavigateActionDescription(
-                simulated=self.simulated, target_location=self.back_off_pose
-            ),
+            nav2NavigateActionDescription(target_location=self.back_off_pose),
         ).perform()
 
     def validate(
@@ -456,13 +431,11 @@ class GiskardRetractAction(ActionDescription):
     def description(
         cls,
         arm: Union[Iterable[Arms], Arms],
-        simulated: bool,
         back_off_pose: Union[Iterable[PoseStamped], PoseStamped] | None = None,
     ) -> PartialDesignator[GiskardRetractAction]:
         return PartialDesignator[GiskardRetractAction](
             GiskardRetractAction,
             arm=arm,
-            simulated=simulated,
             back_off_pose=back_off_pose,
         )
 

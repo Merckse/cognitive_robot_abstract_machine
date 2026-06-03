@@ -33,7 +33,7 @@ from pycram_suturo_demos.helper_methods_and_useful_classes.A_robot_setup import 
 def initialization(simulation: bool = True):
     logger = logging.getLogger(__name__)
 
-    result = robot_setup(simulation=simulation)
+    result = robot_setup()
     rclpy_node, world, robot_view, context = (
         result.node,
         result.world,
@@ -177,7 +177,6 @@ def handover_human_robot_no_init(*, simulated: bool = False, context: Context = 
     robot_type: ExecutionEnvironment = simulated_robot if SIMULATED else real_robot
 
     with robot_type:
-
         SequentialPlan(
             context,
             HandoverActionDescription(world=world),

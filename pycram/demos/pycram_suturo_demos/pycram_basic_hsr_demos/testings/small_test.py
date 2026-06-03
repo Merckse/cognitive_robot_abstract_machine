@@ -13,9 +13,8 @@ from pycram.robot_plans import ParkArmsActionDescription
 rclpy.init()
 simulated: bool = True
 robot_type = simulated_robot if simulated else real_robot
-with_objects: bool = True
 
-result = robot_setup(simulation=simulated, with_simulated_objects=with_objects)
+result = robot_setup()
 world, context, robot_view = (result.world, result.context, result.robot_view)
 
 plan = SequentialPlan(context, ParkArmsActionDescription(Arms.BOTH))

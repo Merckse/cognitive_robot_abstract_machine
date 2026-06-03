@@ -65,11 +65,7 @@ class Place(Goal):
     def expand(self, context: MotionStatechartContext) -> None:
         super().expand(context)
         robot = self.manipulator._robot
-        execution_type = context.execution_type
-        if execution_type == ExecutionType.SIMULATED:
-            simulated_execution = True
-        else:
-            simulated_execution = False
+
         # Note: Retracting separate from placing
         self._motion_sequence = Sequence(
             [
@@ -80,7 +76,7 @@ class Place(Goal):
                     ft=self.ft,
                     pre_place_distance=self.pre_place_distance,
                 ),
-                OpenHand(simulated_execution=simulated_execution),
+                OpenHand(),
             ]
         )
         self.add_node(self._motion_sequence)

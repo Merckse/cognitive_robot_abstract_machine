@@ -293,11 +293,6 @@ class GiskardPickUpAction(ActionDescription):
     Let the robot pick up an object.
     """
 
-    simulated: bool = field(default=True, kw_only=True)
-    """
-    Parsing simulation argument
-    """
-
     object_designator: Body = field(default=None, kw_only=True)
     """
     Object designator_description describing the object that should be picked up
@@ -346,7 +341,6 @@ class GiskardPickUpAction(ActionDescription):
             SequentialPlan(
                 self.context,
                 GiskardGraspActionDescription(
-                    simulated=self.simulated,
                     arm=self.arm,
                     object_designator=self.object_designator,
                     gripper_vertical=self.gripper_vertical,
@@ -363,7 +357,6 @@ class GiskardPickUpAction(ActionDescription):
             SequentialPlan(
                 self.context,
                 GiskardRetractActionDescription(
-                    simulated=self.simulated,
                     arm=Arms.LEFT,
                     back_off_pose=robot_pose_pre_manipulation,
                 ),
@@ -376,7 +369,6 @@ class GiskardPickUpAction(ActionDescription):
         SequentialPlan(
             self.context,
             GiskardPullUpActionDescription(
-                simulated=self.simulated,
                 arm=self.arm,
                 object_designator=self.object_designator,
             ),
@@ -461,13 +453,11 @@ class GiskardPickUpAction(ActionDescription):
         object_designator: Union[Iterable[Body], Body],
         arm: Union[Iterable[Arms], Arms] = None,
         gripper_vertical: Union[Iterable[bool], bool] = True,
-        simulated: bool = True,
     ) -> PartialDesignator[GiskardPickUpAction]:
         return PartialDesignator[GiskardPickUpAction](
             GiskardPickUpAction,
             object_designator=object_designator,
             arm=arm,
-            simulated=simulated,
             gripper_vertical=gripper_vertical,
         )
 
@@ -476,11 +466,6 @@ class GiskardPickUpAction(ActionDescription):
 class GiskardGraspAction(ActionDescription):
     """
     Let the robot pick up an object.
-    """
-
-    simulated: bool = field(default=True, kw_only=True)
-    """
-    Parsing simulation argument
     """
 
     object_designator: Body = field(default=None, kw_only=True)
@@ -521,7 +506,6 @@ class GiskardGraspAction(ActionDescription):
         SequentialPlan(
             self.context,
             PickupMotion(
-                simulated=self.simulated,
                 manipulator=manipulator,
                 object_geometry=self.object_designator,
                 gripper_vertical=self.gripper_vertical,
@@ -534,11 +518,9 @@ class GiskardGraspAction(ActionDescription):
         object_designator: Union[Iterable[Body], Body],
         arm: Union[Iterable[Arms], Arms] = None,
         gripper_vertical: Union[Iterable[bool], bool] = True,
-        simulated: bool = True,
     ) -> PartialDesignator[GiskardGraspAction]:
         return PartialDesignator[GiskardGraspAction](
             GiskardGraspAction,
-            simulated=simulated,
             object_designator=object_designator,
             arm=arm,
             gripper_vertical=gripper_vertical,
@@ -551,10 +533,6 @@ class GiskardPullUpAction(ActionDescription):
     Let the robot pick up an object.
     """
 
-    simulated: bool = field(default=True, kw_only=True)
-    """
-    Parsing simulation argument
-    """
     object_designator: Body = field(default=None, kw_only=True)
     """
     Object designator_description describing the object that should be picked up
@@ -588,7 +566,6 @@ class GiskardPullUpAction(ActionDescription):
         SequentialPlan(
             self.context,
             PullUpMotion(
-                simulated=self.simulated,
                 manipulator=manipulator,
                 object_geometry=self.object_designator,
             ),
@@ -602,13 +579,11 @@ class GiskardPullUpAction(ActionDescription):
         cls,
         object_designator: Union[Iterable[Body], Body],
         arm: Union[Iterable[Arms], Arms] = None,
-        simulated: bool = True,
     ) -> PartialDesignator[GiskardPullUpAction]:
         return PartialDesignator[GiskardPullUpAction](
             GiskardPullUpAction,
             object_designator=object_designator,
             arm=arm,
-            simulated=simulated,
         )
 
 

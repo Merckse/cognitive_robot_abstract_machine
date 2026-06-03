@@ -1,24 +1,18 @@
-import rclpy
-
 from pycram.datastructures.enums import Arms, VerticalAlignment, ApproachDirection
 from pycram.datastructures.grasp import GraspDescription
-from pycram.datastructures.pose import PoseStamped
 from pycram.language import SequentialPlan
 from pycram.motion_executor import real_robot
 from pycram.robot_plans import (
     ParkArmsActionDescription,
-    PickUpActionDescription,
-    NavigateActionDescription,
-    PlaceActionDescription,
+)
+from pycram_suturo_demos.helper_methods_and_useful_classes.A_robot_setup import (
+    robot_setup,
 )
 from semantic_digital_twin.adapters.ros.visualization.viz_marker import (
     VizMarkerPublisher,
 )
-from pycram_suturo_demos.helper_methods_and_useful_classes.A_real_setup import (
-    world_setup_with_test_objects,
-)
 
-result = world_setup_with_test_objects()
+result = robot_setup()
 world, robot_view, context, node = (
     result.world,
     result.robot_view,

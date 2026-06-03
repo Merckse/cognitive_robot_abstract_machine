@@ -91,6 +91,7 @@ class TaskStatus(int, Enum):
     INTERRUPTED = 4
     SLEEPING = 5
 
+
 class JointType(Enum):
     """
     Enum for readable joint types.
@@ -277,7 +278,8 @@ class MonitorBehavior(Enum):
     Resume the task when the condition is met.
     """
 
-class PickUpType(Enum):
+
+class PickUpMode(Enum):
     """
     Enum for the different pick up types.
     """

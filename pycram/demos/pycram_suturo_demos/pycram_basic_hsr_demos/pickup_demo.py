@@ -3,22 +3,17 @@ import time
 from rclpy import logging
 
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import Arms, PickUpType
+from pycram.datastructures.enums import Arms, PickUpMode
 from pycram.language import SequentialPlan
 from pycram.motion_executor import real_robot, simulated_robot, ExecutionEnvironment
 from pycram.robot_plans import (
-    ParkArmsActionDescription,
     GiskardRetractActionDescription,
     GiskardGraspActionDescription,
     GiskardPullUpActionDescription,
-    MoveTorsoActionDescription,
     GiskardPickUpActionDescription,
 )
 from pycram_suturo_demos.helper_methods_and_useful_classes.nlp_human_robot_interaction import (
     TalkingNode,
-)
-from pycram_suturo_demos.helper_methods_and_useful_classes.pickup_helper_methods import (
-    validate_grasped,
 )
 
 from semantic_digital_twin.world_description.world_entity import Body
@@ -49,7 +44,6 @@ def pickup_demo(
         pickup_callback = SequentialPlan(
             context,
             GiskardPickUpActionDescription(
-                simulated=simulation,
                 object_designator=object_to_pickup,
                 arm=Arms.LEFT,
                 gripper_vertical=True,
@@ -83,7 +77,6 @@ def pickup_with_callback_demo(
         pickup_callback = SequentialPlan(
             context,
             GiskardPickUpActionDescription(
-                simulated=simulation,
                 object_designator=object_to_pickup,
                 arm=Arms.LEFT,
                 gripper_vertical=True,

@@ -49,7 +49,7 @@ def filter_points_full_on_surface(
 
 
 def simulation_demo():
-    setup_result = robot_setup(simulation=True, with_simulated_objects=False)
+    setup_result = robot_setup()
     world, robot_view, context = (
         setup_result.world,
         setup_result.robot_view,

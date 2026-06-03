@@ -22,11 +22,6 @@ class PickupMotion(BaseMotion):
     # The world object that should be picked up
     object_geometry: Body = field(default=None, kw_only=True)
 
-    simulated: bool = field(default=True, kw_only=True)
-    """
-    Parsing simulation argument
-    """
-
     # If True, the gripper is kept vertically aligned during the grasp
     # kw_only=True forces this to be passed as a keyword argument
     gripper_vertical: Optional[bool] = field(default=True, kw_only=True)
@@ -49,7 +44,6 @@ class PickupMotion(BaseMotion):
             gripper_vertical=self.gripper_vertical,
         )
         pickup = PickUp(
-            simulated_execution=self.simulated,
             grasp_magic=grasp_magic,
         )
         return pickup
@@ -69,11 +63,6 @@ class PullUpMotion(BaseMotion):
 
     # The world object that should be pulledUp
     object_geometry: Body = field(default=None, kw_only=True)
-
-    simulated: bool = field(default=True, kw_only=True)
-    """
-    Parsing simulation argument
-    """
 
     # If True, the gripper is kept vertically aligned during the grasp
     # kw_only=True forces this to be passed as a keyword argument

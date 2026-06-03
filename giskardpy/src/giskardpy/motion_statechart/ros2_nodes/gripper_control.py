@@ -5,6 +5,8 @@ from giskardpy.motion_statechart.context import MotionStatechartContext
 from giskardpy.motion_statechart.graph_node import Goal, NodeArtifacts
 from giskardpy.motion_statechart.ros2_nodes.gripper_command import GripperCommandTask
 from giskardpy.motion_statechart.tasks.joint_tasks import JointPositionList
+from pycram.datastructures.enums import ExecutionType
+from pycram_suturo_demos.pycram_basic_hsr_demos.testings.move_demo import execution_type
 from semantic_digital_twin.datastructures.joint_state import JointState
 
 
@@ -16,10 +18,13 @@ class HSRGripper(Enum):
 @dataclass(repr=False, eq=False)
 class CloseHand(Goal):
     ft: bool = field(kw_only=True, default=False)
-    simulated_execution: bool = field(kw_only=True, default=True)
 
     def expand(self, context: MotionStatechartContext) -> None:
-        if self.simulated_execution:
+        simulated_execution = (
+            True if context.execution_type == ExecutionType.SIMULATED else False
+        )
+
+        if simulated_execution:
             self.close_gripper = JointPositionList(
                 goal_state=JointState.from_str_dict(
                     {"hand_motor_joint": HSRGripper.close_gripper.value}, context.world
@@ -40,10 +45,12 @@ class CloseHand(Goal):
 
 @dataclass(repr=False, eq=False)
 class OpenHand(Goal):
-    simulated_execution: bool = field(kw_only=True, default=True)
-
     def expand(self, context: MotionStatechartContext) -> None:
-        if self.simulated_execution:
+        simulated_execution = (
+            True if context.execution_type == ExecutionType.SIMULATED else False
+        )
+
+        if simulated_execution:
             self.open_gripper = JointPositionList(
                 goal_state=JointState.from_str_dict(
                     {"hand_motor_joint": HSRGripper.open_gripper.value}, context.world

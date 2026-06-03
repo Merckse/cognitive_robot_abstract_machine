@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 SIMULATED = True
 robot_type = simulated_robot if SIMULATED else real_robot
 
-result = robot_setup(simulation=SIMULATED)
+result = robot_setup()
 world, robot, context, node = (
     result.world,
     result.robot_view,

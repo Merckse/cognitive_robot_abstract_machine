@@ -4,9 +4,6 @@ from pycram.language import SequentialPlan
 from pycram.motion_executor import real_robot
 from pycram.robot_plans import ParkArmsAction, ParkArmsActionDescription
 
-from pycram_suturo_demos.helper_methods_and_useful_classes.pickup_helper_methods import (
-    initialization,
-)
 from pycram_suturo_demos.pycram_basic_hsr_demos.A_start_up import setup_hsrb_context
 
 SIMULATED = False

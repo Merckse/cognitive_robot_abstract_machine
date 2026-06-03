@@ -1,7 +1,6 @@
 from typing import Any
 
 import rclpy
-from debian.debtags import output
 
 from pycram.external_interfaces.nlp_interface import NlpInterface, FilterOptions
 

@@ -33,7 +33,6 @@ def place_demo(
     plan = SequentialPlan(
         context,
         GiskardPlaceActionDescription(
-            simulated=simulation,
             arm=Arms.LEFT,
             object_designator=object_to_place,
             target_location=place_pose,

@@ -109,16 +109,12 @@ class PickUp(Goal):
     def expand(self, context: MotionStatechartContext) -> None:
         super().expand(context)
         robot = self.grasp_magic.manipulator._robot
-        execution_type = context.execution_type
-        if execution_type == ExecutionType.SIMULATED:
-            simulated_execution = True
-        else:
-            simulated_execution = False
+
         self.sequence = Sequence(
             [
-                OpenHand(simulated_execution=simulated_execution),
+                OpenHand(),
                 sequence := GraspingSequence(grasp_magic=self.grasp_magic),
-                CloseHand(ft=self.ft, simulated_execution=simulated_execution),
+                CloseHand(ft=self.ft),
             ]
         )
         self.add_node(self.sequence)

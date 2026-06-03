@@ -68,6 +68,7 @@ class NavigateAction(ActionDescription):
         )
 
 
+# TODO: remoove simulated tag, kinda stupid
 @dataclass
 class nav2NavigateAction(ActionDescription):
     """
@@ -88,12 +89,7 @@ class nav2NavigateAction(ActionDescription):
 
         if isinstance(self.target_location, Pose):
             self.target_location = self.pose_to_ros(self.target_location)
-        if self.simulated:
-            SequentialPlan(
-                self.context, MoveMotion(self.target_location, True)
-            ).perform()
-        else:
-            nav2_move.start_nav_to_pose(self.target_location)
+        nav2_move.start_nav_to_pose(self.target_location)
 
     def pose_to_ros(self, pose: Pose) -> PoseStamped:
         pose_stamped = geometry_msgs.msg.PoseStamped()

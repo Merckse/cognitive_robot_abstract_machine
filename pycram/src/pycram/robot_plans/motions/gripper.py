@@ -250,11 +250,6 @@ class PlaceMotion(BaseMotion):
     The goal_pose at which the object should be placed
     """
 
-    simulated: bool = field(default=True, kw_only=True)
-    """
-    Parsing simulation argument
-    """
-
     allow_gripper_collision: Optional[bool] = None
     """
     If the gripper is allowed to collide with something
@@ -271,7 +266,6 @@ class PlaceMotion(BaseMotion):
             manipulator=self.gripper,
             object_geometry=self.object_designator,
             goal=goal_pose,
-            simulated=self.simulated,
         )
 
 
@@ -286,10 +280,6 @@ class RetractMotion(BaseMotion):
     gripper: Manipulator = field(kw_only=True)
     """
     Name of the gripper that should be moved
-    """
-    simulated: bool = field(default=True, kw_only=True)
-    """
-    Parsing simulation argument
     """
 
     def perform(self):
@@ -313,10 +303,6 @@ class GiskardMoveGripperMotion(BaseMotion):
     """
     Motion that should be performed, either 'open' or 'close'
     """
-    simulated: bool = True
-    """
-    Parsing simulation argument
-    """
 
     def perform(self):
         return
@@ -324,8 +310,8 @@ class GiskardMoveGripperMotion(BaseMotion):
     @property
     def _motion_chart(self):
         if self.motion == GripperState.OPEN:
-            return OpenHand(simulated_execution=self.simulated)
+            return OpenHand()
         if self.motion == GripperState.CLOSE:
-            return CloseHand(simulated_execution=self.simulated)
+            return CloseHand()
         else:
             raise ValueError(f"Unknown motion {self.motion}")

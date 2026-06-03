@@ -8,7 +8,8 @@ from typing_extensions import Self, Dict, Type, TypeVar
 from krrood.symbolic_math.float_variable_data import FloatVariableData
 from krrood.symbolic_math.symbolic_math import FloatVariable
 from pycram.datastructures.enums import ExecutionType
-from pycram.motion_executor import MotionExecutor
+from pycram.motion_executor import ExecutionEnvironment
+
 from semantic_digital_twin.collision_checking.collision_manager import CollisionManager
 from semantic_digital_twin.collision_checking.collision_variable_managers import (
     SelfCollisionVariableManager,
@@ -41,10 +42,12 @@ class MotionStatechartContext:
 
     world: World
     """There world in which to execute the Motion Statechart."""
-    execution_type: ExecutionType = field(
-        default_factory=lambda: MotionExecutor.execution_type
+    executionenvironment: ExecutionEnvironment = field(
+        default=ExecutionType.SIMULATED, kw_only=True
     )
-    """The execution type used to execute the Motion Statechart."""
+    """
+    The execution environment used to execute the Motion Statechart.
+    """
     control_cycle_variable: FloatVariable = field(init=False)
     """Auxiliary variable used to count control cycles, can be used my Motion StatechartNodes to implement time-dependent actions."""
     float_variable_data: FloatVariableData = field(default_factory=FloatVariableData)

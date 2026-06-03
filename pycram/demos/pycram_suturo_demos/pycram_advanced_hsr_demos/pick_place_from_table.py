@@ -6,48 +6,11 @@ import rclpy
 from pycram.datastructures.enums import Arms
 from pycram.language import SequentialPlan
 from pycram.motion_executor import real_robot
-from pycram.robot_plans import ParkArmsActionDescription, MoveTorsoActionDescription
-from pycram_suturo_demos.helper_methods_and_useful_classes.pickup_helper_methods import (
-    attach_object_to_hsrb,
-)
-from pycram_suturo_demos.pycram_basic_hsr_demos.move_demo import move_demo
-from pycram_suturo_demos.pycram_basic_hsr_demos.pickup_demo import (
-    pickup_demo,
-)
-from pycram_suturo_demos.pycram_basic_hsr_demos.place_demo import place_demo
-from pycram.datastructures.pose import PoseStamped
-from semantic_digital_twin.datastructures.definitions import TorsoState
-
-"""
-was brauche ich:
-[X] - Home position
-[X] - Navigate to table
-[X] - Retrieve item from world
-[ ] - Handle if item not existing
-[X] - PickUp
-[X] - Attach to gripper
-[X] - Drive back
-
-"""
-
-from dataclasses import field
+from pycram.robot_plans import ParkArmsActionDescription
 
 from pycram_suturo_demos.helper_methods_and_useful_classes.A_robot_setup import (
     robot_setup,
 )
-
-
-def initialization(simulation: bool = True):
-    logger = logging.getLogger(__name__)
-
-    result = robot_setup(simulation=simulation)
-    rclpy_node, world, robot_view, context = (
-        result.node,
-        result.world,
-        result.robot_view,
-        result.context,
-    )
-    return rclpy_node, world, robot_view, context
 
 
 def try_perceive_and_spawn(world):
@@ -65,9 +28,15 @@ def try_perceive_and_spawn(world):
 
 def main():
     rclpy.init()
-    SIMULATED = False
+    simulated = False
 
-    rclpy_node, world, robot_view, context = initialization(simulation=SIMULATED)
+    result = robot_setup()
+    rclpy_node, world, robot_view, context = (
+        result.node,
+        result.world,
+        result.robot_view,
+        result.context,
+    )
     object_name = "muesli_vitalis_box_nutmix2"
 
     # objects = {1: "milk.stl", 2: "breakfast_cereal.stl"}

@@ -1,25 +1,12 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import Optional
 
 import rclpy
 
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.pose import PoseStamped
-from pycram.language import SequentialPlan
-from pycram.robot_plans import (
-    MoveTorsoAction,
-    MoveTorsoActionDescription,
-    LookAtActionDescription,
-)
 from pycram_suturo_demos.helper_methods_and_useful_classes.pickup_helper_methods import (
-    initialization,
-    object_to_pickup_by_mode,
-    get_pickup_mode,
-    perceive_and_spawn_all_objects,
-    look_at_point,
     try_percieve_and_retrieve,
 )
 from pycram_suturo_demos.pycram_basic_hsr_demos.hri_handover import (
@@ -30,10 +17,6 @@ from pycram_suturo_demos.pycram_basic_hsr_demos.move_demo import move_demo
 from pycram_suturo_demos.pycram_basic_hsr_demos.pickup_demo import (
     pickup_demo,
 )
-from semantic_digital_twin.datastructures.definitions import TorsoState
-from semantic_digital_twin.robots.hsrb import HSRB
-from semantic_digital_twin.spatial_types import Point3
-from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.world_entity import Body
 
 from demos.pycram_suturo_demos.helper_methods_and_useful_classes.nlp_human_robot_interaction import (
@@ -60,6 +43,7 @@ def bring_item_from_table_to_human_demo(
     *,
     context: Context,
     object_name: str,
+    supporting_surface_str: Optional[str] = None,
 ):
     rclpy.init()
     simulated = False
@@ -68,15 +52,14 @@ def bring_item_from_table_to_human_demo(
     standard_delay = 2
 
     # TODO insert correct name here
-    table = ""
-    table = world.get_body_by_name("cooking_table")
+    table = world.get_body_by_name(supporting_surface_str)
 
     # Move to table, on which the object is to be expected.
     move_to_table = move_demo(
         simulated=simulated,
         world=world,
         context=context,
-        target_pose=table,
+        target_pose=supporting_surface_str,
     )
     move_to_starting_pose = move_demo(
         simulated=simulated,

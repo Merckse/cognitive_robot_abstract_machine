@@ -14,6 +14,7 @@ from pycram_score_aware_planning.common.types import TaskEstimation, Task, Actio
 from pycram_score_aware_planning.common.values import NAVIGATION_POSES
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import WorldEntityNotFoundError
+from semantic_digital_twin.reasoning.predicates import is_supported_by
 from semantic_digital_twin.reasoning.queries import annotation_class_by_label
 from semantic_digital_twin.robots.abstract_robot import Manipulator
 from semantic_digital_twin.semantic_annotations.mixins import HasRootBody, HasSupportingSurface
@@ -411,4 +412,12 @@ def generate_plan(tasks: list[Task], context: Context):
 
 def _quat(yaw: float) -> tuple[float, float, float, float]:
     return (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))
+
+def find_sufrace_of_object(context:Context, body: Body) -> HasSupportingSurface | None:
+    world = context.world
+    surfaces = world.get_semantic_annotations_by_type(HasSupportingSurface)
+    for surface in surfaces:
+        if is_supported_by(body, surface.bodies[0]):
+            return surface
+    return None
 

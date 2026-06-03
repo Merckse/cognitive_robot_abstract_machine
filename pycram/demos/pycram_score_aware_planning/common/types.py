@@ -5,10 +5,10 @@ from typing import Optional
 
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 
+# TODO: Unstatify the types?
 # ---------------------------------------------------------------------------
 # Types
 # ---------------------------------------------------------------------------
-
 
 class ActionType(str, Enum):
     PICKUP = "pickup"

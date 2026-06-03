@@ -8,6 +8,7 @@ from pycram.datastructures.enums import TaskStatus
 from semantic_digital_twin.semantic_annotations.semantic_annotations import *
 from pycram_score_aware_planning.helper_methods import _quat
 
+# TODO: Unstatify the values
 """
 Currently implements:
 - ParkArms

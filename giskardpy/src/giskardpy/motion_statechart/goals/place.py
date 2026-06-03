@@ -65,7 +65,7 @@ class Place(Goal):
     def expand(self, context: MotionStatechartContext) -> None:
         super().expand(context)
         robot = self.manipulator._robot
-        execution_type = context.executionenvironment.execution_type
+        execution_type = context.execution_type
         if execution_type == ExecutionType.SIMULATED:
             simulated_execution = True
         else:

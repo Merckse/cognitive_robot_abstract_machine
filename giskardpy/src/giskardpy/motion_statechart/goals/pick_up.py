@@ -109,7 +109,7 @@ class PickUp(Goal):
     def expand(self, context: MotionStatechartContext) -> None:
         super().expand(context)
         robot = self.grasp_magic.manipulator._robot
-        execution_type = context.executionenvironment.execution_type
+        execution_type = context.execution_type
         if execution_type == ExecutionType.SIMULATED:
             simulated_execution = True
         else:

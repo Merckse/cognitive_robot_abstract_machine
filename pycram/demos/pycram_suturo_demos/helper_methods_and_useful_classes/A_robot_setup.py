@@ -61,6 +61,15 @@ class WorldSetupPaths:
     cup_stl: str
 
 
+@dataclass(frozen=True)
+class WorldSetup_xyz_rpy:
+    robot: Tuple[float, float, float, float, float, float]
+    milk: Tuple[float, float, float, float, float, float]
+    cereal: Tuple[float, float, float, float, float, float]
+    bowl: Tuple[float, float, float, float, float, float]
+    cup: Tuple[float, float, float, float, float, float]
+
+
 def default_paths() -> WorldSetupPaths:
     return WorldSetupPaths(
         hsrb_urdf=_here("..", "..", "..", "resources", "robots", "hsrb.urdf"),
@@ -70,6 +79,51 @@ def default_paths() -> WorldSetupPaths:
         ),
         bowl_stl=_here("..", "..", "..", "resources", "objects", "bowl.stl"),
         cup_stl=_here("..", "..", "..", "resources", "objects", "jeroen_cup.stl"),
+    )
+
+
+def default_xyz_rpy():
+    return WorldSetup_xyz_rpy(
+        milk=(
+            1.0,
+            6,
+            0.78,
+            0.0,
+            0.0,
+            0.0,
+        ),
+        cereal=(
+            0.6,
+            6.3,
+            0.805,
+            0.0,
+            0.0,
+            0.0,
+        ),
+        bowl=(
+            1.5,
+            6.3,
+            0.725,
+            0.0,
+            0.0,
+            0.0,
+        ),
+        cup=(
+            1.5,
+            6.7,
+            0.72,
+            0.0,
+            0.0,
+            0.0,
+        ),
+        robot=(
+            0,
+            0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+        ),
     )
 
 
@@ -137,14 +191,7 @@ def try_make_viz(world: World, node: Any):
 def merge_robot_into_environment(
     hsrb_world,
     environment_world,
-    robot_xyz_rpy: Tuple[float, float, float, float, float, float] = (
-        1.5,
-        2.0,
-        0.0,
-        0.0,
-        0.0,
-        0.0,
-    ),
+    robot_xyz_rpy: Tuple[float, float, float, float, float, float],
 ) -> World:
     x, y, z, r, p, yaw = robot_xyz_rpy
     environment_world.merge_world_at_pose(
@@ -199,33 +246,28 @@ def simulated_setup(node_name: str = "pycram_node"):
     # creating node
     node: Any = rclpy.create_node(node_name)
     # default coordinates for the robot
-    robot_xyz_rpy: Tuple[float, float, float, float, float, float] = (
-        0,
-        0,
-        0,
-        0.0,
-        0.0,
-        0.0,
-    )
-
     # building robot and world
     hsrb_world = build_hsrb_world(default_paths().hsrb_urdf)
     env_world: World = load_environment()
 
+    p = default_paths()
+
+    xyz_rpy = default_xyz_rpy()
+
     # feel free to comment in, if you are still working with these simulated objects
-    # env_world = add_objects_and_semantics(
-    #     env_world,
-    #     objects=(
-    #         SpawnSpec(world_path=p.milk_stl, xyz_rpy=milk_xyz_rpy),
-    #         SpawnSpec(world_path=p.cereal_stl, xyz_rpy=cereal_xyz_rpy),
-    #         SpawnSpec(world_path=p.bowl_stl, xyz_rpy=bowl_xyz_rpy),
-    #         SpawnSpec(world_path=p.cup_stl, xyz_rpy=cup_xyz_rpy),
-    #     ),
-    # )
+    env_world = add_objects_and_semantics(
+        env_world,
+        objects=(
+            SpawnSpec(world_path=p.milk_stl, xyz_rpy=xyz_rpy.milk),
+            SpawnSpec(world_path=p.cereal_stl, xyz_rpy=xyz_rpy.cereal),
+            SpawnSpec(world_path=p.bowl_stl, xyz_rpy=xyz_rpy.bowl),
+            SpawnSpec(world_path=p.cup_stl, xyz_rpy=xyz_rpy.cup),
+        ),
+    )
 
     # Merging the robot into the world and retrieving robot, manipulator and misc.
     hsrb_world = merge_robot_into_environment(
-        hsrb_world, env_world, robot_xyz_rpy=robot_xyz_rpy
+        hsrb_world, env_world, robot_xyz_rpy=xyz_rpy.robot
     )
     # fetching robot_view, manipulator to create context
     robot_view = HSRB.from_world(hsrb_world)

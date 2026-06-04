@@ -328,6 +328,7 @@ def item_between_fingertips(
 
 
 def validate_grasped() -> bool:
+    """Reads the fingertip distance topic once and returns True if an object appears to be held."""
     node = rclpy.create_node("gripper_distance_subscriber")
 
     msg = wait_for_message(

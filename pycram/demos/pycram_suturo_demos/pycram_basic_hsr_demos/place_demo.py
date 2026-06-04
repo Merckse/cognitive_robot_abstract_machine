@@ -11,6 +11,7 @@ from pycram.robot_plans import (
     GiskardPlaceActionDescription,
     ParkArmsActionDescription,
 )
+from semantic_digital_twin.spatial_types import Point3
 
 from semantic_digital_twin.world import World
 
@@ -21,7 +22,7 @@ def place_demo(
     hsrb_world: World,  # parameter can be replaced
     context: Context,
     object_name: str,  # parameter can be replaced by retrieving from TCP
-    place_pose: PoseStamped,  # TODO PoseStamped will be deprecated soon Point3 / smth else cant remember will be up to date then
+    place_pose: Point3,  # TODO PoseStamped will be deprecated soon Point3 / smth else cant remember will be up to date then
     ignore_orientation: bool = False,
 ):
     robot_type = simulated_robot if simulation else real_robot

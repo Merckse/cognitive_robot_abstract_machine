@@ -1,27 +1,20 @@
 from __future__ import annotations
 
 import logging
-import os
-import time
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Callable
 
 import rclpy
-from rclpy import create_node
 from std_msgs.msg import Float32
-from typing_extensions import Union, Optional, Type, Any, Iterable
+from typing_extensions import Union, Optional, Any, Iterable
 
-from pycram_suturo_demos.helper_methods_and_useful_classes.pickup_helper_methods import (
-    attach_object_to_hsrb,
-)
 from semantic_digital_twin.datastructures.definitions import GripperState
 from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.world_entity import Body
-from pycram.robot_plans.actions.core.navigation import nav2NavigateActionDescription
-from ...motions.pick_up import PullUpMotion
+from pycram.robot_plans.motions.gripper import MoveTCPMotion, MoveGripperMotion
+from ...motions.gripper import GiskardMoveGripperMotion, RetractMotion, PullUpMotion
+from ...motions.transportation import GiskardReachMotion
 
-# from ...motions.gripper import MoveGripperMotion, MoveTCPMotion
 from ....config.action_conf import ActionConfig
 from ....datastructures.enums import (
     Arms,
@@ -33,8 +26,7 @@ from ....datastructures.partial_designator import PartialDesignator
 from ....datastructures.pose import PoseStamped
 from ....failures import ObjectNotGraspedError
 from ....failures import ObjectNotInGraspingArea
-from ....language import SequentialPlan, CodePlan
-from pycram.ros.ros2.ros_tools import wait_for_message
+from ....language import SequentialPlan
 
 from ....view_manager import ViewManager
 from ....robot_plans.actions.base import ActionDescription
@@ -258,18 +250,6 @@ class GraspingAction(ActionDescription):
             ),
         ).perform()
 
-    def validate(
-        self, result: Optional[Any] = None, max_wait_time: Optional[timedelta] = None
-    ):
-        body = self.object_designator
-        contact_links = body.get_contact_points_with_body(World.robot).get_all_bodies()
-        arm_chain = RobotDescription.current_robot_description.get_arm_chain(self.arm)
-        gripper_links = arm_chain.end_effector.links
-        if not any([link.name in gripper_links for link in contact_links]):
-            raise ObjectNotGraspedError(
-                self.object_designator, World.robot, self.arm, None
-            )
-
     @classmethod
     def description(
         cls,
@@ -293,7 +273,7 @@ class GiskardPickUpAction(ActionDescription):
     Let the robot pick up an object.
     """
 
-    object_designator: Body = field(default=None, kw_only=True)
+    object_geometry: Body = field(default=None, kw_only=True)
     """
     Object designator_description describing the object that should be picked up
     """
@@ -309,26 +289,7 @@ class GiskardPickUpAction(ActionDescription):
     kw_only=True forces this to be passed as a keyword argument
     """
 
-    _pre_perform_callbacks = []
-    """
-    List to save the callbacks which should be called before performing the action.
-    """
-
-    def __post_init__(self):
-        super().__post_init__()
-
     def execute(self) -> bool:
-        try:
-            from ...motions.pick_up import PickupMotion
-            from ... import GiskardRetractActionDescription, ParkArmsActionDescription
-            from pycram.robot_plans.motions.navigation import MoveMotion
-            from pycram.external_interfaces import nav2_move
-
-        except ImportError:
-            raise ImportError(
-                "The GiskardPickUpAction requires Giskardpy_ros, not only giskardpy."
-            )
-
         # Register attach as a post-perform callback BEFORE queuing the motion
         robot_pose_pre_manipulation = PoseStamped.from_spatial_type(
             self.context.robot.root.global_pose
@@ -336,52 +297,30 @@ class GiskardPickUpAction(ActionDescription):
 
         grasped: bool = False
 
-        # try to grasp the object, if it is not grasped, throw an ObjectNotGraspedError so one can react within the demo
-        try:
-            SequentialPlan(
-                self.context,
-                GiskardGraspActionDescription(
-                    arm=self.arm,
-                    object_designator=self.object_designator,
-                    gripper_vertical=self.gripper_vertical,
-                ),
-            ).perform()
-            #
-            # if not self.validate_grasped():
-            #     print("object has not been grasped")
-            #     raise ObjectNotGraspedError(
-            #         obj=self.object_designator, robot=self.context.robot, arm=self.arm
-            #     )
-            grasped = True
-        except Exception as e:
-            SequentialPlan(
-                self.context,
-                GiskardRetractActionDescription(
-                    arm=Arms.LEFT,
-                    back_off_pose=robot_pose_pre_manipulation,
-                ),
-                ParkArmsActionDescription(Arms.BOTH),
-            ).perform()
-            logger.error(f"Internal PickUpError with error message: {e}")
-            grasped = False
-            return grasped
+        if self.arm == Arms.LEFT:
+            manipulator = self.robot_view.manipulators[0]
+        else:
+            manipulator = self.robot_view.manipulators[1]
 
+        # try to grasp the object, if it is not grasped, throw an ObjectNotGraspedError so one can react within the demo
         SequentialPlan(
             self.context,
-            GiskardPullUpActionDescription(
-                arm=self.arm,
-                object_designator=self.object_designator,
+            GiskardMoveGripperMotion(gripper_state=GripperState.OPEN, arm=self.arm),
+            GiskardReachMotion(
+                manipulator=manipulator,
+                object_geometry=self.object_geometry,
+                gripper_vertical=self.gripper_vertical,
             ),
+            GiskardMoveGripperMotion(gripper_state=GripperState.CLOSE, arm=self.arm),
         ).perform()
 
-        from pycram.external_interfaces import nav2_move
-
-        os.environ["ROS_PYTHON_CHECK_FIELDS"] = "1"
-        goal = robot_pose_pre_manipulation.ros_message()
-        print(f"Moving to {robot_pose_pre_manipulation}'")
-        nav2_move.start_nav_to_pose(goal)
-
-        SequentialPlan(self.context, ParkArmsActionDescription(Arms.BOTH)).perform()
+        # # not largely tested yet
+        # if not self.validate_grasped():
+        #     print("object has not been grasped")
+        #     raise ObjectNotGraspedError(
+        #         obj=self.object_designator, robot=self.context.robot, arm=self.arm
+        #     )
+        grasped = True
 
         return grasped
 
@@ -425,7 +364,6 @@ class GiskardPickUpAction(ActionDescription):
             nonlocal msg
             msg = data
 
-        # TODO change msg time, idk what msg type it is
         subscription = node.create_subscription(
             msg_type=Float32,
             topic="/gripper_command/fingertip_distance",
@@ -444,146 +382,21 @@ class GiskardPickUpAction(ActionDescription):
         )
         if not is_object_between_fingertips:
             raise ObjectNotGraspedError(
-                obj=self.object_designator, robot=self.context.robot, arm=self.arm
+                obj=self.object_geometry, robot=self.context.robot, arm=self.arm
             )
 
     @classmethod
     def description(
         cls,
-        object_designator: Union[Iterable[Body], Body],
-        arm: Union[Iterable[Arms], Arms] = None,
-        gripper_vertical: Union[Iterable[bool], bool] = True,
+        object_geometry: Body,
+        arm: Arms,
+        gripper_vertical: bool = True,
     ) -> PartialDesignator[GiskardPickUpAction]:
         return PartialDesignator[GiskardPickUpAction](
             GiskardPickUpAction,
-            object_designator=object_designator,
+            object_geometry=object_geometry,
             arm=arm,
             gripper_vertical=gripper_vertical,
-        )
-
-
-@dataclass
-class GiskardGraspAction(ActionDescription):
-    """
-    Let the robot pick up an object.
-    """
-
-    object_designator: Body = field(default=None, kw_only=True)
-    """
-    Object designator_description describing the object that should be picked up
-    """
-
-    arm: Arms = field(default=Arms.LEFT, kw_only=True)
-    """
-    arms that should be used for pick up
-    """
-
-    gripper_vertical: Optional[bool] = field(default=True, kw_only=True)
-    """
-    If True, the gripper is kept vertically aligned during the grasp
-    kw_only=True forces this to be passed as a keyword argument
-    """
-
-    _pre_perform_callbacks = []
-    """
-    List to save the callbacks which should be called before performing the action.
-    """
-
-    def __post_init__(self):
-        super().__post_init__()
-
-    def execute(self) -> None:
-        try:
-            from ...motions.pick_up import PickupMotion
-        except ImportError:
-            raise ImportError(
-                "The GiskardPickUpAction requires Giskardpy_ros, not only giskardpy."
-            )
-
-        # Register attach as a post-perform callback BEFORE queuing the motion
-
-        manipulator = ViewManager.get_end_effector_view(self.arm, self.robot_view)
-        SequentialPlan(
-            self.context,
-            PickupMotion(
-                manipulator=manipulator,
-                object_geometry=self.object_designator,
-                gripper_vertical=self.gripper_vertical,
-            ),
-        ).perform()
-
-    @classmethod
-    def description(
-        cls,
-        object_designator: Union[Iterable[Body], Body],
-        arm: Union[Iterable[Arms], Arms] = None,
-        gripper_vertical: Union[Iterable[bool], bool] = True,
-    ) -> PartialDesignator[GiskardGraspAction]:
-        return PartialDesignator[GiskardGraspAction](
-            GiskardGraspAction,
-            object_designator=object_designator,
-            arm=arm,
-            gripper_vertical=gripper_vertical,
-        )
-
-
-@dataclass
-class GiskardPullUpAction(ActionDescription):
-    """
-    Let the robot pick up an object.
-    """
-
-    object_designator: Body = field(default=None, kw_only=True)
-    """
-    Object designator_description describing the object that should be picked up
-    """
-    arm: Arms = field(default=Arms.LEFT, kw_only=True)
-    """
-    arms that should be used for pick up
-    """
-    _pre_perform_callbacks = []
-    """
-    List to save the callbacks which should be called before performing the action.
-    """
-
-    def __post_init__(self):
-        super().__post_init__()
-
-    def execute(self) -> None:
-        try:
-            from ...motions.pick_up import PickupMotion
-        except ImportError:
-            raise ImportError(
-                "The GiskardPickUpAction requires Giskardpy_ros, not only giskardpy."
-            )
-
-        # Register attach as a post-perform callback BEFORE queuing the motion
-
-        manipulator = ViewManager.get_end_effector_view(self.arm, self.robot_view)
-        attach_object_to_hsrb(
-            world=self.world, object_designator=self.object_designator
-        )
-        SequentialPlan(
-            self.context,
-            PullUpMotion(
-                manipulator=manipulator,
-                object_geometry=self.object_designator,
-            ),
-        ).perform()
-
-    def validate(self):
-        pass
-
-    @classmethod
-    def description(
-        cls,
-        object_designator: Union[Iterable[Body], Body],
-        arm: Union[Iterable[Arms], Arms] = None,
-    ) -> PartialDesignator[GiskardPullUpAction]:
-        return PartialDesignator[GiskardPullUpAction](
-            GiskardPullUpAction,
-            object_designator=object_designator,
-            arm=arm,
         )
 
 
@@ -591,5 +404,3 @@ ReachActionDescription = ReachAction.description
 PickUpActionDescription = PickUpAction.description
 GraspingActionDescription = GraspingAction.description
 GiskardPickUpActionDescription = GiskardPickUpAction.description
-GiskardGraspActionDescription = GiskardGraspAction.description
-GiskardPullUpActionDescription = GiskardPullUpAction.description

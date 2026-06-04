@@ -21,7 +21,6 @@ from giskardpy.motion_statechart.ros2_nodes.force_torque_monitor import (
 from giskardpy.motion_statechart.ros2_nodes.gripper_control import OpenHand, CloseHand
 from giskardpy.motion_statechart.data_types import DefaultWeights
 from giskardpy.motion_statechart.goals.collision_avoidance import (
-    SelfCollisionAvoidance,
     ExternalCollisionAvoidance,
     UpdateTemporaryCollisionRules,
     make_external_collision_rules,
@@ -30,7 +29,6 @@ from giskardpy.motion_statechart.tasks.cartesian_tasks import (
     CartesianPosition,
     CartesianOrientation,
 )
-from pycram.datastructures.enums import ExecutionType
 from semantic_digital_twin.collision_checking.collision_rules import (
     AllowCollisionRule,
 )

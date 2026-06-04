@@ -139,7 +139,7 @@ def test_partial_desig_iter(immutable_model_world):
         grasp_description_front,
         grasp_description_top,
     ]
-    assert [p.object_designator for p in performables] == [
+    assert [p.object_geometry for p in performables] == [
         world.get_body_by_name("milk.stl")
     ] * 4
 

@@ -1,8 +1,8 @@
 from dataclasses import dataclass, field
 from typing import Optional, List
 
-from giskardpy.motion_statechart.goals.pick_up import OpenHand, CloseHand
-from giskardpy.motion_statechart.goals.place import Place, Retracting
+from giskardpy.motion_statechart.goals.pick_up import OpenHand, CloseHand, PullUp
+from giskardpy.motion_statechart.goals.place import Retracting
 from giskardpy.motion_statechart.goals.templates import Sequence
 from giskardpy.motion_statechart.tasks.cartesian_tasks import (
     CartesianPose,
@@ -10,8 +10,7 @@ from giskardpy.motion_statechart.tasks.cartesian_tasks import (
 )
 from giskardpy.motion_statechart.tasks.joint_tasks import JointPositionList
 from semantic_digital_twin.datastructures.definitions import GripperState
-from semantic_digital_twin.robots.abstract_robot import Manipulator
-from semantic_digital_twin.spatial_types import Point3, HomogeneousTransformationMatrix
+from semantic_digital_twin.robots.abstract_robot import Manipulator, ParallelGripper
 from semantic_digital_twin.world_description.world_entity import Body
 from pycram.robot_plans.motions.base import BaseMotion
 from pycram.datastructures.enums import (
@@ -229,47 +228,6 @@ class MoveTCPWaypointsMotion(BaseMotion):
 
 
 @dataclass
-class PlaceMotion(BaseMotion):
-    """
-    Motion for placing an object, i.e., moving the gripper to a certain pose
-    It creates a _motion_chart that is used by the motion framework
-    It directly calls the implemented PickUp of Giskard.
-    """
-
-    gripper: Manipulator = field(kw_only=True)
-    """
-    Name of the gripper that should be moved
-    """
-
-    object_designator: Body = field(kw_only=True)
-    """
-    Object designator_description describing the object that should be placed
-    """
-    goal_pose: HomogeneousTransformationMatrix | Point3 = field(kw_only=True)
-    """
-    The goal_pose at which the object should be placed
-    """
-
-    allow_gripper_collision: Optional[bool] = None
-    """
-    If the gripper is allowed to collide with something
-    """
-
-    def perform(self):
-        return
-
-    @property
-    def _motion_chart(self):
-        goal_pose = self.goal_pose
-
-        return Place(
-            manipulator=self.gripper,
-            object_geometry=self.object_designator,
-            goal=goal_pose,
-        )
-
-
-@dataclass
 class RetractMotion(BaseMotion):
     """
     Motion for placing an object, i.e., moving the gripper to a certain pose
@@ -292,16 +250,20 @@ class RetractMotion(BaseMotion):
         )
 
 
-# TODO currently still missing the class that just sits within the Pickup of Giskard
 @dataclass
 class GiskardMoveGripperMotion(BaseMotion):
     """
-    Opens or closes the gripper
+    Opens or closes the gripper, this is specified to HSRB and not yet generalized implemented
     """
 
-    motion: GripperState
+    gripper_state: GripperState
     """
     Motion that should be performed, either 'open' or 'close'
+    """
+
+    arm: Arms
+    """
+    The arm with the gripper that should be Opened or Closed
     """
 
     def perform(self):
@@ -309,9 +271,46 @@ class GiskardMoveGripperMotion(BaseMotion):
 
     @property
     def _motion_chart(self):
-        if self.motion == GripperState.OPEN:
+        if self.gripper_state == GripperState.OPEN:
             return OpenHand()
-        if self.motion == GripperState.CLOSE:
+        if self.gripper_state == GripperState.CLOSE:
             return CloseHand()
         else:
-            raise ValueError(f"Unknown motion {self.motion}")
+            raise ValueError(f"Unknown motion {self.gripper_state}")
+
+
+@dataclass
+class PullUpMotion(BaseMotion):
+    """
+    High-level motion for pulling up an object with a parallel gripper.
+
+    This motion wraps the Giskard PullUp goal and exposes it to the
+    motion framework via the `_motion_chart` property.
+    """
+
+    # The gripper that will execute the pullUp (must be a ParallelGripper)
+    manipulator: ParallelGripper = field(default=None, kw_only=True)
+
+    # The world object that should be pulledUp
+    object_geometry: Body = field(default=None, kw_only=True)
+
+    # If True, the gripper is kept vertically aligned during the grasp
+    # kw_only=True forces this to be passed as a keyword argument
+    gripper_vertical: Optional[bool] = field(default=True, kw_only=True)
+
+    def perform(self):
+        return
+
+    @property
+    def _motion_chart(self):
+        """
+        Creates and returns the underlying Giskard PickUp goal.
+
+        The motion framework queries this property to insert the task
+        into the MotionStatechart.
+        """
+        print(f"Creating PullUp motion with {self.object_geometry}")
+        pickup = PullUp(
+            manipulator=self.manipulator, object_geometry=self.object_geometry
+        )
+        return pickup

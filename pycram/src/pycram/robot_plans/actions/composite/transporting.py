@@ -7,11 +7,16 @@ from typing import List
 import numpy as np
 
 from krrood.entity_query_language.factories import an, entity, variable
+from pycram.robot_plans.actions.core.pick_up import GiskardPickUpActionDescription
+from pycram.robot_plans.actions.core.placing import GiskardPlaceActionDescription
+
 from semantic_digital_twin.datastructures.definitions import TorsoState
 from semantic_digital_twin.reasoning.predicates import InsideOf
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Drawer
+from semantic_digital_twin.spatial_types import Point3
+from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world_description.world_entity import Body
-from typing_extensions import Union, Optional, Type, Any, Iterable
+from typing_extensions import Union, Optional, Any, Iterable
 
 from pycram.robot_plans.actions.composite.facing import FaceAtActionDescription
 from pycram.robot_plans.actions.core import (
@@ -392,6 +397,194 @@ class MoveAndPickUpAction(ActionDescription):
 
 
 @dataclass
+class GiskardMoveAndPickUpAction(ActionDescription):
+    """
+    Navigate to `standing_position`, then turn towards the object and pick it up.
+    """
+
+    standing_position: Point3
+    """
+    The pose to stand before trying to pick up the object
+    """
+
+    object_designator: Body
+    """
+    The object to pick up
+    """
+
+    arm: Arms
+    """
+    The arm to use
+    """
+
+    def __post_init__(self):
+        super().__post_init__()
+
+    def execute(self):
+        from pycram.robot_plans import nav2NavigateAction
+
+        SequentialPlan(
+            self.context,
+            nav2NavigateAction(self.standing_position),
+            GiskardPickUpActionDescription(self.object_designator, self.arm),
+        ).perform()
+
+    def validate(
+        self, result: Optional[Any] = None, max_wait_time: Optional[timedelta] = None
+    ):
+        raise NotImplementedError
+
+    @classmethod
+    def description(
+        cls,
+        standing_position: Union[Iterable[PoseStamped], PoseStamped],
+        object_designator: Union[Iterable[Body], Body],
+        arm: Union[Iterable[Arms], Arms] = None,
+        keep_joint_states: Union[
+            Iterable[bool], bool
+        ] = ActionConfig.navigate_keep_joint_states,
+    ) -> PartialDesignator[GiskardMoveAndPickUpAction]:
+        return PartialDesignator(
+            GiskardMoveAndPickUpAction,
+            standing_position=standing_position,
+            object_designator=object_designator,
+            arm=arm,
+            keep_joint_states=keep_joint_states,
+        )
+
+
+@dataclass
+class GiskardMoveAndPlaceAction(ActionDescription):
+    """
+    Navigate to `standing_position`, then turn towards the object and pick it up.
+    """
+
+    standing_position: Point3
+    """
+    The pose to stand before trying to pick up the object
+    """
+
+    target_location: Point3
+    """
+    The pose on which to place the object
+    """
+
+    object_designator: Body
+    """
+    The object to pick up
+    """
+
+    arm: Arms
+    """
+    The arm to use
+    """
+
+    def __post_init__(self):
+        super().__post_init__()
+
+    def execute(self):
+        from pycram.robot_plans import nav2NavigateAction
+
+        obj_pose = PoseStamped.from_spatial_type(self.object_designator.global_pose)
+        SequentialPlan(
+            self.context,
+            nav2NavigateAction(self.standing_position),
+            # LookAtActionDescription(obj_pose, self.keep_joint_states),
+            GiskardPlaceActionDescription(
+                object_designator=self.object_designator,
+                arm=self.arm,
+                target_location=self.target_location,
+            ),
+        ).perform()
+
+    def validate(
+        self, result: Optional[Any] = None, max_wait_time: Optional[timedelta] = None
+    ):
+        raise NotImplementedError
+        # The validation will be done in each of the core action perform methods so no need to validate here.
+        pass
+
+    @classmethod
+    def description(
+        cls,
+        standing_position: Point3,
+        target_location: Point3,
+        object_designator: Body,
+        arm: Union[Iterable[Arms], Arms] = None,
+    ) -> PartialDesignator[MoveAndPickUpAction]:
+        return PartialDesignator(
+            MoveAndPickUpAction,
+            standing_position=standing_position,
+            target_location=target_location,
+            object_designator=object_designator,
+            arm=arm,
+        )
+
+
+@dataclass
+class GiskardPickAndPlaceAction(ActionDescription):
+    """
+    Transports an object to a position using an arm without moving the base of the robot
+    """
+
+    object_designator: Body
+    """
+    Object designator_description describing the object that should be transported.
+    """
+    target_location: Point3 | Pose
+    """
+    Target Location to which the object should be transported
+    """
+    arm: Arms
+    """
+    Arm that should be used
+    """
+    ignore_orientation: bool = False
+    """
+    ignores orientation if set to true
+    """
+
+    def __post_init__(self):
+        super().__post_init__()
+
+    def execute(self) -> None:
+        SequentialPlan(
+            self.context,
+            ParkArmsActionDescription(Arms.BOTH),
+            GiskardPickUpActionDescription(
+                object_designator=self.object_designator,
+                arm=self.arm,
+            ),
+            ParkArmsActionDescription(Arms.BOTH),
+            GiskardPlaceActionDescription(
+                self.object_designator, self.target_location, self.arm
+            ),
+            ParkArmsActionDescription(Arms.BOTH),
+        ).perform()
+
+    def validate(
+        self, result: Optional[Any] = None, max_wait_time: Optional[timedelta] = None
+    ):
+        raise NotImplementedError
+
+    @classmethod
+    def description(
+        cls,
+        object_designator: Body,
+        target_location: Point3 | Pose,
+        arm: Union[Iterable[Arms], Arms] = None,
+        ignore_orientation: bool = False,
+    ) -> PartialDesignator[PickAndPlaceAction]:
+        return PartialDesignator(
+            PickAndPlaceAction,
+            object_designator=object_designator,
+            target_location=target_location,
+            arm=arm,
+            ignore_orientation=ignore_orientation,
+        )
+
+
+@dataclass
 class EfficientTransportAction(ActionDescription):
     """
     To transport an object to a target location by choosing the closest
@@ -489,5 +682,8 @@ class EfficientTransportAction(ActionDescription):
 TransportActionDescription = TransportAction.description
 PickAndPlaceActionDescription = PickAndPlaceAction.description
 MoveAndPlaceActionDescription = MoveAndPlaceAction.description
+GiskardMoveAndPlaceActionDescription = GiskardMoveAndPlaceAction.description
+GiskardMoveAndPickUpActionDescription = GiskardMoveAndPickUpAction.description
+GiskardPickAndPlaceActionDescription = GiskardPickAndPlaceAction.description
 MoveAndPickUpActionDescription = MoveAndPickUpAction.description
 EfficientTransportActionDescription = EfficientTransportAction.description

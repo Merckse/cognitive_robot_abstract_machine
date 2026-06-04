@@ -7,9 +7,6 @@ from pycram.datastructures.enums import Arms, PickUpMode
 from pycram.language import SequentialPlan
 from pycram.motion_executor import real_robot, simulated_robot, ExecutionEnvironment
 from pycram.robot_plans import (
-    GiskardRetractActionDescription,
-    GiskardGraspActionDescription,
-    GiskardPullUpActionDescription,
     GiskardPickUpActionDescription,
 )
 from pycram_suturo_demos.helper_methods_and_useful_classes.nlp_human_robot_interaction import (
@@ -44,13 +41,13 @@ def pickup_demo(
         pickup_callback = SequentialPlan(
             context,
             GiskardPickUpActionDescription(
-                object_designator=object_to_pickup,
+                object_geometry=object_to_pickup,
                 arm=Arms.LEFT,
                 gripper_vertical=True,
             ),
         ).perform()
 
-        logger.info("PickUp has is now finished", delay=standard_delay)
+        talking_node.pub("PickUp has is now finished", delay=standard_delay)
 
 
 def pickup_with_callback_demo(

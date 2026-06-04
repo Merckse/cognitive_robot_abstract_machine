@@ -3,13 +3,10 @@ from enum import Enum
 
 import semantic_digital_twin
 from pycram import alternative_motion_mappings
-from pycram.alternative_motion_mappings.hsrb_motion_mapping import HSRBMoveMotion
-from pycram.datastructures.enums import Arms
 from pycram.datastructures.pose import PoseStamped
 from pycram.language import SequentialPlan
 from pycram.robot_plans import (
     NavigateActionDescription,
-    ParkArmsActionDescription,
     LookAtActionDescription,
 )
 from pycram_suturo_demos.helper_methods_and_useful_classes.setup import setup_context
@@ -23,7 +20,6 @@ context, execution_type = setup_context(simulated=False)
 # Making sure alternative mapping is imported
 alternative_motion_mappings = alternative_motion_mappings
 
-hsrb_move = HSRBMoveMotion
 
 _TABLE_POSE = PoseStamped.from_list(
     [

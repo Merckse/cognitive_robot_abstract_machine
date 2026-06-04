@@ -3,12 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import timedelta
 
-import numpy as np
-from typing_extensions import Union, Optional, Type, Any, Iterable
+from typing_extensions import Union, Optional, Any, Iterable
 
-from pycram.datastructures.dataclasses import Context
-
-# from pycram_suturo_demos.pycram_advanced_hsr_demos.bring_object_from_table_to_shelf_demo import pose_to_ros
 from semantic_digital_twin.robots.abstract_robot import Camera
 from pycram.robot_plans.actions.base import ActionDescription
 from pycram.robot_plans.motions.robot_body import LookingMotion
@@ -19,8 +15,11 @@ from pycram.datastructures.pose import PoseStamped
 from pycram.failures import NavigationGoalNotReachedError
 from pycram.language import SequentialPlan
 from pycram.validation.error_checkers import PoseErrorChecker
+from semantic_digital_twin.spatial_types import Point3
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 import geometry_msgs.msg
+
+from semantic_digital_twin.world import World
 
 
 @dataclass
@@ -68,27 +67,26 @@ class NavigateAction(ActionDescription):
         )
 
 
-# TODO: remoove simulated tag, kinda stupid
 @dataclass
 class nav2NavigateAction(ActionDescription):
     """
     Navigates the Robot to a position.
     """
 
-    target_location: PoseStamped | Pose
+    target_location: PoseStamped | Pose | Point3
     """
     Location to which the robot should be navigated
-    """
-    simulated: bool = False
-    """
-    variable to indcate we are in sim
     """
 
     def execute(self) -> None:
         from pycram.external_interfaces import nav2_move
 
+        if isinstance(self.target_location, Point3):
+            self.point3_to_ros(self.target_location)
+
         if isinstance(self.target_location, Pose):
             self.target_location = self.pose_to_ros(self.target_location)
+
         nav2_move.start_nav_to_pose(self.target_location)
 
     def pose_to_ros(self, pose: Pose) -> PoseStamped:
@@ -103,15 +101,25 @@ class nav2NavigateAction(ActionDescription):
         pose_stamped.header.frame_id = pose.reference_frame.name.name
         return pose_stamped
 
+    def point3_to_ros(self, point: Point3) -> PoseStamped:
+        pose_stamped = geometry_msgs.msg.PoseStamped()
+        pose_stamped.pose.position.x = float(point.x)
+        pose_stamped.pose.position.y = float(point.y)
+        pose_stamped.pose.position.z = float(point.z)
+        pose_stamped.pose.orientation.x = float(0)
+        pose_stamped.pose.orientation.y = float(0)
+        pose_stamped.pose.orientation.z = float(0)
+        pose_stamped.pose.orientation.w = float(1)
+        pose_stamped.header.frame_id = point.reference_frame.id
+        return pose_stamped
+
     @classmethod
     def description(
         cls,
-        target_location: Union[Iterable[PoseStamped], PoseStamped],
-        simulated: bool = False,
+        target_location: PoseStamped | Pose | Point3,
     ) -> PartialDesignator[nav2NavigateAction]:
         return PartialDesignator[nav2NavigateAction](
             nav2NavigateAction,
-            simulated=simulated,
             target_location=target_location,
         )
 

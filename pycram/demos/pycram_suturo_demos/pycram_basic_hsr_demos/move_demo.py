@@ -1,7 +1,7 @@
 import os
 
 from pycram.datastructures.dataclasses import Context
-from pycram.motion_executor import simulated_robot
+from pycram.motion_executor import simulated_robot, MotionExecutor
 from pycram.datastructures.pose import PoseStamped
 import logging
 
@@ -10,6 +10,7 @@ from pycram.robot_plans import NavigateActionDescription
 from pycram_suturo_demos.helper_methods_and_useful_classes.nlp_human_robot_interaction import (
     TalkingNode,
 )
+from semantic_digital_twin.adapters.ros.world_fetcher import fetch_world_from_service
 from semantic_digital_twin.world import World
 
 from pycram.external_interfaces import nav2_move
@@ -18,17 +19,20 @@ logger = logging.getLogger(__name__)
 
 
 def robot_move(
-    target_pose_method: PoseStamped, context: Context, frame_id: str = "map"
+    target_pose_method: PoseStamped,
+    context: Context,
+    simulated: bool = True,
+    frame_id: str = "map",
 ):
     """
     Sends a navigation goal to Nav2.
     """
-    try:
+    if not simulated:
         os.environ["ROS_PYTHON_CHECK_FIELDS"] = "1"
         goal = target_pose_method.ros_message()
         print(f"Moving to {goal}'")
         nav2_move.start_nav_to_pose(goal)
-    except Exception as exc:
+    else:
         logger.info("Navigation failed")
 
         logger.info("Falling back on simulated robot")
@@ -41,7 +45,7 @@ def robot_move(
             ).perform()
 
 
-def move_demo(target_pose: str, world: World, context: Context):
+def move_demo(target_pose: str, world: World, context: Context, simulated: bool = True):
     logger = logging.getLogger(__name__)
     talking_node = TalkingNode()
     standard_delay = 2
@@ -97,40 +101,66 @@ def move_demo(target_pose: str, world: World, context: Context):
         case "TABLE":
             logger.info("Moving to table")
             talking_node.pub(text="Now moving to table", delay=standard_delay)
-            robot_move(target_pose_method=TABLE, context=context)
+            robot_move(target_pose_method=TABLE, context=context, simulated=simulated)
         case "ROBOT_START_POSE":
             logger.info("Moving to robot start pose")
 
             talking_node.pub(text="Now moving to starting pose", delay=standard_delay)
-            robot_move(target_pose_method=ROBOT_PRE_START_POSE, context=context)
-            robot_move(target_pose_method=ROBOT_START_POSE, context=context)
+            robot_move(
+                target_pose_method=ROBOT_PRE_START_POSE,
+                context=context,
+                simulated=simulated,
+            )
+            robot_move(
+                target_pose_method=ROBOT_START_POSE,
+                context=context,
+                simulated=simulated,
+            )
         case "CABINET":
             logger.info("Moving to cabinet")
             talking_node.pub(text="Now moving to cabinet", delay=standard_delay)
-            robot_move(target_pose_method=CABINET, context=context)
+            robot_move(target_pose_method=CABINET, context=context, simulated=simulated)
         case "POPCORN_TABLE":
             logger.info("Moving to popcorn table")
             talking_node.pub(text="Now moving to popcorn table", delay=standard_delay)
-            robot_move(target_pose_method=POPCORN_TABLE, context=context)
+            robot_move(
+                target_pose_method=POPCORN_TABLE, context=context, simulated=simulated
+            )
         case "PERCEPTION_ANGLE_0":
             logger.info("Moving to perception angle 0")
             talking_node.pub(
                 text="Now moving to perception angle 0", delay=standard_delay
             )
-            robot_move(target_pose_method=PERCEPTION_ANGLE_0, context=context)
+            robot_move(
+                target_pose_method=PERCEPTION_ANGLE_0,
+                context=context,
+                simulated=simulated,
+            )
         case "PERCEPTION_ANGLE_1":
             logger.info("Moving to perception angle 1")
             talking_node.pub(
                 text="Now moving to perception angle 1", delay=standard_delay
             )
-            robot_move(target_pose_method=PERCEPTION_ANGLE_1, context=context)
+            robot_move(
+                target_pose_method=PERCEPTION_ANGLE_1,
+                context=context,
+                simulated=simulated,
+            )
         case "PERCEPTION_ANGLE_2":
             logger.info("Moving to perception angle 2")
             talking_node.pub(
                 text="Now moving to perception angle 2", delay=standard_delay
             )
-            robot_move(target_pose_method=PERCEPTION_ANGLE_2, context=context)
+            robot_move(
+                target_pose_method=PERCEPTION_ANGLE_2,
+                context=context,
+                simulated=simulated,
+            )
         case _:
             logger.info("Moving to robot start pose")
             talking_node.pub(text="Now moving to starting pose", delay=standard_delay)
-            robot_move(target_pose_method=ROBOT_PRE_START_POSE, context=context)
+            robot_move(
+                target_pose_method=ROBOT_PRE_START_POSE,
+                context=context,
+                simulated=simulated,
+            )

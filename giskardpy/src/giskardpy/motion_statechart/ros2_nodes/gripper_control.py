@@ -6,7 +6,7 @@ from giskardpy.motion_statechart.graph_node import Goal, NodeArtifacts
 from giskardpy.motion_statechart.ros2_nodes.gripper_command import GripperCommandTask
 from giskardpy.motion_statechart.tasks.joint_tasks import JointPositionList
 from pycram.datastructures.enums import ExecutionType
-from pycram_suturo_demos.pycram_basic_hsr_demos.testings.move_demo import execution_type
+from pycram.motion_executor import MotionExecutor
 from semantic_digital_twin.datastructures.joint_state import JointState
 
 
@@ -21,7 +21,7 @@ class CloseHand(Goal):
 
     def expand(self, context: MotionStatechartContext) -> None:
         simulated_execution = (
-            True if context.execution_type == ExecutionType.SIMULATED else False
+            True if MotionExecutor.execution_type == ExecutionType.SIMULATED else False
         )
 
         if simulated_execution:
@@ -47,7 +47,7 @@ class CloseHand(Goal):
 class OpenHand(Goal):
     def expand(self, context: MotionStatechartContext) -> None:
         simulated_execution = (
-            True if context.execution_type == ExecutionType.SIMULATED else False
+            True if MotionExecutor.execution_type == ExecutionType.SIMULATED else False
         )
 
         if simulated_execution:

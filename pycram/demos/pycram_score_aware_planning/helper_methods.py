@@ -10,8 +10,7 @@ from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.pick_up import PickUpAction
 from pycram.robot_plans.actions.core.placing import PlaceAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
-from pycram_score_aware_planning.common.types import TaskEstimation, Task, ActionType, SurfaceSpace
-from pycram_score_aware_planning.common.values import NAVIGATION_POSES
+from demos.pycram_score_aware_planning.common.types import TaskEstimation, Task, ActionType, SurfaceSpace
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import WorldEntityNotFoundError
 from semantic_digital_twin.reasoning.predicates import is_supported_by
@@ -30,6 +29,9 @@ from semantic_digital_twin.world_description.geometry import Scale, Color
 from semantic_digital_twin.world_description.world_entity import Body
 
 import numpy as np
+
+
+
 
 def move_object_to_new_pose(
     semantic_annotation: HasRootBody, new_transform: HomogeneousTransformationMatrix
@@ -421,3 +423,14 @@ def find_sufrace_of_object(context:Context, body: Body) -> HasSupportingSurface 
             return surface
     return None
 
+# name → (x, y, quaternion(x,y,z,w))
+NAVIGATION_POSES: dict[str, tuple[float, float, tuple[float, float, float, float]]] = {
+    "cooking_table": (1.3, 4.6, _quat( math.pi / 2)),   # south of table, facing north
+    "dining_table":  (2.6, 4.1, _quat( math.pi / 2)),   # south of table, facing north
+    "table":         (3.5, 1.8, _quat(-math.pi / 2)),   # north of table, facing south
+    "lowerTable":    (3.0, 2.2, _quat( 0.0)),           # west of table,  facing east
+    "desk":          (1.3, 1.2, _quat( math.pi)),        # east of desk,   facing west
+    "shelf_1":       (3.3,  4.7,  _quat( 0.0)),          # west of cupboard, facing east
+    "shelf_2":       (3.3,  4.7,  _quat( 0.0)),          # same approach as shelf_1
+    "counterTop":    (1.859, -0.852, _quat(-math.pi / 2)), # north of counter, facing south
+}

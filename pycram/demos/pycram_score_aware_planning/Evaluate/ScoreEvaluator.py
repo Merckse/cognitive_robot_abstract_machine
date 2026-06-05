@@ -24,13 +24,13 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from pycram_score_aware_planning.common.types import (
+from demos.pycram_score_aware_planning.common.types import (
     TaskMode,
     ActionType,
     ActionOutcome,
     Task, ScoreEvent,
 )
-from pycram_score_aware_planning.common.values import (
+from demos.pycram_score_aware_planning.common.values import (
     MAX_TIME_ESTIMATE,
     BASE_TIME_ESTIMATE,
     OUTCOME_MODIFIERS,
@@ -38,6 +38,7 @@ from pycram_score_aware_planning.common.values import (
     BASE_POINTS,
     TASKS,
 )
+from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus
 
 # ---------------------------------------------------------------------------
@@ -91,6 +92,11 @@ class RobotScorer:
 
     task_name: str = "unnamed_task"
     task_mode: TaskMode = TaskMode.PP
+    context: Context
+    """
+    The context providing world and robot.
+    """
+
     challenge_starting_time: int = MAX_TIME_ESTIMATE.get(task_mode, 0)
     events: list[ScoreEvent] = field(default_factory=list)
     _score: int = field(default=0, init=False, repr=False)
@@ -106,12 +112,11 @@ class RobotScorer:
     """
 
     def estimate(
-        self, taskmode: TaskMode, finished_task_ids: Optional[list[int]] = []
+        self, task_list: list[Task], finished_task_ids: Optional[list[int]] = []
     ) -> list[ExpectedScoreEvent]:
-        tasks: list[Task] = TASKS.get(taskmode, [])
         estimates: list[ExpectedScoreEvent] = []
 
-        for task in tasks:
+        for task in task_list:
             base_score = 0
             expected_time = 0
             print(task.task_id)

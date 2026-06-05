@@ -1,5 +1,8 @@
 import math
 
+from Evaluate.CompositeEvaluator import CompositeEvaluator
+from common.types import Task
+from common.values import TASKS
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms
@@ -8,10 +11,10 @@ from pycram.motion_executor import simulated_robot
 from pycram.plans.factories import sequential
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
 
-from pycram_score_aware_planning.common.hsrb_testing import setup_world
-from pycram_score_aware_planning.common.types import TaskMode
-from pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
-from pycram_score_aware_planning.helper_methods import generate_plan
+from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
+from demos.pycram_score_aware_planning.common.types import TaskMode
+from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
+from demos.pycram_score_aware_planning.helper_methods import generate_plan
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.semantic_annotations.mixins import HasSupportingSurface
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Table
@@ -125,8 +128,11 @@ pre_table_pose = Pose(
 """
 Generate a structurized plan - based on standard evaluation 
 """
+task_list : list[Task] = TASKS.get()
+task_evaluator = CompositeEvaluator(context=context)
 task_structurizer = PlanStructurizer()
-task_plan = task_structurizer.structurize(task_mode=task_mode)
+task_evaluator.estimate()
+task_plan = task_structurizer.structurize()
 plan = generate_plan(tasks=task_plan, context=context)
 print(plan)
 """

@@ -3,12 +3,12 @@
 # ---------------------------------------------------------------------------
 import math
 
-from pycram_score_aware_planning.common.types import ActionType, ActionOutcome, TaskMode, TaskStep, Task
+from demos.pycram_score_aware_planning.common.types import ActionType, ActionOutcome, TaskMode, TaskStep, Task
 from pycram.datastructures.enums import TaskStatus
 from semantic_digital_twin.semantic_annotations.semantic_annotations import *
-from pycram_score_aware_planning.helper_methods import _quat
+from demos.pycram_score_aware_planning.helper_methods import _quat
 
-# TODO: Unstatify the values
+# TODO: Unstatify the values - possibly with uploadeable pdf field
 """
 Currently implements:
 - ParkArms
@@ -244,14 +244,3 @@ TASKS : dict[TaskMode, list[Task]] = {
     TaskMode.FD: TASKSTEP_FD
 }
 
-# name → (x, y, quaternion(x,y,z,w))
-NAVIGATION_POSES: dict[str, tuple[float, float, tuple[float, float, float, float]]] = {
-    "cooking_table": (1.3, 4.6, _quat( math.pi / 2)),   # south of table, facing north
-    "dining_table":  (2.6, 4.1, _quat( math.pi / 2)),   # south of table, facing north
-    "table":         (3.5, 1.8, _quat(-math.pi / 2)),   # north of table, facing south
-    "lowerTable":    (3.0, 2.2, _quat( 0.0)),           # west of table,  facing east
-    "desk":          (1.3, 1.2, _quat( math.pi)),        # east of desk,   facing west
-    "shelf_1":       (3.3,  4.7,  _quat( 0.0)),          # west of cupboard, facing east
-    "shelf_2":       (3.3,  4.7,  _quat( 0.0)),          # same approach as shelf_1
-    "counterTop":    (1.859, -0.852, _quat(-math.pi / 2)), # north of counter, facing south
-}

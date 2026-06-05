@@ -73,6 +73,7 @@ class SurfaceSpace:
 @dataclass(kw_only=True)
 class ExpectedProbabilityModel:
     task_id: int
+    expected_action_probability: list[float]
     expected_probability: float
     # taskstep_id : int
     # assisted

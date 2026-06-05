@@ -1,2 +1,3 @@
-for a in range(100):
-    print("a currently is", a, ":", a ** 2)
+from common.hsrb_testing import setup_world
+
+apartment_world = setup_world()

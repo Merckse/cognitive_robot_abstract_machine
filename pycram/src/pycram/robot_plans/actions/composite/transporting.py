@@ -456,22 +456,23 @@ class GiskardMoveAndPickUpAction(ActionDescription):
 @dataclass
 class GiskardMoveAndPlaceAction(ActionDescription):
     """
-    Navigate to `standing_position`, then turn towards the object and pick it up.
+    Navigate to `standing_position`, then place the held object at `target_location`.
+    The robot must already be holding the object before this action is called.
     """
 
     standing_position: Point3
     """
-    The pose to stand before trying to pick up the object
+    The position the robot drives to before attempting the place.
     """
 
     target_location: Point3
     """
-    The pose on which to place the object
+    The position in the world where the object should be placed.
     """
 
     object_designator: Body
     """
-    The object to pick up
+    The object currently held by the robot that should be placed.
     """
 
     arm: Arms
@@ -485,7 +486,9 @@ class GiskardMoveAndPlaceAction(ActionDescription):
     def execute(self):
         from pycram.robot_plans import nav2NavigateAction
 
-        obj_pose = PoseStamped.from_spatial_type(self.object_designator.global_pose)
+        obj_pose = PoseStamped.from_spatial_type(
+            self.object_designator.global_pose
+        )  # reserved for LookAt once re-enabled
         SequentialPlan(
             self.context,
             nav2NavigateAction(self.standing_position),
@@ -548,6 +551,8 @@ class GiskardPickAndPlaceAction(ActionDescription):
         super().__post_init__()
 
     def execute(self) -> None:
+        # Park → pick up → park → place → park keeps the arm safely tucked
+        # between steps and avoids collisions during base-free transport.
         SequentialPlan(
             self.context,
             ParkArmsActionDescription(Arms.BOTH),

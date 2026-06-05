@@ -26,25 +26,21 @@ from demos.pycram_suturo_demos.helper_methods_and_useful_classes.nlp_human_robot
 logger = logging.getLogger(__name__)
 
 
-"""
-Full sequence constains: 
-1. Move to table
-2. perceive from pratical angle 1, if object not found continue with up to 3 poses
-3. pickup
-4. verify pickup
-5. move back to start
-
-:param object_name:object_name, parsed by the NLP-Interface
-:param object_color:object_color, parsed by the NLP-Interface
-"""
-
-
 def bring_item_from_table_to_human_demo(
     *,
     context: Context,
     object_name: str,
     supporting_surface_str: Optional[str] = None,
 ):
+    """
+    Full pick-and-handover sequence:
+    1. Move to table
+    2. Perceive from up to 3 angles; retry outer loop once if pickup fails
+    3. Pick up object
+    4. Move to start pose and hand over to human
+
+    Falls back to human-to-robot handover if all pickup attempts fail.
+    """
     rclpy.init()
     simulated = False
     world = context.world
@@ -71,8 +67,10 @@ def bring_item_from_table_to_human_demo(
     talking_node.pub(text="Moving to table.", delay=standard_delay)
     move_to_table()
 
+    # Outer loop: retry the full perceive-and-pickup cycle up to 2 times.
     for j in range(2):
 
+        # Inner loop: try up to 3 perception angles before giving up on this attempt.
         for i in range(3):
             object_to_pickup: Body | None = try_percieve_and_retrieve(
                 context=context,

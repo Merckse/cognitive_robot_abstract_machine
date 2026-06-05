@@ -39,11 +39,14 @@ logger = logging.getLogger(__name__)
 
 
 def _here(*parts: str) -> str:
+    """Resolves a path relative to this file's directory."""
     return os.path.abspath(os.path.join(os.path.dirname(__file__), *parts))
 
 
 @dataclass(frozen=True)
 class SetupResult:
+    """Holds all objects created during setup that callers need to run a demo."""
+
     world: World
     robot_view: HSRB
     context: Context
@@ -54,6 +57,8 @@ class SetupResult:
 
 @dataclass(frozen=True)
 class WorldSetupPaths:
+    """Absolute file paths for all meshes and URDFs used in simulation."""
+
     hsrb_urdf: str
     milk_stl: str
     cereal_stl: str
@@ -63,6 +68,8 @@ class WorldSetupPaths:
 
 @dataclass(frozen=True)
 class WorldSetup_xyz_rpy:
+    """Default spawn poses (x, y, z, roll, pitch, yaw) for each simulated object."""
+
     robot: Tuple[float, float, float, float, float, float]
     milk: Tuple[float, float, float, float, float, float]
     cereal: Tuple[float, float, float, float, float, float]
@@ -71,6 +78,7 @@ class WorldSetup_xyz_rpy:
 
 
 def default_paths() -> WorldSetupPaths:
+    """Returns paths to the HSRB URDF and object STL files, resolved relative to this file."""
     return WorldSetupPaths(
         hsrb_urdf=_here("..", "..", "..", "resources", "robots", "hsrb.urdf"),
         milk_stl=_here("..", "..", "..", "resources", "objects", "milk.stl"),
@@ -82,7 +90,8 @@ def default_paths() -> WorldSetupPaths:
     )
 
 
-def default_xyz_rpy():
+def default_xyz_rpy() -> WorldSetup_xyz_rpy:
+    """Returns hardcoded default spawn poses for the robot and all simulation objects."""
     return WorldSetup_xyz_rpy(
         milk=(
             1.0,
@@ -131,6 +140,7 @@ def add_objects_and_semantics(
     world,
     objects: Sequence[SpawnSpec],
 ):
+    """Spawns each object into the world and attaches its semantic annotation and color."""
     for spec in objects:
         obj_world = STLParser(spec.world_path).parse()
         x, y, z, r, p, yaw = spec.xyz_rpy
@@ -162,6 +172,7 @@ def add_objects_and_semantics(
 
 
 def build_hsrb_world(hsrb_urdf: str):
+    """Parses the HSRB URDF and adds an OmniDrive connection at the odom root."""
     world = URDFParser.from_file(file_path=hsrb_urdf).parse()
     with world.modify_world():
         odom = Body(name=PrefixedName("odom_combined"))
@@ -175,6 +186,7 @@ def build_hsrb_world(hsrb_urdf: str):
 
 
 def try_make_viz(world: World, node: Any):
+    """Tries to start a RViz marker publisher; returns None if unavailable."""
     try:
         from semantic_digital_twin.adapters.ros.visualization.viz_marker import (
             VizMarkerPublisher,
@@ -193,6 +205,7 @@ def merge_robot_into_environment(
     environment_world,
     robot_xyz_rpy: Tuple[float, float, float, float, float, float],
 ) -> World:
+    """Merges the robot world into the environment world at the given pose."""
     x, y, z, r, p, yaw = robot_xyz_rpy
     environment_world.merge_world_at_pose(
         deepcopy(hsrb_world),
@@ -202,6 +215,7 @@ def merge_robot_into_environment(
 
 
 def real_setup(node_name: str = "pycram_node"):
+    """Builds the world by fetching the live robot state from ROS and merging the environment map."""
     node = rclpy.create_node(node_name)
 
     executor = SingleThreadedExecutor()
@@ -224,7 +238,6 @@ def real_setup(node_name: str = "pycram_node"):
         ParallelGripper
     )[0]
 
-    # Context
     context = Context(
         world=hsrb_world,
         robot=robot_view,
@@ -243,10 +256,8 @@ def real_setup(node_name: str = "pycram_node"):
 
 
 def simulated_setup(node_name: str = "pycram_node"):
-    # creating node
+    """Builds the world from local URDF/STL files with hardcoded default poses — no real robot required."""
     node: Any = rclpy.create_node(node_name)
-    # default coordinates for the robot
-    # building robot and world
     hsrb_world = build_hsrb_world(default_paths().hsrb_urdf)
     env_world: World = load_environment()
 
@@ -265,16 +276,12 @@ def simulated_setup(node_name: str = "pycram_node"):
         ),
     )
 
-    # Merging the robot into the world and retrieving robot, manipulator and misc.
     hsrb_world = merge_robot_into_environment(
         hsrb_world, env_world, robot_xyz_rpy=xyz_rpy.robot
     )
-    # fetching robot_view, manipulator to create context
     robot_view = HSRB.from_world(hsrb_world)
     manipulator = hsrb_world.get_semantic_annotations_by_type(ParallelGripper)[0]
     context = Context(world=hsrb_world, robot=robot_view, ros_node=node)
-
-    # trying to initialize VizMarker, if it fails it just returns a error message
     viz = try_make_viz(hsrb_world, node)
 
     return SetupResult(
@@ -288,6 +295,7 @@ def simulated_setup(node_name: str = "pycram_node"):
 
 
 def robot_setup() -> SetupResult:
+    """Attempts real setup; falls back to simulation if it fails."""
     try:
         setup_result = real_setup()
     except Exception as e:

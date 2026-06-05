@@ -230,14 +230,13 @@ class MoveTCPWaypointsMotion(BaseMotion):
 @dataclass
 class RetractMotion(BaseMotion):
     """
-    Motion for placing an object, i.e., moving the gripper to a certain pose
-    It creates a _motion_chart that is used by the motion framework
-    It directly calls the implemented PickUp of Giskard.
+    Retracts the gripper to a safe pose after a grasp or place.
+    Wraps the Giskard Retracting goal via _motion_chart.
     """
 
     gripper: Manipulator = field(kw_only=True)
     """
-    Name of the gripper that should be moved
+    The manipulator (end effector) to retract.
     """
 
     def perform(self):
@@ -245,6 +244,7 @@ class RetractMotion(BaseMotion):
 
     @property
     def _motion_chart(self):
+        """Returns the Giskard Retracting goal for this manipulator."""
         return Retracting(
             manipulator=self.gripper,
         )
@@ -258,7 +258,7 @@ class GiskardMoveGripperMotion(BaseMotion):
 
     gripper_state: GripperState
     """
-    Motion that should be performed, either 'open' or 'close'
+    GripperState.OPEN or GripperState.CLOSE — determines which Giskard goal is issued.
     """
 
     arm: Arms
@@ -271,6 +271,7 @@ class GiskardMoveGripperMotion(BaseMotion):
 
     @property
     def _motion_chart(self):
+        """Returns the matching Giskard OpenHand or CloseHand goal."""
         if self.gripper_state == GripperState.OPEN:
             return OpenHand()
         if self.gripper_state == GripperState.CLOSE:

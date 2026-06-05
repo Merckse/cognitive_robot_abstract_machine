@@ -22,12 +22,13 @@ def pickup_demo(
     context: Context = None,
     object_to_pickup: Body = None,
 ):
-    # logger creaton
+    """Runs GiskardPickUpAction for the given object. Skips silently if object_to_pickup is None."""
+    # logger creation
     talking_node = TalkingNode()
     standard_delay = 2
     logger = logging.get_logger(__name__)
 
-    # if the determined object is None, the pickup is skipped, because the object was not parsed properly
+    # object_to_pickup is None when perception found nothing or the NLP parse failed
     if object_to_pickup == None:
         logger.warning("object_to_pickup is None, therefor pickup is skipped")
         return
@@ -55,12 +56,13 @@ def pickup_with_callback_demo(
     context: Context = None,
     object_to_pickup: Body = None,
 ):
-    # logger creaton
+    """Same as pickup_demo but returns the SequentialPlan result so callers can check success."""
+    # logger creation
     talking_node = TalkingNode()
     standard_delay = 2
     logger = logging.get_logger(__name__)
 
-    # if the determined object is None, the pickup is skipped, because the object was not parsed properly
+    # object_to_pickup is None when perception found nothing or the NLP parse failed
     if object_to_pickup == None:
         logger.warning("object_to_pickup is None, therefor pickup is skipped")
         return

@@ -70,19 +70,21 @@ class NavigateAction(ActionDescription):
 @dataclass
 class nav2NavigateAction(ActionDescription):
     """
-    Navigates the Robot to a position.
+    Sends a navigation goal to Nav2. Accepts Point3, Pose, or PoseStamped as target.
+    Point3 uses an identity quaternion (no rotation); Pose is converted to PoseStamped.
     """
 
     target_location: PoseStamped | Pose | Point3
     """
-    Location to which the robot should be navigated
+    Target position/pose for the robot. Frame must be set on Point3/Pose.
     """
 
     def execute(self) -> None:
+        """Converts the target to a ROS PoseStamped if needed, then calls Nav2."""
         from pycram.external_interfaces import nav2_move
 
         if isinstance(self.target_location, Point3):
-            self.point3_to_ros(self.target_location)
+            self.target_location = self.point3_to_ros(self.target_location)
 
         if isinstance(self.target_location, Pose):
             self.target_location = self.pose_to_ros(self.target_location)
@@ -90,6 +92,7 @@ class nav2NavigateAction(ActionDescription):
         nav2_move.start_nav_to_pose(self.target_location)
 
     def pose_to_ros(self, pose: Pose) -> PoseStamped:
+        """Converts an internal Pose to a geometry_msgs/PoseStamped for Nav2."""
         pose_stamped = geometry_msgs.msg.PoseStamped()
         pose_stamped.pose.position.x = float(pose.x)
         pose_stamped.pose.position.y = float(pose.y)
@@ -102,6 +105,7 @@ class nav2NavigateAction(ActionDescription):
         return pose_stamped
 
     def point3_to_ros(self, point: Point3) -> PoseStamped:
+        """Converts an internal Point3 to a PoseStamped with identity orientation."""
         pose_stamped = geometry_msgs.msg.PoseStamped()
         pose_stamped.pose.position.x = float(point.x)
         pose_stamped.pose.position.y = float(point.y)

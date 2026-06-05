@@ -116,8 +116,7 @@ def query_get_next_surface_euclidean_x_y(
     to the main body.
 
     :param main_body: The main body to which the Euclidean distance is computed.
-    :return: A `QueryObjectDescriptor` containing semantic annotations ordered
-        by Euclidean distance to the main body.
+    :return: The closest SemanticAnnotation with a supporting surface.
     """
     world = main_body._world
     supporting_surfaces = world.get_semantic_annotations_by_type(HasSupportingSurface)
@@ -151,8 +150,8 @@ def get_nearest_object(
     based on Euclidean distance in the X-Y plane.
 
     :param world: The world to query.
-    :param supporting_surface_name: The name of the supporting surface to query for.
-    :return: The nearest Body on the cooking table, or None if the table is empty.
+    :param supporting_surface_name: Optional surface name; falls back to nearest surface if None.
+    :return: The nearest Body on the surface, or None if the surface is empty.
     """
     robot_view = Context.from_world(world).robot
 
@@ -173,12 +172,13 @@ def get_object_with_color(
     world: World, color: Color, supporting_surface_name: Optional[str] = None
 ) -> Body | None:
     """
-    Returns the first object on the cooking table that matches the given color.
+    Returns the first object on the given surface that matches the color.
+    Falls back to the nearest surface if supporting_surface_name is None.
 
     :param world: The world to query.
     :param color: The color to filter objects by.
-    :param supporting_surface_name: The name of the supporting surface to query for.
-    :return: The first matching Body, or None if no matching object is found.
+    :param supporting_surface_name: Optional surface name; falls back to nearest surface if None.
+    :return: The first matching Body, or None if no match is found.
     """
     robot_view = Context.from_world(world).robot
     if supporting_surface_name is not None:
@@ -328,7 +328,10 @@ def item_between_fingertips(
 
 
 def validate_grasped() -> bool:
-    """Reads the fingertip distance topic once and returns True if an object appears to be held."""
+    """
+    Subscribes to /gripper_command/fingertip_distance once, then checks whether
+    the distance indicates an object is held. Creates and destroys a temporary node.
+    """
     node = rclpy.create_node("gripper_distance_subscriber")
 
     msg = wait_for_message(
@@ -347,6 +350,8 @@ def validate_grasped() -> bool:
 
 @dataclass
 class PickupDeadzone:
+    """Defines the spatial limits within which the robot can successfully grasp an object."""
+
     min_distance: float = 0.3  # too close, robot can't reach down
     max_distance: float = 0.8  # too far to reach
     max_angle_deg: float = 45.0  # cone in front of robot (±45°)
@@ -355,8 +360,9 @@ class PickupDeadzone:
 
 def is_in_pickup_zone(self, object_position: tuple[float, float, float]) -> bool:
     """
-    object_position: (x, y, z) in robot's base frame
-    x = forward, y = left, z = up
+    Returns True if the object is within the robot's reachable pickup envelope.
+
+    :param object_position: (x, y, z) in the robot's base frame — x forward, y left, z up.
     """
     ox, oy, oz = object_position
 
@@ -385,8 +391,8 @@ def is_in_pickup_zone(self, object_position: tuple[float, float, float]) -> bool
     return True
 
 
-# Stolen from ansgars demo
 def look_at_point(context: Context, point: Point3):
+    """Turns the robot head to face the given 3-D point (simulated motion only)."""
     from pycram.robot_plans import LookAtActionDescription
 
     with simulated_robot:
@@ -410,6 +416,10 @@ def try_percieve_and_retrieve(
     talking_node: Any = None,
     object_name: str = None,
 ) -> Body | None:
+    """
+    Moves the robot to a perception pose, runs object detection, then returns
+    the named object. Returns None if the object is not found after detection.
+    """
     from pycram_suturo_demos.pycram_basic_hsr_demos.move_demo import move_demo
 
     world = context.world

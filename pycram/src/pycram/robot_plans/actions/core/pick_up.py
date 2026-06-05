@@ -232,10 +232,11 @@ class GraspingAction(ActionDescription):
     """
     grasp_description: GraspDescription
     """
-    The distance in meters the gripper should be at before grasping the object
+    Defines the approach direction, pre-pose offset, and lift trajectory for the grasp.
     """
 
     def execute(self) -> None:
+        """Move to pre-grasp pose → open gripper → move to grasp pose → close gripper."""
         pre_pose, grasp_pose, _ = self.grasp_description.grasp_pose_sequence(
             self.object_designator
         )
@@ -270,39 +271,40 @@ class GraspingAction(ActionDescription):
 @dataclass
 class GiskardPickUpAction(ActionDescription):
     """
-    Let the robot pick up an object.
+    Picks up an object using Giskard motions: open gripper → reach → close gripper.
+    Uses GiskardReachMotion internally; does not rely on grasp descriptions.
     """
 
     object_geometry: Body = field(default=None, kw_only=True)
     """
-    Object designator_description describing the object that should be picked up
+    The world object to be grasped.
     """
 
     arm: Arms = field(default=Arms.LEFT, kw_only=True)
     """
-    arms that should be used for pick up
+    Which arm to use for the pickup.
     """
 
     gripper_vertical: Optional[bool] = field(default=True, kw_only=True)
     """
-    If True, the gripper is kept vertically aligned during the grasp
-    kw_only=True forces this to be passed as a keyword argument
+    If True, constrains the gripper to stay vertically aligned during the reach.
     """
 
     def execute(self) -> bool:
-        # Register attach as a post-perform callback BEFORE queuing the motion
+        """Open gripper → reach to object → close gripper. Returns True if sequence completes."""
         robot_pose_pre_manipulation = PoseStamped.from_spatial_type(
             self.context.robot.root.global_pose
         )
 
         grasped: bool = False
 
+        # manipulators[0] = LEFT, manipulators[1] = RIGHT
         if self.arm == Arms.LEFT:
             manipulator = self.robot_view.manipulators[0]
         else:
             manipulator = self.robot_view.manipulators[1]
 
-        # try to grasp the object, if it is not grasped, throw an ObjectNotGraspedError so one can react within the demo
+        # ObjectNotGraspedError is raised by the commented-out validation below if re-enabled
         SequentialPlan(
             self.context,
             GiskardMoveGripperMotion(gripper_state=GripperState.OPEN, arm=self.arm),

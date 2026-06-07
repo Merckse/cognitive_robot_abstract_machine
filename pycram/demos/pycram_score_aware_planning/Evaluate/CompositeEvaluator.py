@@ -11,6 +11,7 @@ from helper_methods import normalize_task_estimation
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus
 
+# TODO: replace the contexts here, they shouldnt be in the Class initializations, this would mean the classes are left with unupdated fucked up contexts, very whacky.
 # TODO: implement, this hasnt been touched in a week
 @dataclass(kw_only=True)
 class CompositeEvaluator:

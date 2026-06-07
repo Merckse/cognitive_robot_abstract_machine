@@ -126,7 +126,6 @@ class RobotProbability:
         :return: ExpectedProbabilityModel list sorted best-first.
         """
         expected_task_probability: list[ExpectedProbabilityModel] = []
-        expected_action_probability: list[float] = []
 
         for task in task_list:
             # setting probability for evaluation of single task
@@ -136,24 +135,23 @@ class RobotProbability:
                 object_name = action.object_name
                 action_type = action.action_type
                 # evaluating the concatination of these actions into a wholeistic task
-                base_probability: float = BASE_PROBABILITY.get((action_type, object_name))
+                action_probability: float = BASE_PROBABILITY.get((action_type, object_name))
                 world = self.context.world
                 robot = self.context.robot
 
                 # TODO: add calculations here, like p_robot_distance, p_clutter_count, p_clutter_proximity
                 if object_name is not "" or None:
                     object_body = world.get_body_by_name(object_name)
-                    self.p_robot_distance(target_body=object_body, robot_body=robot.bodies[0])
-                    self.p_clutter_count(target_body=object_body)
+                    action_probability = action_probability * self.p_robot_distance(target_body=object_body, robot_body=robot.bodies[0])
+                    action_probability = action_probability *self.p_clutter_count(target_body=object_body)
                     # self.p_clutter_proximity() TODO: retrieve list of closest objects
-                expected_action_probability.append(base_probability)
-                joint_probability: float = round(joint_probability * base_probability, 2)
+                action.probability = action_probability
+                joint_probability: float = round(joint_probability * action_probability, 2)
 
             # creating a list of all tasks and having one probability of success for the whole task.
             expected_task_probability.append(
                 ExpectedProbabilityModel(
                     task_id=task.task_id, expected_probability=joint_probability,
-                    expected_action_probability=expected_action_probability
                 )
             )
 

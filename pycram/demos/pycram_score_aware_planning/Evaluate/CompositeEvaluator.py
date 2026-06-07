@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from Evaluate.ScoreEvaluator import ExpectedScoreEvent
 from common.types import TaskEstimation, ExpectedProbabilityModel, Task
 from common.values import TASKS
 from demos.pycram_score_aware_planning.Evaluate.ProbabilityEvaluator import RobotProbability
@@ -35,7 +36,7 @@ class CompositeEvaluator:
 
         # estimating score and probability, with score relying on probability
         estimate_probability : list[ExpectedProbabilityModel]= self.probability_evaluator.estimate(task_list=task_list)
-        estimate_score = self.score_evaluator.estimate(task_list=task_list)
+        estimate_score : list[ExpectedScoreEvent] = self.score_evaluator.estimate(task_list=task_list)
 
         # printing summaries
         self.score_evaluator.summary_estimate(estimate_score)

@@ -1,4 +1,5 @@
 import math
+import time
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -131,19 +132,20 @@ class RobotProbability:
             # setting probability for evaluation of single task
             joint_probability = 1
             for action in task.task_steps:
+                # print(task.task_steps)
                 object_name = action.object_name
                 action_type = action.action_type
                 # evaluating the concatination of these actions into a wholeistic task
                 base_probability: float = BASE_PROBABILITY.get((action_type, object_name))
                 world = self.context.world
                 robot = self.context.robot
-                object_body = world.get_body_by_name(object_name)
 
                 # TODO: add calculations here, like p_robot_distance, p_clutter_count, p_clutter_proximity
-                if action.object_name is not None:
+                if object_name is not "" or None:
+                    object_body = world.get_body_by_name(object_name)
                     self.p_robot_distance(target_body=object_body, robot_body=robot.bodies[0])
-                    # p_clutter_count()
-                    # p_clutter_proximity()
+                    self.p_clutter_count(target_body=object_body)
+                    # self.p_clutter_proximity() TODO: retrieve list of closest objects
                 expected_action_probability.append(base_probability)
                 joint_probability: float = round(joint_probability * base_probability, 2)
 

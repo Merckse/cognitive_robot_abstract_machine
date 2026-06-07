@@ -1,9 +1,10 @@
 import math
 
 from Evaluate.CompositeEvaluator import CompositeEvaluator
-from common.types import Task
+from common.types import Task, TaskEstimation
 from common.values import TASKS
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
+from helper_methods import generate_plan_task
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms
 from pycram.motion_executor import simulated_robot
@@ -106,7 +107,6 @@ generic_object_spawner(["Cup"], [(2.33475,5.215,0.83)], world, color=Color.GREEN
 manipulator = hsrb.arm.manipulator
 plan_parkarm = sequential([ParkArmsAction(Arms.LEFT)], context=context)
 support = world.get_semantic_annotations_by_type(HasSupportingSurface)
-print(support)
 
 # tables = world.get_semantic_annotations_by_type(HasSupportingSurface)[0]
 target_table_body = world.get_semantic_annotations_by_type(Table)[3].bodies[0]
@@ -128,21 +128,29 @@ pre_table_pose = Pose(
 """
 Generate a structurized plan - based on standard evaluation 
 """
-task_list : list[Task] = TASKS.get()
-task_evaluator = CompositeEvaluator(context=context)
-task_structurizer = PlanStructurizer()
-task_evaluator.estimate()
-task_plan = task_structurizer.structurize()
-plan = generate_plan(tasks=task_plan, context=context)
-print(plan)
-"""
-Generate the actual plan
-# """
+taskmode = TaskMode.PP
+task_plan : list[Task] = TASKS.get(taskmode)
 
-# Have to check before some long taking action
-with simulated_robot:
-    print(plan.plan)
-    plan.perform()
+task_evaluator :CompositeEvaluator= CompositeEvaluator(context=context)
+task_structurizer : PlanStructurizer= PlanStructurizer()
+
+evaluated_tasks: tuple[list[Task], list[TaskEstimation]] = task_evaluator.estimate(task_plan)
+task_plan: list[Task] = task_structurizer.structurize(evaluated_tasks[0], evaluated_tasks[1])
+while task_plan != []:
+    evaluated_tasks : tuple[list[Task], list[TaskEstimation]]= task_evaluator.estimate(task_plan)
+    task_plan : list[Task]= task_structurizer.structurize(evaluated_tasks[0],evaluated_tasks[1])
+    plan_x = task_plan[0]
+    task_plan.pop(0)
+
+    plan = generate_plan_task(task=plan_x, context=context)
+    print(plan)
+    """
+    Generate the actual plan
+    # """
+
+    # Have to check before some long taking action
+    with simulated_robot:
+        plan.perform()
 
 
 # if visible_bodies is None:

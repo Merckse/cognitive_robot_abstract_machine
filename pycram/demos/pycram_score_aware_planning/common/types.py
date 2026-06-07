@@ -70,6 +70,7 @@ class SurfaceSpace:
     y_max: float
     z_surface: float  # top of the surface (z where objects rest)
 
+# TODO: checking for how to assist actions.
 @dataclass(kw_only=True)
 class ExpectedProbabilityModel:
     task_id: int

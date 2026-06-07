@@ -25,7 +25,7 @@ class PlanStructurizer:
     @staticmethod
     def summary(task_estimations: list[TaskEstimation]) -> None:
         if not task_estimations:
-            print("No task estimations to summarize.")
+            ("No task estimations to summarize.")
             return
 
         best = task_estimations[0]

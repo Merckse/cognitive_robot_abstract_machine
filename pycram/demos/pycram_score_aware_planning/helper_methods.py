@@ -411,6 +411,31 @@ def generate_plan(tasks: list[Task], context: Context):
 
     return plan
 
+def generate_plan_task(task: Task, context: Context):
+    from pycram.plans.factories import make_node
+    plan = sequential(children=[], context=context)
+    arm = Arms.LEFT
+    last_pickup_object: Optional[str] = None
+    for task_steps in task.task_steps:
+        action = None
+        match task_steps.action_type:
+            case ActionType.NAVIGATE:
+                action = navigation_subplan(target_location=task_steps.location, world=context.world)
+            case ActionType.PICKUP:
+                last_pickup_object = task_steps.object_name
+                action = pickup_subplan(object_name=task_steps.object_name, arm=arm, world=context.world)
+            case ActionType.PLACE:
+                action = place_subplan(object_name=last_pickup_object, arm=arm, target_location=task_steps.object_placement, world=context.world)
+            case ActionType.PARK:
+                action = ParkArmsAction(Arms.LEFT)
+            case ActionType.DETECT:
+                pass
+            case _:
+                raise NotImplementedError(f"Action type not implemented: {task_steps.action_type}")
+        if action is not None:
+            plan.add_child(make_node(action))
+
+    return plan
 
 def _quat(yaw: float) -> tuple[float, float, float, float]:
     return (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))

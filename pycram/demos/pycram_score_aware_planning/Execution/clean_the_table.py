@@ -1,7 +1,7 @@
 import math
 
 from Evaluate.CompositeEvaluator import CompositeEvaluator
-from common.types import Task, TaskEstimation
+from common.types import Task
 from common.values import TASKS
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from helper_methods import generate_plan_task
@@ -134,21 +134,22 @@ task_plan : list[Task] = TASKS.get(taskmode)
 task_evaluator :CompositeEvaluator= CompositeEvaluator(context=context)
 task_structurizer : PlanStructurizer= PlanStructurizer()
 
-evaluated_tasks: tuple[list[Task], list[TaskEstimation]] = task_evaluator.estimate(task_plan)
-task_plan: list[Task] = task_structurizer.structurize(evaluated_tasks[0], evaluated_tasks[1])
+evaluated_tasks: list[Task] = task_evaluator.estimate(task_plan)
+task_plan: list[Task] = task_structurizer.structurize(evaluated_tasks)
 while task_plan != []:
-    evaluated_tasks : tuple[list[Task], list[TaskEstimation]]= task_evaluator.estimate(task_plan)
-    task_plan : list[Task]= task_structurizer.structurize(evaluated_tasks[0],evaluated_tasks[1])
+    evaluated_tasks: list[Task] = task_evaluator.estimate(task_plan)
+    task_plan: list[Task] = task_structurizer.structurize(evaluated_tasks)
     plan_x = task_plan[0]
     task_plan.pop(0)
 
     plan = generate_plan_task(task=plan_x, context=context)
-    print(plan)
     """
     Generate the actual plan
-    # """
+    """
 
     # Have to check before some long taking action
+    # TODO: what happens, if the score event fails and the robot has to fallback, how to re-evaluated / stailize
+    # TODO: maybe add a on the fly monitor, that basically checks a action in the task_list as done, resulting in instant feedback, where to implement that?
     with simulated_robot:
         plan.perform()
 

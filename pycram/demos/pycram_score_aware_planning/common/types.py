@@ -5,6 +5,9 @@ from typing import Optional
 
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 
+from pycram.datastructures.enums import TaskStatus
+
+
 # TODO: Unstatify the types?
 # ---------------------------------------------------------------------------
 # Types
@@ -31,6 +34,7 @@ class ActionOutcome(str, Enum):
     FAILURE_UNRECOVERABLE = "failure_unrecoverable"
     SKIPPED = "skipped"
     RUNNING = "running"
+    NOT_ASSIGNED = "not_assigned"
 
 
 class TaskMode(str, Enum):
@@ -42,6 +46,21 @@ class ScoreModel:
     current_points: int
     current_penalty: float
     time_left: float
+    ScoreEvents : list[ScoreEvent]
+
+@dataclass(kw_only=True)
+class ScoreEvent:
+    timestamp: float
+    action_type: str
+    outcome: str
+    object_name: Optional[str]
+    base_points: int
+    penalty: int
+    time_spent: float
+    net_points: int
+    cumulative_score: int
+    cumulative_time: float
+    note: Optional[str] = None
 
 # The action step is equivilant to an action, just has been named TaskStep to find seperation, between the two
 @dataclass
@@ -50,8 +69,10 @@ class TaskStep:
     action_type: ActionType
     action_probability : float= 1
     action_score : float = 0
+    action_penatly: int = 0
+    action_time : float = 0
     action_assisted: bool = False
-    action_location : Optional[str] = ""
+    location : Optional[str] = ""
     object_name: Optional[str] = "" # Object that can be named for interaction. E.g: "bowl", with action_type: Pick_Up
     object_pickup: Optional["str"] = None # Possible: cooking_table, shelf, lowerTable, table, desk, dining_table, shelf_1, shelf_2
     object_placement: Optional["str"] = None # Possible:a
@@ -59,11 +80,15 @@ class TaskStep:
 # The Task is equivilent to a whole plan, containing of exactly one task.
 @dataclass
 class Task:
+    id: int
     task_steps: list[TaskStep]
-    task_id: int
-    task_score: int
-    task_score_per_seconds : float
-    task_probability : float
+    status : TaskStatus = ActionOutcome.NOT_ASSIGNED
+    score: int = 0
+    penatly: int = 0
+    score_penalized: int = 0
+    duration: int = 0
+    score_per_seconds : float = 0
+    probability : float = 1
 
 # TODO: replace the data-type, by asserting the variables to the Task-datatype
 @dataclass
@@ -90,16 +115,3 @@ class ExpectedProbabilityModel:
     # taskstep_id : int
     # assisted
 
-@dataclass(kw_only=True)
-class ScoreEvent:
-    timestamp: float
-    action_type: str
-    outcome: str
-    object_name: Optional[str]
-    base_points: int
-    penalty: int
-    time_spent: float
-    net_points: int
-    cumulative_score: int
-    cumulative_time: float
-    note: Optional[str] = None

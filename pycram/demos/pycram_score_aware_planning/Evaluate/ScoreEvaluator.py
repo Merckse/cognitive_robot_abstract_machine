@@ -36,7 +36,6 @@ from demos.pycram_score_aware_planning.common.values import (
     OUTCOME_MODIFIERS,
     FLAT_PENALTIES,
     BASE_POINTS,
-    TASKS,
 )
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus
@@ -112,40 +111,51 @@ class RobotScorer:
     """
 
     def estimate(
-        self, task_list: list[Task], finished_task_ids: Optional[list[int]] = []
-    ) -> list[ExpectedScoreEvent]:
-        estimates: list[ExpectedScoreEvent] = []
-
+        self, task_list: list[Task], finished_task_ids: Optional[list[int]] = [], probability_threshold: float = 0.2
+    ) -> list[Task]:
         for task in task_list:
-            base_score = 0
-            expected_time = 0
-            print(task.task_id)
-            if task.task_id in finished_task_ids:
+            total_score :int= 0
+            total_time : int= 0
+            total_score_penalized : int = 0
+            if task.id in finished_task_ids:
                 continue
             for step in task.task_steps:
+                base_score: int = 0
+                expected_time: int = 0
+                penalty: int = 0
+                outcome: ActionOutcome = ActionOutcome.SUCCESS #  Default assumption, that a success will occure.
+
+                if step.action_probability <= probability_threshold:
+                    outcome = ActionOutcome.SUCCESS_WITH_ASSIST
+                    penalty : int = FLAT_PENALTIES.get(outcome)
+
+                    step.action_assisted = True
+
                 base_score += BASE_POINTS.get(
-                    (step.action_type, step.object_name or ""), 0
+                    (step.action_type, step.object_name or ""), 1
                 )
                 expected_time += BASE_TIME_ESTIMATE.get(
-                    (step.action_type, step.object_name or ""), 0
+                    (step.action_type, step.object_name or ""), 1
                 )
 
-            estimates.append(
-                ExpectedScoreEvent(
-                    task_id=task.task_id,
-                    # action_type=step.action_type.value,
-                    outcome=ActionOutcome.SUCCESS.value,
-                    # object_name=step.object_name,
-                    expected_time=expected_time,
-                    expected_score=base_score,
-                    expected_score_per_seconds=base_score / expected_time,
-                    task_step_count=len(task.task_steps),
-                )
-            )
-        estimates = sorted(
-            estimates, key=lambda x: x.expected_score_per_seconds, reverse=True
-        )
-        return estimates
+                total_score += base_score
+                total_time += expected_time
+                total_score_penalized += base_score - penalty
+
+                # Asserting  evaluated score and time
+                step.action_score = base_score
+                step.action_penatly = penalty
+                step.action_time = expected_time
+                step.task_score_penalized = base_score-penalty
+
+
+            # asserting all needed values on the task
+            task.score = total_score
+            task.duration = total_time
+            task.score_penalized = total_score_penalized
+            task.score_per_seconds = total_score / total_time
+            task.status = TaskStatus.CREATED
+        return task_list
 
     def record(
         self,
@@ -236,57 +246,6 @@ class RobotScorer:
             in (ActionOutcome.SUCCESS.value, ActionOutcome.SUCCESS_WITH_ASSIST.value)
         )
         return round(successes / len(self.events), 3)
-
-    def summary_estimate(self, estimates: list[ExpectedScoreEvent]) -> None:
-        sum_score = 0
-        sum_time = 0
-        sum_score_per_seconds = 0
-        sum_tasksteps = 0
-
-        if not estimates:
-            print(f"There were no estimates.")
-        best = estimates[0]
-        lines = [
-            f"Estimate",
-            "=" * 56,
-            f"{'Rank':<6} {'Task ID':<10} {'Score':>8} {'Time (s)':>10} {'pts/s':>8} {'Number of tasks':>10}",
-            "-" * 56,
-        ]
-        for rank, e in enumerate(estimates, 1):
-            lines.append(
-                f"{rank:<6} {e.task_id:<10} {e.expected_score:>8} {e.expected_time:>10.1f} {e.expected_score_per_seconds:>8.2f} {e.task_step_count:<10}"
-            )
-            sum_time += e.expected_time
-            sum_score += e.expected_score
-            sum_tasksteps += e.task_step_count
-        sum_score_per_seconds = sum_score / sum_time
-        lines += [
-            "=" * 28 + "SUM" + "=" * 28,
-            f"{"-":<6} {"-":<10} {sum_score:>8} {sum_time:>10.1f} {sum_score_per_seconds:>8.2f} {sum_tasksteps:<10}",
-        ]
-        lines += [
-            "=" * 59,
-            f"  Recommended: Task {best.task_id}  "
-            f"({best.expected_score} pts in {best.expected_time:.1f}s = {best.expected_score_per_seconds:.2f} pts/s)",
-        ]
-        print("\n".join(lines))
-
-    def summary(self) -> str:
-        lines = [
-            f"Task:          {self.task_name}",
-            f"Total score:   {self._score}",
-            f"Actions:       {self.total_actions}",
-            f"Success rate:  {self.success_rate * 100:.1f}%",
-            "",
-            f"{'#':<4} {'Action':<22} {'Outcome':<26} {'Object':<16} {'Net pts':<10} {'Cumul.'}",
-            "-" * 88,
-        ]
-        for i, e in enumerate(self.events, 1):
-            lines.append(
-                f"{i:<4} {e.action_type:<22} {e.outcome:<26} "
-                f"{(e.object_name or '-'):<16} {e.net_points:<10} {e.cumulative_score}"
-            )
-        return "\n".join(lines)
 
     # ------------------------------------------------------------------
     # Internal

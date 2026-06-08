@@ -267,7 +267,6 @@ class PlanNode(PlanEntity):
         self.status = TaskStatus.RUNNING
         try:
             self.result = self._perform()
-            print(self.result)
         # TODO: catch all exceptions and handle them properly
         except Exception as e:
             self.status = TaskStatus.FAILED

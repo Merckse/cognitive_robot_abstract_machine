@@ -19,7 +19,7 @@ generic_object_spawner(["Plate"], [(1.2, 5.75, 0.80)], world, color=Color.ORANGE
 
 
 with simulated_robot:
-    generate_plan([Task(task_id=1,task_steps=[TaskStep( ActionType.NAVIGATE, location="cooking_table")])],context=context).perform()
+    generate_plan([Task(id=1, task_steps=[TaskStep(ActionType.NAVIGATE, location="cooking_table")])], context=context).perform()
 """
 SurfaceSpaces ->
 """

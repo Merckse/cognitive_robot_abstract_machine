@@ -117,7 +117,7 @@ class RobotProbability:
             lines.append(f"{rank:<6} {e.task_id:<10} {e.expected_probability:>8} ")
         print("\n".join(lines))
 
-    def estimate(self, task_list: list[Task]) -> list[ExpectedProbabilityModel]:
+    def estimate(self, task_list: list[Task]) -> list[Task]:
         """
         Multiplies per-action base probabilities across each task's steps, then
         returns the resulting list sorted descending by expected probability.
@@ -125,44 +125,35 @@ class RobotProbability:
         :param task_list: list of tasks
         :return: ExpectedProbabilityModel list sorted best-first.
         """
-        expected_task_probability: list[ExpectedProbabilityModel] = []
-
         for task in task_list:
             # setting probability for evaluation of single task
             joint_probability = 1
-            for action in task.task_steps:
+            for step in task.task_steps:
                 # print(task.task_steps)
-                object_name = action.object_name
-                action_type = action.action_type
+                object_name = step.object_name
+                action_type = step.action_type
+                location = step.location
+
                 # evaluating the concatination of these actions into a wholeistic task
-                action_probability: float = BASE_PROBABILITY.get((action_type, object_name))
+                step_probability: float = BASE_PROBABILITY.get((action_type, object_name),
+                                                                BASE_PROBABILITY.get((action_type, ""), 0.5))
                 world = self.context.world
                 robot = self.context.robot
 
                 # TODO: add calculations here, like p_robot_distance, p_clutter_count, p_clutter_proximity
                 if object_name is not "" or None:
                     object_body = world.get_body_by_name(object_name)
-                    action_probability = action_probability * self.p_robot_distance(target_body=object_body, robot_body=robot.bodies[0])
-                    action_probability = action_probability *self.p_clutter_count(target_body=object_body)
+                    step_probability = step_probability * self.p_robot_distance(target_body=object_body, robot_body=robot.bodies[0])
+                    step_probability = step_probability *self.p_clutter_count(target_body=object_body)
                     # self.p_clutter_proximity() TODO: retrieve list of closest objects
-                action.probability = action_probability
-                joint_probability: float = round(joint_probability * action_probability, 2)
+                step.probability = step_probability
+                joint_probability: float = round(joint_probability * step_probability, 2)
 
+            task.probability = joint_probability
             # creating a list of all tasks and having one probability of success for the whole task.
-            expected_task_probability.append(
-                ExpectedProbabilityModel(
-                    task_id=task.task_id, expected_probability=joint_probability,
-                )
-            )
 
         # OccupancyCostmap() TODO: implement to see if reachable, MAYBEEEE
-        # Number of close objects
-        sorted_list = sorted(
-            expected_task_probability,
-            key=lambda x: x.expected_probability,
-            reverse=True,
-        )
-        return sorted_list
+        return task_list
 
 
 if __name__ == "__main__":

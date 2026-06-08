@@ -187,22 +187,22 @@ def normalize_list_values(values : list[float]) -> list[float]:
 
     return [normalize(v, low, high) for v in values]
 
-def normalize_task_estimation(task_estimation : list[TaskEstimation]) -> list[TaskEstimation]:
+def normalize_task_estimation(task_list : list[Task]) -> list[Task]:
     scores : list[float] = []
     score_per_seconds : list[float] = []
     probabilities : list[float] = []
-    for task_estimate in task_estimation:
-        scores.append(task_estimate.task_score)
-        score_per_seconds.append(task_estimate.task_score_per_seconds)
-        probabilities.append(task_estimate.task_probability)
+    for task in task_list:
+        scores.append(task.score)
+        score_per_seconds.append(task.score_per_seconds)
+        probabilities.append(task.probability)
     normalized_score = normalize_list_values(scores)
     normalized_score_per_seconds = normalize_list_values(score_per_seconds)
     normalized_probabilities = normalize_list_values(probabilities)
-    for i,task_estimate in enumerate(task_estimation):
+    for i,task_estimate in enumerate(task_list):
         task_estimate.task_score = normalized_score[i]
         task_estimate.task_score_per_seconds = normalized_score_per_seconds[i]
         task_estimate.task_probability = normalized_probabilities[i]
-    return task_estimation
+    return task_list
 
 
 def navigation_subplan(target_location: str, world):

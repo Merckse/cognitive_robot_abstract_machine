@@ -1,14 +1,16 @@
 """
 Explicit data structures for call stack frames captured during EQL object creation.
 
-Replaces raw ``inspect.FrameInfo`` namedtuples with typed, memory-safe dataclasses
-that eagerly extract all needed data and drop the live frame reference immediately.
+Typed, memory-safe dataclasses that eagerly extract all needed data from a live
+``inspect.FrameInfo`` and immediately drop the live frame reference, avoiding
+memory leaks from retained frame objects.
 """
+
 from __future__ import annotations
 
 import inspect
 from dataclasses import dataclass
-from typing import Callable, List, Optional
+from typing_extensions import Callable, List, Optional
 
 
 @dataclass
@@ -16,16 +18,33 @@ class StackFrame:
     """A single frame in a captured call stack."""
 
     filename: str
+    """
+    Full path to the source file.
+    """
     lineno: int
+    """
+    Line number within the source file.
+    """
     function_name: str
+    """
+    Name of the function or method.
+    """
     code_snippet: Optional[str]
-    """One source line, stripped; ``None`` if unavailable."""
+    """
+    One source line, stripped; ``None`` if unavailable.
+    """
     class_object: Optional[type]
-    """The class that owns this method, or ``None`` for free functions."""
+    """
+    The class that owns this method, or ``None`` for free functions.
+    """
     function_object: Optional[Callable]
-    """The callable object for this frame, or ``None`` if not resolvable."""
+    """
+    The callable object for this frame, or ``None`` if not resolvable.
+    """
     module_name: Optional[str]
-    """Dotted module name (string, not ``ModuleType``) to avoid reference leaks."""
+    """
+    Dotted module name (string, not ``ModuleType``) to avoid reference leaks.
+    """
 
     @property
     def is_method(self) -> bool:
@@ -33,30 +52,34 @@ class StackFrame:
         return self.class_object is not None
 
     @classmethod
-    def from_frame_info(cls, fi: inspect.FrameInfo) -> StackFrame:
+    def from_frame_info(cls, frame_info: inspect.FrameInfo) -> StackFrame:
         """
         Eagerly extract all data from a live ``FrameInfo`` and drop the frame reference.
 
         Must be called while the frame is still on the call stack so that
         ``f_locals`` is populated.
         """
-        f = fi.frame
-        self_obj = f.f_locals.get('self', None)
-        cls_obj: Optional[type] = f.f_locals.get('cls', None)
-        if cls_obj is None and self_obj is not None:
-            cls_obj = type(self_obj)
-        fn_obj: Optional[Callable] = f.f_globals.get(fi.function, None)
-        if fn_obj is None and cls_obj is not None:
-            fn_obj = cls_obj.__dict__.get(fi.function, None)
-        module = inspect.getmodule(f)
-        snippet = fi.code_context[0].strip() if fi.code_context else None
+        raw_frame = frame_info.frame
+        instance = raw_frame.f_locals.get("self", None)
+        owner_class: Optional[type] = raw_frame.f_locals.get("cls", None)
+        if owner_class is None and instance is not None:
+            owner_class = type(instance)
+        resolved_function: Optional[Callable] = raw_frame.f_globals.get(
+            frame_info.function, None
+        )
+        if resolved_function is None and owner_class is not None:
+            resolved_function = owner_class.__dict__.get(frame_info.function, None)
+        module = inspect.getmodule(raw_frame)
+        snippet = (
+            frame_info.code_context[0].strip() if frame_info.code_context else None
+        )
         return cls(
-            filename=fi.filename,
-            lineno=fi.lineno,
-            function_name=fi.function,
+            filename=frame_info.filename,
+            lineno=frame_info.lineno,
+            function_name=frame_info.function,
             code_snippet=snippet,
-            class_object=cls_obj,
-            function_object=fn_obj,
+            class_object=owner_class,
+            function_object=resolved_function,
             module_name=module.__name__ if module else None,
         )
 
@@ -66,6 +89,9 @@ class CallStack:
     """An ordered sequence of :class:`StackFrame` objects, innermost frame first."""
 
     frames: List[StackFrame]
+    """
+    The captured stack frames.
+    """
 
     def __len__(self) -> int:
         return len(self.frames)
@@ -75,47 +101,52 @@ class CallStack:
 
     def filter(self, package: Optional[str] = None) -> CallStack:
         """
-        Return a new :class:`CallStack` with external-library frames removed.
+        Build a new :class:`CallStack` with external-library frames removed.
 
-        :param package: If given, keep only frames whose filename contains this string.
+        :param package: When provided, keep only frames whose filename contains this string.
+        :return: A new :class:`CallStack` containing only the retained frames.
         """
         kept = []
-        for f in self.frames:
-            if "site-packages" in f.filename or "dist-packages" in f.filename:
+        for frame in self.frames:
+            if "site-packages" in frame.filename or "dist-packages" in frame.filename:
                 continue
-            if package is not None and package not in f.filename:
+            if package is not None and package not in frame.filename:
                 continue
-            kept.append(f)
+            kept.append(frame)
         return CallStack(kept)
 
     def root_frame_in(self, package: str) -> Optional[StackFrame]:
         """
-        Return the outermost frame (highest in the call hierarchy) whose
+        Find the outermost frame (highest in the call hierarchy) whose
         ``module_name`` contains *package*.  This is the entry point into the
         library from the caller's perspective.
 
         :param package: Substring to match against ``module_name``.
-        :return: The outermost matching :class:`StackFrame`, or ``None``.
+        :return: The outermost matching :class:`StackFrame`, or ``None`` if no frame matches.
         """
-        matches = [f for f in self.frames if f.module_name and package in f.module_name]
+        matches = [
+            frame
+            for frame in self.frames
+            if frame.module_name and package in frame.module_name
+        ]
         return matches[-1] if matches else None
 
     def classes(self) -> List[type]:
         """Distinct class objects appearing in the stack, in order of first occurrence."""
         seen: List[type] = []
-        for f in self.frames:
-            if f.class_object is not None and f.class_object not in seen:
-                seen.append(f.class_object)
+        for frame in self.frames:
+            if frame.class_object is not None and frame.class_object not in seen:
+                seen.append(frame.class_object)
         return seen
 
     def functions(self) -> List[Callable]:
         """Distinct function objects appearing in the stack, in order of first occurrence."""
         seen: List[Callable] = []
-        for f in self.frames:
-            if f.function_object is not None and f.function_object not in seen:
-                seen.append(f.function_object)
+        for frame in self.frames:
+            if frame.function_object is not None and frame.function_object not in seen:
+                seen.append(frame.function_object)
         return seen
 
     def is_from_method(self) -> bool:
         """True if any frame in this stack is inside a class method."""
-        return any(f.is_method for f in self.frames)
+        return any(frame.is_method for frame in self.frames)

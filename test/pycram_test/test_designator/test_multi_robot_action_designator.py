@@ -26,7 +26,7 @@ from pycram.plans.factories import sequential, execute_single
 from pycram.robot_plans.actions.composite.facing import FaceAtAction
 from pycram.robot_plans.actions.composite.transporting import TransportAction
 from pycram.robot_plans.actions.core.container import OpenAction, CloseAction
-from pycram.robot_plans.actions.core.misc import DetectAction
+from pycram.robot_plans.actions.core.misc import DetectAction, MoveToReach
 from pycram.robot_plans.actions.core.navigation import NavigateAction, LookAtAction
 from pycram.robot_plans.actions.core.pick_up import (
     ReachAction,
@@ -42,6 +42,9 @@ from pycram.robot_plans.actions.core.robot_body import (
 )
 
 from pycram.view_manager import ViewManager
+from semantic_digital_twin.adapters.ros.visualization.pose_publisher import (
+    PosePublisher,
+)
 from semantic_digital_twin.adapters.ros.visualization.viz_marker import (
     VizMarkerPublisher,
 )
@@ -53,7 +56,12 @@ from semantic_digital_twin.datastructures.definitions import (
     JointStateType,
     StaticJointState,
 )
-from semantic_digital_twin.robots.abstract_robot import AbstractRobot
+
+try:
+    from semantic_digital_twin.robots.garmi import Garmi
+except ImportError:
+    Garmi = None
+from semantic_digital_twin.robots.abstract_robot import AbstractRobot, Manipulator
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.robots.pr2 import PR2
 from semantic_digital_twin.robots.stretch import Stretch
@@ -64,11 +72,26 @@ from semantic_digital_twin.spatial_types import (
     Point3,
     Quaternion,
 )
-from semantic_digital_twin.spatial_types.spatial_types import Pose
+from semantic_digital_twin.spatial_types.spatial_types import Pose, Pose2D
 from semantic_digital_twin.world import World
 
 
-@pytest.fixture(scope="module", params=["hsrb", "stretch", "tiago", "pr2"])
+@pytest.fixture(
+    scope="session",
+    params=[
+        pytest.param(
+            "garmi",
+            marks=pytest.mark.skipif(
+                Garmi is None,
+                reason="GARMI semantic annotation not installed",
+            ),
+        ),
+        "hsrb",
+        "stretch",
+        "tiago",
+        "pr2",
+    ],
+)
 def setup_multi_robot_apartment(
     request,
     hsr_world_setup,
@@ -120,6 +143,20 @@ def setup_multi_robot_apartment(
         )
         return apartment_copy, view
 
+    elif request.param == "garmi":
+        if Garmi is None:
+            pytest.skip("GARMI semantic annotation not installed")
+        garmi_world_setup = request.getfixturevalue("garmi_world_setup")
+        garmi_copy = deepcopy(garmi_world_setup)
+        apartment_copy.merge_world(
+            garmi_copy,
+        )
+        view = Garmi.from_world(apartment_copy)
+        view.root.parent_connection.origin = (
+            HomogeneousTransformationMatrix.from_xyz_rpy(1.5, 2, 0)
+        )
+        return apartment_copy, view
+
 
 @pytest.fixture
 def immutable_multiple_robot_apartment(
@@ -127,7 +164,9 @@ def immutable_multiple_robot_apartment(
 ) -> Generator[Tuple[World, AbstractRobot, Context]]:
     world, view = setup_multi_robot_apartment
     state = deepcopy(world.state._data)
+    full_body_controlled = view.full_body_controlled
     yield world, view, Context(world, view)
+    view.full_body_controlled = full_body_controlled
     world.state._data[:] = state
     world.notify_state_change()
 
@@ -154,9 +193,11 @@ def test_move_torso_multi(immutable_multiple_robot_apartment):
 
 def test_navigate_multi(immutable_multiple_robot_apartment):
     world, view, context = immutable_multiple_robot_apartment
+    target_position = [2, -2, 0]
+
     plan = execute_single(
         NavigateAction(
-            Pose(Point3.from_iterable([1, 2, 0]), reference_frame=world.root)
+            Pose(Point3.from_iterable(target_position), reference_frame=world.root)
         ),
         context=context,
     )
@@ -168,7 +209,7 @@ def test_navigate_multi(immutable_multiple_robot_apartment):
     robot_base_position = robot_base_pose.to_position().to_np()
     robot_base_orientation = robot_base_pose.to_quaternion().to_np()
 
-    assert robot_base_position[:3] == pytest.approx([1, 2, 0], abs=0.01)
+    assert robot_base_position[:3] == pytest.approx(target_position, abs=0.01)
     assert robot_base_orientation == pytest.approx([0, 0, 0, 1], abs=0.01)
 
 
@@ -570,13 +611,13 @@ def test_facing(immutable_multiple_robot_apartment):
         )
 
 
-def test_transport(mutable_multiple_robot_apartment, rclpy_node):
+def test_transport(mutable_multiple_robot_apartment):
     world, robot, context = mutable_multiple_robot_apartment
 
     description = TransportAction(
         object_designator=world.get_body_by_name("milk.stl"),
         target_location=Pose(
-            Point3.from_iterable([3.2, 2.2, 0.95]),
+            Point3.from_iterable([3.1, 2.2, 0.95]),
             Quaternion.from_iterable([0.0, 0.0, 1.0, 0.0]),
             reference_frame=world.root,
         ),
@@ -586,7 +627,29 @@ def test_transport(mutable_multiple_robot_apartment, rclpy_node):
     with simulated_robot:
         plan.perform()
     milk_position = world.get_body_by_name("milk.stl").global_transform.to_np()[:3, 3]
-    dist = np.linalg.norm(milk_position - np.array([3.2, 2.2, 0.95]))
+    dist = np.linalg.norm(milk_position - np.array([3.1, 2.2, 0.95]))
     assert dist <= 0.02
 
     plan.plan.validate()
+
+
+def test_move_to_reach(immutable_multiple_robot_apartment):
+    world, robot, context = immutable_multiple_robot_apartment
+
+    move_to_reach = MoveToReach(
+        target_pose_offset_robot=Pose2D(0.2, -0.55),
+        target_pose_manipulator=Pose.from_xyz_rpy(
+            x=0.7, y=-1.3, z=0.9, reference_frame=world.root
+        ),
+        hip_rotation=0.0,
+        grasp_description=GraspDescription(
+            approach_direction=ApproachDirection.FRONT,
+            vertical_alignment=VerticalAlignment.NoAlignment,
+            rotate_gripper=False,
+            manipulator=world.get_semantic_annotations_by_type(Manipulator)[0],
+        ),
+    )
+
+    plan = execute_single(move_to_reach, context=context)
+    with simulated_robot:
+        plan.perform()

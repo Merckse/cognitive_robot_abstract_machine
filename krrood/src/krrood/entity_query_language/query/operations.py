@@ -46,7 +46,8 @@ from krrood.entity_query_language.exceptions import (
 from krrood.entity_query_language.operators.set_operations import (
     MultiArityExpressionThatPerformsACartesianProduct,
 )
-from krrood.entity_query_language.utils import ensure_hashable, is_iterable
+from krrood.entity_query_language.utils import is_iterable
+from krrood.utils import ensure_hashable
 from krrood.entity_query_language.core.mapped_variable import MappedVariable
 from krrood.utils import memoize
 
@@ -167,7 +168,9 @@ class OrderedBy(BinaryExpression, DerivedExpression):
         var = self.variable
         var_id = var._id_
         if var_id not in result.all_bindings:
-            variable_value = next(var._evaluate_(OperationResult(result.all_bindings))).value
+            variable_value = next(
+                var._evaluate_(OperationResult(result.all_bindings))
+            ).value
         else:
             variable_value = result.all_bindings[var_id]
         if self.key:
@@ -202,7 +205,9 @@ class GroupedBy(MultiArityExpressionThatPerformsACartesianProduct):
     The variables to group the results by their values.
     """
 
-    def _evaluate__(self, sources: Optional[OperationResult] = None) -> Iterator[OperationResult]:
+    def _evaluate__(
+        self, sources: Optional[OperationResult] = None
+    ) -> Iterator[OperationResult]:
         """
         Generate results grouped by the specified variables in the grouped_by clause.
 

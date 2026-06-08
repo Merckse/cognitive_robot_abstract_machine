@@ -36,13 +36,11 @@ from krrood.entity_query_language.exceptions import NoExpressionFoundForGivenID
 from krrood.entity_query_language.utils import make_list, T, make_set, is_iterable
 from krrood.symbol_graph.symbol_graph import SymbolGraph
 from krrood.utils import memoize
-from krrood.entity_query_language.evaluation import (
+from krrood.entity_query_language.evaluation_context import (
     EvaluationContext,
-    EvaluationTracker,
-    SatisfiedConditionTracker,
-    InferenceRecorder,
     get_evaluation_context,
     set_evaluation_context,
+    _evaluation_context_var,
 )
 
 if TYPE_CHECKING:
@@ -105,7 +103,9 @@ class SymbolicExpression(ABC):
     """
     The maximum number of results to return during evaluation.
     """
-    _expression_id_cache_: dict[uuid.UUID, SymbolicExpression] = field(init=False, repr=False, default_factory=dict, compare=False)
+    _expression_id_cache_: dict[uuid.UUID, SymbolicExpression] = field(
+        init=False, repr=False, default_factory=dict, compare=False
+    )
     """
     Cache of expressions by their unique identifier.
     """
@@ -134,8 +134,9 @@ class SymbolicExpression(ABC):
                 raise NoExpressionFoundForGivenID(self, id_)
         return self._expression_id_cache_[id_]
 
-
-    def tolist(self) -> list[TypingUnion[T, Dict[TypingUnion[T, SymbolicExpression], T]]]:
+    def tolist(
+        self,
+    ) -> list[TypingUnion[T, Dict[TypingUnion[T, SymbolicExpression], T]]]:
         """
         Evaluate and return the results as a list.
         """
@@ -266,10 +267,12 @@ class SymbolicExpression(ABC):
         evaluation_context = get_evaluation_context()
         owns_an_evaluation_context = evaluation_context is None
         if owns_an_evaluation_context:
-            evaluation_context = EvaluationContext(
-                observers=[EvaluationTracker(), SatisfiedConditionTracker(), InferenceRecorder()]
+            from krrood.entity_query_language.evaluation import (
+                create_default_evaluation_context,
             )
-            set_evaluation_context(evaluation_context)
+
+            evaluation_context = create_default_evaluation_context()
+            context_token = set_evaluation_context(evaluation_context)
         try:
             evaluation_context.on_evaluate_enter(expression=self, sources=sources)
             # Normalize sources: always work with an OperationResult
@@ -293,7 +296,7 @@ class SymbolicExpression(ABC):
         finally:
             evaluation_context.on_evaluate_exit(expression=self)
             if owns_an_evaluation_context:
-                set_evaluation_context(None)
+                _evaluation_context_var.reset(context_token)
 
     def _evaluate_conclusions_and_update_bindings_(
         self, current_result: OperationResult
@@ -312,9 +315,9 @@ class SymbolicExpression(ABC):
                 conclusion._evaluate_(current_result)
             ).bindings
 
-        ctx = get_evaluation_context()
-        if ctx is not None:
-            ctx.on_conclusions_processed(
+        evaluation_context = get_evaluation_context()
+        if evaluation_context is not None:
+            evaluation_context.on_conclusions_processed(
                 expression=self,
                 result=current_result,
             )
@@ -397,6 +400,7 @@ class SymbolicExpression(ABC):
         :return: The root query of the symbolic expression tree, or None if no query found.
         """
         from krrood.entity_query_language.query.query import Query
+
         root = self._root_
         root_query = None
         for descendant in root._descendants_:
@@ -611,11 +615,12 @@ class TruthValueOperator(SymbolicExpression, ABC):
         for result in child._evaluate_(sources):
             if result.has_value:
                 value = result.value
-                is_false = not (
-                    len(value) > 0 if is_iterable(value) else bool(value)
-                )
+                is_false = not (len(value) > 0 if is_iterable(value) else bool(value))
                 yield OperationResult(
-                    result.bindings, is_false, result.operand, result.previous_operation_result
+                    result.bindings,
+                    is_false,
+                    result.operand,
+                    result.previous_operation_result,
                 )
             else:
                 yield result

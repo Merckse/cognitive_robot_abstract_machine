@@ -98,7 +98,9 @@ class PluralExistential(PlainWord):
             parts=[
                 self.as_fragment(),
                 RoleFragment(
-                    text=morphology.ensure_plural(type_name), role=SemanticRole.VARIABLE
+                    text=type_name,
+                    role=SemanticRole.VARIABLE,
+                    number=Number.PLURAL,
                 ),
             ],
         )
@@ -115,12 +117,12 @@ class FallbackNounWord(PlainWord):
     def plural_fragment(self) -> WordFragment:
         """
         Return a :class:`~krrood.entity_query_language.verbalization.fragments.base.WordFragment`
-        with the pluralised form.
+        tagged plural — the morphology pass pluralises it (e.g. ``"entity"`` → ``"entities"``).
 
-        :return: Pluralised noun fragment (e.g. ``"entities"``).
+        :return: Plural-tagged noun fragment.
         :rtype: ~krrood.entity_query_language.verbalization.fragments.base.WordFragment
         """
-        return WordFragment(text=morphology.plural(self.text))
+        return WordFragment(text=self.text, number=Number.PLURAL)
 
 
 @dataclass(frozen=True)
@@ -140,7 +142,8 @@ class CommonGroupKeyWord(PlainWord):
 
         :param field_name: Name of the grouped field (e.g. ``"location"``).
         :type field_name: str
-        :param root: Singular root type name (e.g. ``"Robot"``); pluralised internally.
+        :param root: Singular root type name (e.g. ``"Robot"``); the morphology pass
+            pluralises the tagged root leaf.
         :type root: str
         :return: Phrase fragment.
         :rtype: ~krrood.entity_query_language.verbalization.fragments.base.VerbFragment
@@ -150,7 +153,7 @@ class CommonGroupKeyWord(PlainWord):
                 self.as_fragment(),
                 WordFragment(text=field_name),
                 Prepositions.OF_THE.as_fragment(),
-                WordFragment(text=morphology.ensure_plural(root)),
+                WordFragment(text=root, number=Number.PLURAL),
             ],
         )
 
@@ -203,11 +206,6 @@ class Copulas(VocabEnum):
     IS = OperatorWord("is")
     IS_NOT = OperatorWord("is not")
     ARE = OperatorWord("are")
-
-    @classmethod
-    def for_number(cls, number: Number) -> "Copulas":
-        """The affirmative copula agreeing with *number*: ``ARE`` (plural) / ``IS`` (singular)."""
-        return cls.ARE if number is Number.PLURAL else cls.IS
 
 
 class Prepositions(VocabEnum):

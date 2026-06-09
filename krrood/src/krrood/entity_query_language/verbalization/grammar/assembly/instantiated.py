@@ -6,9 +6,11 @@ It owns the order-dependent **constraint-deferral dance** (push a frame → buil
 binding value → register the field-reference overrides → pop the frame → render the
 deferred constraints): the order matters because no binding's value may be rendered
 under a sibling binding's override, and the deferred constraints reference the overrides
-(verified order-dependent — it cannot be pre-planned).  The copula's number agreement is
-plain lexical inflection (``Copulas.for_number``) driven by the field's
-:class:`~krrood.entity_query_language.verbalization.vocabulary.words.Number`.
+(verified order-dependent — it cannot be pre-planned).  Number is only *tagged* here
+(``agreement.copula`` for the copula, ``noun_phrase`` for the value); the copula agreement
+and noun pluralisation are applied later by the
+:class:`~krrood.entity_query_language.verbalization.rendering.morphology_processor.MorphologyProcessor`
+pass.
 
 Reference: Gatt & Reiter (2009), SimpleNLG — surface realisation.
 """
@@ -18,7 +20,10 @@ from __future__ import annotations
 from typing_extensions import Dict, List, Tuple
 
 from krrood.entity_query_language.core.variable import InstantiatedVariable
-from krrood.entity_query_language.verbalization.grammar.agreement import noun_phrase
+from krrood.entity_query_language.verbalization.grammar.agreement import (
+    copula,
+    noun_phrase,
+)
 from krrood.entity_query_language.verbalization.fragments.base import (
     oxford_and,
     PhraseFragment,
@@ -37,7 +42,6 @@ from krrood.entity_query_language.verbalization.grammar.planning.instantiated im
 from krrood.entity_query_language.verbalization.vocabulary.english import (
     Articles,
     Conjunctions,
-    Copulas,
     Keywords,
     Prepositions,
 )
@@ -100,7 +104,7 @@ class InstantiatedAssembler(Assembler[InstantiatedVariable, InstantiatedPlan]):
         )
 
     def _copula(self, binding: BindingPlan) -> VerbFragment:
-        return Copulas.for_number(Number.of(binding.is_plural)).as_fragment()
+        return copula(Number.of(binding.is_plural))
 
     def _value(self, binding: BindingPlan) -> VerbFragment:
         return noun_phrase(

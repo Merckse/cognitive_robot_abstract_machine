@@ -4,11 +4,13 @@ Inference-rule **assembler** — realise a :class:`RuleStructure` (from
 into an ``IF … THEN …`` :class:`~krrood.entity_query_language.verbalization.fragments.base.BlockFragment`.
 
 Realisation sub-steps are methods sharing ``self.ctx`` (recursion via ``self.ctx.child``,
-coreference via ``self.ctx.refer``).  Number agreement (existential frame, copula, noun) is
-plain morphology driven by the planner-decided :class:`~krrood.entity_query_language.verbalization.vocabulary.words.Number`:
-the lexicon inflects (``Copulas.for_number`` / ``ExistentialPhrase.for_number``) and nouns
-pluralise via :mod:`morphology` — no per-form dispatch.  This is the realisation half of the
-planner/assembler split (see :class:`~krrood.entity_query_language.verbalization.grammar.assembly.base.Assembler`).
+coreference via ``self.ctx.refer``).  This assembler only decides + *tags* grammatical
+:class:`~krrood.entity_query_language.verbalization.fragments.features.Number` (via
+``agreement`` / the lexicon frames); the actual copula agreement and noun pluralisation are
+applied once, later, by the
+:class:`~krrood.entity_query_language.verbalization.rendering.morphology_processor.MorphologyProcessor`
+pass.  This is the realisation half of the planner/assembler split (see
+:class:`~krrood.entity_query_language.verbalization.grammar.assembly.base.Assembler`).
 
 Reference: Gatt & Reiter (2009), SimpleNLG — surface realisation + the MorphologyProcessor.
 """

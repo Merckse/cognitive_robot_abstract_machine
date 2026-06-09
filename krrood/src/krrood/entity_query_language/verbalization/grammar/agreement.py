@@ -14,7 +14,10 @@ from typing_extensions import Any, Callable
 
 from krrood.entity_query_language.verbalization.chain_utils import verbalize_plural
 from krrood.entity_query_language.verbalization.fragments.base import VerbFragment
+from krrood.entity_query_language.verbalization.fragments.factory import role
 from krrood.entity_query_language.verbalization.fragments.features import Number
+from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
+from krrood.entity_query_language.verbalization.vocabulary.english import Copulas
 
 
 def noun_phrase(
@@ -27,3 +30,8 @@ def noun_phrase(
     if number is Number.PLURAL:
         return verbalize_plural(expression, context, child)
     return child(expression)
+
+
+def copula(number: Number) -> VerbFragment:
+    """The copula tagged with *number*; the morphology pass agrees it (*is* / *are*)."""
+    return role(Copulas.IS.text, SemanticRole.OPERATOR, number=number)

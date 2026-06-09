@@ -45,10 +45,17 @@ class VerbFragment:
 
 @dataclass
 class WordFragment(VerbFragment):
-    """Plain neutral text with no semantic role: articles, connectives, punctuation."""
+    """Plain neutral text with no semantic role: articles, connectives, punctuation.
+
+    May also carry a noun rendered role-lessly (e.g. a group-key root); such a leaf can be
+    tagged :attr:`number` for the morphology pass to pluralise, like a ``RoleFragment``.
+    """
 
     text: str
     """The raw text string (e.g. ``"the"``, ``"and"``, ``","``)."""
+
+    number: Number = Number.SINGULAR
+    """Grammatical number *feature* — the morphology pass pluralises a ``PLURAL`` leaf's text."""
 
 
 @dataclass

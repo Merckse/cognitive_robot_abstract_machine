@@ -32,6 +32,7 @@ from typing import TYPE_CHECKING
 from typing_extensions import Any, Callable, ClassVar, Optional, Sequence
 
 from krrood.entity_query_language.verbalization.fragments.base import VerbFragment
+from krrood.entity_query_language.verbalization.fragments.features import Number
 from krrood.entity_query_language.verbalization.grammar.selection import most_specific
 
 if TYPE_CHECKING:
@@ -57,11 +58,19 @@ class Ctx:
     reaches for cross-cutting state directly.
     """
 
-    child: Callable[[Any], VerbFragment]
-    """Recurse on a sub-expression — the fold continuation bound to this pass."""
+    child: Callable[..., VerbFragment]
+    """Recurse on a sub-expression — the fold continuation bound to this pass.  Accepts an
+    optional ``number=`` to request a plural realisation of the child (consumed by that
+    child's rule, not inherited further down)."""
 
     context: "VerbalizationContext"
     """The owning verbalization context (services accessed via the properties below)."""
+
+    number: Number = Number.SINGULAR
+    """Grammatical number *requested* for **this** node (set by the parent's ``child(...,
+    number=…)``).  A number-aware rule (variable / chain / flat-variable) reads it to build
+    the bare plural noun-phrase shape and tag its leaves; every other rule ignores it
+    (renders singular).  Per-edge: a rule's own ``ctx.child`` calls default back to singular."""
 
     @property
     def refer(self) -> "ReferringExpressions":

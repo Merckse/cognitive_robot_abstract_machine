@@ -19,9 +19,11 @@ from __future__ import annotations
 from typing_extensions import List, Optional, Tuple
 
 from krrood.entity_query_language.core.mapped_variable import (
+    Attribute,
     Index,
     MappedVariable,
 )
+from krrood.entity_query_language.core.variable import Variable
 from krrood.entity_query_language.query.quantifiers import ResultQuantifier
 from krrood.entity_query_language.query.query import Entity
 from krrood.entity_query_language.verbalization import morphology
@@ -35,6 +37,7 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     VerbFragment,
 )
 from krrood.entity_query_language.verbalization.fragments.factory import phrase, word
+from krrood.entity_query_language.verbalization.fragments.features import Number
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
 from krrood.entity_query_language.verbalization.fragments.source_ref import SourceRef
 from krrood.entity_query_language.verbalization.grammar.assembly.base import Assembler
@@ -67,12 +70,49 @@ class ChainAssembler(Assembler[MappedVariable, None]):
     def chain(
         self, expression: MappedVariable, *, negated: bool = False
     ) -> VerbFragment:
-        """Boolean terminal → predicative *"<nav> is [not] <attr>"*; else possessive path."""
+        """Boolean terminal → predicative *"<nav> is [not] <attr>"*; else possessive path.
+
+        When a plural is requested (``ctx.number``) and this is a single attribute on a
+        variable, build the bare plural *"attrs of Roots"*; otherwise render singular.
+        """
+        if self.ctx.number is Number.PLURAL:
+            plural = self._plural_attribute(expression)
+            if plural is not None:
+                return plural
         chain, leaf = walk_chain(expression)
         if is_bool_attr_chain(expression):
             return self._bool_predicative(chain, leaf, negated)
         root_fragment = self._chain_root(leaf)
         return self._possessive_path(build_path_parts(chain), root_fragment)
+
+    def _plural_attribute(self, expression: MappedVariable) -> Optional[VerbFragment]:
+        """*"attrs of Roots"* when *expression* is a single ``Attribute`` on a ``Variable``,
+        else ``None`` (caller falls through to the singular rendering).  Tags both leaves
+        plural for the morphology pass; registers the root for coreference."""
+        chain, root = walk_chain(expression)
+        if not (
+            isinstance(root, Variable)
+            and len(chain) == 1
+            and isinstance(chain[0], Attribute)
+        ):
+            return None
+        type_name = root._type_.__name__
+        label = self.ctx.refer.disambiguation_map.get(root._id_, type_name)
+        self.ctx.refer.register_label(root, label)
+        root_number = Number.SINGULAR if label != type_name else Number.PLURAL
+        attribute = chain[0]
+        return PhraseFragment(
+            parts=[
+                RoleFragment.for_attribute(
+                    attribute._owner_class_,
+                    attribute._attribute_name_,
+                    number=Number.PLURAL,
+                ),
+                Prepositions.OF.as_fragment(),
+                RoleFragment.for_variable(label, root, number=root_number),
+            ],
+            separator=" ",
+        )
 
     def possessive(
         self, expression: MappedVariable, pronoun: VerbFragment

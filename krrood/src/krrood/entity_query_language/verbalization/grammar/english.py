@@ -58,7 +58,6 @@ from krrood.entity_query_language.verbalization.fragments.factory import (
     word,
 )
 from krrood.entity_query_language.verbalization.fragments.features import Number
-from krrood.entity_query_language.verbalization.grammar.agreement import noun_phrase
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
 from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
     is_bool_attr_chain,
@@ -147,6 +146,8 @@ class VariableRule(PhraseRule):
     name = "variable"
 
     def build(self, node, ctx: Ctx):
+        if ctx.number is Number.PLURAL:
+            return self._plural(node, ctx)
         article, label = ctx.refer.noun_for_parts(node)
         label_fragment = RoleFragment.for_variable(label, node)
         if article == ArticleSelection.NONE:
@@ -154,6 +155,19 @@ class VariableRule(PhraseRule):
         if article == ArticleSelection.DEFINITE:
             return phrase(Articles.THE.as_fragment(), label_fragment)
         return phrase(Articles.indefinite(label), label_fragment)
+
+    @staticmethod
+    def _plural(node, ctx: Ctx):
+        """Bare plural variable NP (*"Robots"*); the morphology pass inflects the leaf.
+
+        A numbered label (*"Robot 2"*) is surface-final (tagged singular); a plain type
+        name is tagged plural for the morphology pass to inflect.
+        """
+        type_name = node._type_.__name__
+        label = ctx.refer.disambiguation_map.get(node._id_, type_name)
+        ctx.refer.register_label(node, label)
+        number = Number.SINGULAR if label != type_name else Number.PLURAL
+        return RoleFragment.for_variable(label, node, number=number)
 
 
 class LiteralRule(PhraseRule):
@@ -306,6 +320,8 @@ class PronominalChainRule(PhraseRule):
     name = "pronominal-chain"
 
     def when(self, node, ctx: Ctx):
+        if ctx.number is Number.PLURAL:
+            return False  # a plural noun phrase is not pronominalised ("drawers of Cabinets")
         if isinstance(node, FlatVariable):
             return False
         chain, root = walk_chain(node)
@@ -322,13 +338,13 @@ class PronominalChainRule(PhraseRule):
 
 
 class FlatVariableRule(PhraseRule):
-    """A transparent SetOf wrapper → unwrap to its child."""
+    """A transparent SetOf wrapper → unwrap to its child (forwarding the requested number)."""
 
     construct = FlatVariable
     name = "flat-variable"
 
     def build(self, node, ctx: Ctx):
-        return ctx.child(node._child_)
+        return ctx.child(node._child_, number=ctx.number)
 
 
 # ── aggregators ──────────────────────────────────────────────────────────────
@@ -354,9 +370,7 @@ class AggregatorRule(PhraseRule):
                 child_fragment,
             )
         else:
-            child_fragment = noun_phrase(
-                node._child_, Number.PLURAL, ctx.context, ctx.child
-            )
+            child_fragment = ctx.child(node._child_, number=Number.PLURAL)
             result = phrase(
                 Articles.THE.as_fragment(), aggregation_fragment, child_fragment
             )
@@ -386,9 +400,7 @@ class ForAllRule(PhraseRule):
     name = "for-all"
 
     def build(self, node, ctx: Ctx):
-        variable_fragment = noun_phrase(
-            node.variable, Number.PLURAL, ctx.context, ctx.child
-        )
+        variable_fragment = ctx.child(node.variable, number=Number.PLURAL)
         condition_fragment = ctx.child(node.condition)
         return phrase(
             Logicals.FOR_ALL.as_fragment(),

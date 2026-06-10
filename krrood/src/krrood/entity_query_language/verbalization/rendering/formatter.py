@@ -26,7 +26,10 @@ from enum import Enum
 from functools import lru_cache
 from typing_extensions import ClassVar, Optional
 
-from krrood.entity_query_language.verbalization.fragments.roles import ROLE_COLORS, SemanticRole
+from krrood.entity_query_language.verbalization.fragments.roles import (
+    ROLE_COLORS,
+    SemanticRole,
+)
 
 _TOOLTIP_ATTR = "title"
 
@@ -54,7 +57,11 @@ def _annotated_target_name(node: ast.AST) -> Optional[str]:
 
 def _string_expr_first_line(node: ast.AST) -> Optional[str]:
     """Return the first stripped line if *node* is a bare string expression (PEP 257 attribute doc)."""
-    if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+    if (
+        isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Constant)
+        and isinstance(node.value.value, str)
+    ):
         for line in node.value.value.splitlines():
             stripped = line.strip()
             if stripped:
@@ -143,7 +150,7 @@ class IndentSize(Enum):
 
 def _detect_osc8_support() -> bool:
     """Return ``True`` when the current terminal is known to support OSC 8 hyperlinks."""
-    if os.environ.get("VTE_VERSION"):          # GNOME Terminal, Tilix, …
+    if os.environ.get("VTE_VERSION"):  # GNOME Terminal, Tilix, …
         return True
     term_prog = os.environ.get("TERM_PROGRAM", "")
     if term_prog in {"vscode", "WezTerm", "iTerm.app"}:
@@ -309,8 +316,12 @@ class HTMLFormatter(Formatter):
         return f'<span style="color:{color}">{text}</span>'
 
     def wrap_link(self, text: str, url: str, tooltip: Optional[str] = None) -> str:
-        tooltip_attr = f' {_TOOLTIP_ATTR}="{html.escape(tooltip, quote=True)}"' if tooltip else ""
-        return f'<a target="_blank" rel="noopener" href="{url}"{tooltip_attr}>{text}</a>'
+        tooltip_attr = (
+            f' {_TOOLTIP_ATTR}="{html.escape(tooltip, quote=True)}"' if tooltip else ""
+        )
+        return (
+            f'<a target="_blank" rel="noopener" href="{url}"{tooltip_attr}>{text}</a>'
+        )
 
     @property
     def space(self) -> str:

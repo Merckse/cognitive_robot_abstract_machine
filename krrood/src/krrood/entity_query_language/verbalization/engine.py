@@ -23,6 +23,7 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     VerbFragment,
     WordFragment,
 )
+from krrood.entity_query_language.verbalization.fragments.features import Number
 from krrood.entity_query_language.verbalization.grammar.phrase_rule import (
     Ctx,
     PhraseRule,
@@ -39,6 +40,7 @@ def fold(
     context: "VerbalizationContext",
     rules: Optional[Sequence[PhraseRule]] = None,
     fallback: Optional[Callable[[object, "VerbalizationContext"], VerbFragment]] = None,
+    number: Number = Number.SINGULAR,
 ) -> VerbFragment:
     """
     Verbalize *node* by dispatching to the matching grammar rule and recursing.
@@ -71,8 +73,11 @@ def fold(
             return override
 
     ctx = Ctx(
-        child=lambda child_node: fold(child_node, context, rules, fallback),
+        child=lambda child_node, number=Number.SINGULAR: fold(
+            child_node, context, rules, fallback, number
+        ),
         context=context,
+        number=number,
     )
 
     rule = select(node, rules, ctx)

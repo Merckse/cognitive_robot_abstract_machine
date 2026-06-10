@@ -17,7 +17,6 @@ from __future__ import annotations
 from typing_extensions import List, Optional, Tuple
 
 from krrood.entity_query_language.query.query import Query
-from krrood.entity_query_language.verbalization.grammar.agreement import noun_phrase
 from krrood.entity_query_language.verbalization.fragments.base import (
     BlockFragment,
     oxford_and,
@@ -234,7 +233,7 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
         """Append *"among <plural source> such that <filter> having <filter>"*."""
         source = plan.aggregation_value.source
         source_frag = (
-            noun_phrase(source, Number.PLURAL, self.ctx.context, self.ctx.child)
+            self.ctx.child(source, number=Number.PLURAL)
             if source is not None
             else FallbackNouns.ENTITY.plural_fragment()
         )

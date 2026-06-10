@@ -37,7 +37,9 @@ from krrood.entity_query_language.verbalization.verbalizer import EQLVerbalizer
 from krrood.entity_query_language.query.query import Query
 
 if TYPE_CHECKING:
-    from krrood.entity_query_language.verbalization.rendering.source_link_resolver import SourceLinkResolver
+    from krrood.entity_query_language.verbalization.rendering.source_link_resolver import (
+        SourceLinkResolver,
+    )
 
 _log = logging.getLogger(__name__)
 
@@ -76,6 +78,7 @@ def _is_ipython() -> bool:
     """Return ``True`` when running inside an IPython / Jupyter session."""
     try:
         from IPython import get_ipython
+
         return get_ipython() is not None
     except ImportError:
         return False
@@ -174,7 +177,12 @@ class VerbalizationPipeline:
         raw_html = self.renderer.render(fragment)
         if _is_ipython():
             from IPython.display import display as _ipython_display, HTML
-            wrapped = _HTML_CELL_WRAPPER.format(body=raw_html) if self._is_html_renderer() else raw_html
+
+            wrapped = (
+                _HTML_CELL_WRAPPER.format(body=raw_html)
+                if self._is_html_renderer()
+                else raw_html
+            )
             _ipython_display(HTML(wrapped))
             return
         full_page = _HTML_PAGE_TEMPLATE.format(body=raw_html)

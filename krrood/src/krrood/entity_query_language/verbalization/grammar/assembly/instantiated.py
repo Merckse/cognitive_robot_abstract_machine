@@ -7,8 +7,8 @@ binding value → register the field-reference overrides → pop the frame → r
 deferred constraints): the order matters because no binding's value may be rendered
 under a sibling binding's override, and the deferred constraints reference the overrides
 (verified order-dependent — it cannot be pre-planned).  Number is only *tagged* here
-(``agreement.copula`` for the copula, ``noun_phrase`` for the value); the copula agreement
-and noun pluralisation are applied later by the
+(``agreement.copula`` for the copula, ``ctx.child(value, number=…)`` for the value); the
+copula agreement and noun pluralisation are applied later by the
 :class:`~krrood.entity_query_language.verbalization.rendering.morphology_processor.MorphologyProcessor`
 pass.
 
@@ -20,10 +20,7 @@ from __future__ import annotations
 from typing_extensions import Dict, List, Tuple
 
 from krrood.entity_query_language.core.variable import InstantiatedVariable
-from krrood.entity_query_language.verbalization.grammar.agreement import (
-    copula,
-    noun_phrase,
-)
+from krrood.entity_query_language.verbalization.grammar.agreement import copula
 from krrood.entity_query_language.verbalization.fragments.base import (
     oxford_and,
     PhraseFragment,
@@ -107,12 +104,7 @@ class InstantiatedAssembler(Assembler[InstantiatedVariable, InstantiatedPlan]):
         return copula(Number.of(binding.is_plural))
 
     def _value(self, binding: BindingPlan) -> VerbFragment:
-        return noun_phrase(
-            binding.value,
-            Number.of(binding.is_plural),
-            self.ctx.context,
-            self.ctx.child,
-        )
+        return self.ctx.child(binding.value, number=Number.of(binding.is_plural))
 
     # ── phrase assembly ──────────────────────────────────────────────────────────
 

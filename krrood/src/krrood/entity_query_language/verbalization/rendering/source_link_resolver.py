@@ -138,7 +138,9 @@ class AutoAPIResolver:
                 package_root = parent
                 break
         if package_root is None:
-            raise FileNotFoundError(f"No pyproject.toml found in any parent of {pkg_file}")
+            raise FileNotFoundError(
+                f"No pyproject.toml found in any parent of {pkg_file}"
+            )
 
         html_root = package_root / "doc" / "_build" / "html"
         if not html_root.exists():

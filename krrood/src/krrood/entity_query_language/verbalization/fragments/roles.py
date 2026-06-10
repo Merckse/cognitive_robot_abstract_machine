@@ -18,7 +18,9 @@ from krrood.entity_query_language.core.mapped_variable import MappedVariable
 from krrood.entity_query_language.core.variable import Variable, Literal
 from krrood.entity_query_language.operators.aggregators import Aggregator
 from krrood.entity_query_language.operators.comparator import Comparator
-from krrood.entity_query_language.operators.core_logical_operators import LogicalOperator
+from krrood.entity_query_language.operators.core_logical_operators import (
+    LogicalOperator,
+)
 from krrood.entity_query_language.query.query import Entity, SetOf
 
 
@@ -58,14 +60,14 @@ class SemanticRole(Enum):
 #:
 #: :type: dict[SemanticRole, str | None]
 ROLE_COLORS: dict[SemanticRole, Optional[str]] = {
-    SemanticRole.KEYWORD:     "#eded18",        # ConclusionSelector yellow
-    SemanticRole.VARIABLE:    "cornflowerblue",
-    SemanticRole.AGGREGATION: "#F54927",         # Aggregator red-orange
-    SemanticRole.OPERATOR:    "#ff7f0e",         # Comparator orange
-    SemanticRole.LOGICAL:     "#2ca02c",         # LogicalOperator green
-    SemanticRole.LITERAL:     "#949292",         # Literal gray
-    SemanticRole.ATTRIBUTE:   "#8FC7B8",         # MappedVariable teal
-    SemanticRole.PLAIN:       None,
+    SemanticRole.KEYWORD: "#eded18",  # ConclusionSelector yellow
+    SemanticRole.VARIABLE: "cornflowerblue",
+    SemanticRole.AGGREGATION: "#F54927",  # Aggregator red-orange
+    SemanticRole.OPERATOR: "#ff7f0e",  # Comparator orange
+    SemanticRole.LOGICAL: "#2ca02c",  # LogicalOperator green
+    SemanticRole.LITERAL: "#949292",  # Literal gray
+    SemanticRole.ATTRIBUTE: "#8FC7B8",  # MappedVariable teal
+    SemanticRole.PLAIN: None,
 }
 
 
@@ -73,13 +75,13 @@ def _build_role_map() -> dict[type, SemanticRole]:
     """Return the mapping of EQL expression types to their :class:`SemanticRole`."""
     return {
         LogicalOperator: SemanticRole.LOGICAL,
-        Aggregator:      SemanticRole.AGGREGATION,
-        Comparator:      SemanticRole.OPERATOR,
-        MappedVariable:  SemanticRole.ATTRIBUTE,
-        Literal:         SemanticRole.LITERAL,   # before Variable in MRO traversal
-        Variable:        SemanticRole.VARIABLE,
-        Entity:          SemanticRole.VARIABLE,
-        SetOf:           SemanticRole.VARIABLE,
+        Aggregator: SemanticRole.AGGREGATION,
+        Comparator: SemanticRole.OPERATOR,
+        MappedVariable: SemanticRole.ATTRIBUTE,
+        Literal: SemanticRole.LITERAL,  # before Variable in MRO traversal
+        Variable: SemanticRole.VARIABLE,
+        Entity: SemanticRole.VARIABLE,
+        SetOf: SemanticRole.VARIABLE,
     }
 
 

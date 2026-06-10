@@ -46,4 +46,8 @@ class SourceRef:
         :return: A :class:`SourceRef` for the attribute, or ``None``.
         :rtype: SourceRef or None
         """
-        return cls(owner_type=owner, attribute=attribute_name) if isinstance(owner, type) else None
+        return (
+            cls(owner_type=owner, attribute=attribute_name)
+            if isinstance(owner, type)
+            else None
+        )

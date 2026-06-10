@@ -30,7 +30,6 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     VerbFragment,
 )
 from krrood.entity_query_language.verbalization.fragments.factory import phrase
-from krrood.entity_query_language.verbalization.grammar.agreement import noun_phrase
 from krrood.entity_query_language.verbalization.grammar.assembly.base import Assembler
 from krrood.entity_query_language.verbalization.grammar.conditions.verbalizer import (
     ConditionVerbalizer,
@@ -128,8 +127,8 @@ class InferenceAssembler(Assembler[Entity, RuleStructure]):
         )
 
     def _value(self, expression, number: Number) -> VerbFragment:
-        """Render a value expression agreeing with *number*."""
-        return noun_phrase(expression, number, self.ctx.context, self.ctx.child)
+        """Render a value expression agreeing with *number* (plural folds the chain)."""
+        return self.ctx.child(expression, number=number)
 
     # ── THEN clause ───────────────────────────────────────────────────────────
 
@@ -155,20 +154,10 @@ class InferenceAssembler(Assembler[Entity, RuleStructure]):
         ):
             return phrase(
                 Articles.THE.as_fragment(),
-                noun_phrase(
-                    binding.value_expression,
-                    Number.PLURAL,
-                    self.ctx.context,
-                    self.ctx.child,
-                ),
+                self.ctx.child(binding.value_expression, number=Number.PLURAL),
             )
         if binding.is_plural_field:
-            return noun_phrase(
-                binding.value_expression,
-                Number.PLURAL,
-                self.ctx.context,
-                self.ctx.child,
-            )
+            return self.ctx.child(binding.value_expression, number=Number.PLURAL)
         if binding.aggregation_status == AggregationStatus.GROUP_KEY:
             return self._group_key_value(binding.value_expression)
         return self.ctx.child(binding.value_expression)

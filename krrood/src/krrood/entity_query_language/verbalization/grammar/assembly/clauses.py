@@ -25,7 +25,6 @@ from krrood.entity_query_language.verbalization.fragments.base import (
 )
 from krrood.entity_query_language.verbalization.fragments.factory import phrase, word
 from krrood.entity_query_language.verbalization.fragments.features import Number
-from krrood.entity_query_language.verbalization.grammar.agreement import noun_phrase
 from krrood.entity_query_language.verbalization.grammar.assembly.base import Assembler
 from krrood.entity_query_language.verbalization.grammar.planning.clauses import (
     GroupedByPlanner,
@@ -50,8 +49,7 @@ class GroupedByAssembler(Assembler[Any, GroupPlan]):
             return Keywords.GROUPED.as_fragment()
         groups_phrase = self._keys_phrase(plan.keys)
         aggregated_frags = [
-            noun_phrase(expr, Number.PLURAL, self.ctx.context, self.ctx.child)
-            for expr in plan.aggregated
+            self.ctx.child(expr, number=Number.PLURAL) for expr in plan.aggregated
         ]
         if aggregated_frags and not isinstance(node, SetOf):
             aggregated_phrase = oxford_and(

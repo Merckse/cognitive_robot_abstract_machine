@@ -1,19 +1,17 @@
 """
-Utilities for walking MappedVariable chains, building path parts, and
-pluralising chain expressions.
+Utilities for walking MappedVariable chains and building path parts.
 
 These are pure utilities shared by multiple verbalizer subsystems.  They must
-not import from the subsystem files (``verbalizer.py``, ``context.py``,
-``rules/*.py``) to avoid circular dependencies.  Imports from EQL core and
-from the ``fragments/``, ``vocabulary/`` layers are safe because those are
-lower in the dependency graph.
+not import from the subsystem files (``verbalizer.py``, ``context.py``) to avoid
+circular dependencies.  Imports from EQL core and from the ``fragments/`` layer
+are safe because those are lower in the dependency graph.
 """
 
 from __future__ import annotations
 
 import datetime as _dt
-from typing import TYPE_CHECKING
-from typing_extensions import Callable, Optional
+
+from typing_extensions import Optional
 
 from krrood.entity_query_language.core.mapped_variable import (
     Attribute,
@@ -23,18 +21,7 @@ from krrood.entity_query_language.core.mapped_variable import (
     MappedVariable,
 )
 from krrood.entity_query_language.core.variable import Literal, Variable
-from krrood.entity_query_language.verbalization.fragments.base import (
-    PhraseFragment,
-    RoleFragment,
-)
-from krrood.entity_query_language.verbalization.fragments.features import Number
-from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
 from krrood.entity_query_language.verbalization.fragments.source_ref import SourceRef
-from krrood.entity_query_language.verbalization.vocabulary.english import Prepositions
-
-if TYPE_CHECKING:
-    from krrood.entity_query_language.verbalization.context import VerbalizationContext
-    from krrood.entity_query_language.verbalization.fragments.base import VerbFragment
 
 
 def walk_chain(expression) -> tuple[list, object]:
@@ -143,68 +130,3 @@ def build_path_parts(chain: list) -> list[tuple[str, Optional[SourceRef]]]:
             pass
         i += 1
     return parts
-
-
-def verbalize_plural(
-    expression, context: VerbalizationContext, build_fn: Callable
-) -> VerbFragment:
-    """
-    Return a plural :class:`~krrood.entity_query_language.verbalization.fragments.base.VerbFragment`
-    for *expression*.
-
-    Handles three special cases with dedicated plural forms:
-
-    * :class:`~krrood.entity_query_language.core.mapped_variable.FlatVariable` — delegates to its child.
-    * :class:`~krrood.entity_query_language.core.variable.Variable` — pluralises the type name
-      (e.g. ``Robot`` → ``Robots``).
-    * Single :class:`~krrood.entity_query_language.core.mapped_variable.Attribute` on a Variable —
-      produces *"attrs of Roots"*.
-
-    Falls back to *build_fn* for all other expression types.
-
-    :param expression: EQL expression to pluralise.
-    :param context: Shared verbalization state.
-    :type context: ~krrood.entity_query_language.verbalization.context.VerbalizationContext
-    :param build_fn: The single-argument recursion continuation (``ctx.child``) used as
-        the fallback for expression types without a dedicated plural form.
-    :type build_fn: Callable
-    :return: Plural fragment for *expression*.
-    :rtype: ~krrood.entity_query_language.verbalization.fragments.base.VerbFragment
-    """
-    if isinstance(expression, FlatVariable):
-        return verbalize_plural(expression._child_, context, build_fn)
-
-    if isinstance(expression, Variable):
-        type_name = expression._type_.__name__
-        label = context.disambiguation_map.get(expression._id_, type_name)
-        context.register_label(expression, label)
-        # Numbered labels ("Robot 1") are surface-final; plain type names get pluralised
-        # by the morphology pass (tagged here).
-        number = Number.SINGULAR if label != type_name else Number.PLURAL
-        return RoleFragment.for_variable(label, expression, number=number)
-
-    if isinstance(expression, Attribute):
-        chain, root = walk_chain(expression)
-        if (
-            isinstance(root, Variable)
-            and len(chain) == 1
-            and isinstance(chain[0], Attribute)
-        ):
-            type_name = root._type_.__name__
-            label = context.disambiguation_map.get(root._id_, type_name)
-            context.register_label(root, label)
-            root_number = Number.SINGULAR if label != type_name else Number.PLURAL
-            attribute_name = chain[0]._attribute_name_
-            owner = chain[0]._owner_class_
-            return PhraseFragment(
-                parts=[
-                    RoleFragment.for_attribute(
-                        owner, attribute_name, number=Number.PLURAL
-                    ),
-                    Prepositions.OF.as_fragment(),
-                    RoleFragment.for_variable(label, root, number=root_number),
-                ],
-                separator=" ",
-            )
-
-    return build_fn(expression)

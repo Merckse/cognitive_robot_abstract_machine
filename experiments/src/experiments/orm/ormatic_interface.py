@@ -18,6 +18,8 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
 import builtins
 import datetime
 import enum
+import experiments.experiment_definitions
+import experiments.ormatic_experiments.scalability
 import experiments.sage_10k.demos
 import experiments.sage_10k.sage10k_actions
 import giskardpy.executor
@@ -218,6 +220,7 @@ class Base(DeclarativeBase):
         krrood.adapters.json_serializer.SubclassJSONSerializer: sqlalchemy.sql.sqltypes.JSON,
         uuid.UUID: sqlalchemy.sql.sqltypes.UUID,
         pathlib.Path: krrood.ormatic.custom_types.PathType,
+        krrood.adapters.json_serializer.JSONData: krrood.ormatic.custom_types.JSONDataType,
     }
 
 
@@ -435,6 +438,23 @@ class ExecutionDataDAO_added_world_modifications_association(
     target: Mapped[WorldModelModificationBlockDAO] = relationship(
         "WorldModelModificationBlockDAO",
         foreign_keys=[target_worldmodelmodificationblockdao_id],
+    )
+
+
+class ExperimentsTableDAO_experiments_association(Base, AssociationDataAccessObject):
+
+    __tablename__ = "_51871553352489440756612829396006662518908902302110287554367579"
+
+    database_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_experimentstabledao_id: Mapped[int] = mapped_column(
+        ForeignKey("ExperimentsTableDAO.database_id")
+    )
+    target_experimentresultdao_id: Mapped[int] = mapped_column(
+        ForeignKey("ExperimentResultDAO.database_id")
+    )
+
+    target: Mapped[ExperimentResultDAO] = relationship(
+        "ExperimentResultDAO", foreign_keys=[target_experimentresultdao_id]
     )
 
 
@@ -4061,6 +4081,46 @@ class ExecutorDAO(Base, DataAccessObject[giskardpy.executor.Executor]):
         "polymorphic_on": "polymorphic_type",
         "polymorphic_identity": "ExecutorDAO",
     }
+
+
+class ExperimentResultDAO(
+    Base, DataAccessObject[experiments.experiment_definitions.ExperimentResult]
+):
+
+    __tablename__ = "ExperimentResultDAO"
+
+    database_id: Mapped[builtins.int] = mapped_column(
+        Integer, primary_key=True, use_existing_column=True
+    )
+
+    polymorphic_type: Mapped[str] = mapped_column(
+        String(255), nullable=False, use_existing_column=True
+    )
+
+    __mapper_args__ = {
+        "polymorphic_on": "polymorphic_type",
+        "polymorphic_identity": "ExperimentResultDAO",
+    }
+
+
+class ExperimentsTableDAO(
+    Base, DataAccessObject[experiments.experiment_definitions.ExperimentsTable]
+):
+
+    __tablename__ = "ExperimentsTableDAO"
+
+    database_id: Mapped[builtins.int] = mapped_column(
+        Integer, primary_key=True, use_existing_column=True
+    )
+
+    experiments: Mapped[builtins.list[ExperimentsTableDAO_experiments_association]] = (
+        relationship(
+            "ExperimentsTableDAO_experiments_association",
+            collection_class=builtins.list,
+            cascade="all, delete-orphan",
+            foreign_keys="[ExperimentsTableDAO_experiments_association.source_experimentstabledao_id]",
+        )
+    )
 
 
 class ExternalCollisionVariableManagerDAO(
@@ -12593,6 +12653,35 @@ class Sage10kWallDAO(
     }
 
 
+class ScalabilityExperimentResultDAO(
+    ExperimentResultDAO,
+    DataAccessObject[
+        experiments.ormatic_experiments.scalability.ORMaticScalabilityExperimentResult
+    ],
+):
+
+    __tablename__ = "ScalabilityExperimentResultDAO"
+
+    database_id: Mapped[builtins.int] = mapped_column(
+        ForeignKey(ExperimentResultDAO.database_id),
+        primary_key=True,
+        use_existing_column=True,
+    )
+
+    number_of_classes: Mapped[builtins.int] = mapped_column(use_existing_column=True)
+    number_of_associations: Mapped[builtins.int] = mapped_column(
+        use_existing_column=True
+    )
+    number_of_inheritances: Mapped[builtins.int] = mapped_column(
+        use_existing_column=True
+    )
+
+    __mapper_args__ = {
+        "polymorphic_identity": "ScalabilityExperimentResultDAO",
+        "inherit_condition": database_id == ExperimentResultDAO.database_id,
+    }
+
+
 class ScaleDAO(
     Base, DataAccessObject[semantic_digital_twin.world_description.geometry.Scale]
 ):
@@ -16323,6 +16412,30 @@ class TryInOrderNodeDAO(
         "polymorphic_identity": "TryInOrderNodeDAO",
         "inherit_condition": database_id == ExecutesSequentiallyDAO.database_id,
     }
+
+
+class TypstRendererDAO(
+    Base, DataAccessObject[experiments.experiment_definitions.TypstRenderer]
+):
+
+    __tablename__ = "TypstRendererDAO"
+
+    database_id: Mapped[builtins.int] = mapped_column(
+        Integer, primary_key=True, use_existing_column=True
+    )
+
+    experiments_id: Mapped[int] = mapped_column(
+        ForeignKey("ExperimentsTableDAO.database_id", use_alter=True),
+        nullable=True,
+        use_existing_column=True,
+    )
+
+    experiments: Mapped[ExperimentsTableDAO] = relationship(
+        "ExperimentsTableDAO",
+        uselist=False,
+        foreign_keys=[experiments_id],
+        post_update=True,
+    )
 
 
 class URDFParserDAO(
@@ -27272,9 +27385,13 @@ class AddSemanticAnnotationModificationDAO(
         use_existing_column=True,
     )
 
-    semantic_annotation_json: Mapped[
-        typing.List[krrood.adapters.json_serializer.JSONData]
-    ] = mapped_column(JSON, nullable=False, use_existing_column=True)
+    semantic_annotation_json: Mapped[krrood.adapters.json_serializer.JSONData] = (
+        mapped_column(
+            krrood.ormatic.custom_types.JSONDataType,
+            nullable=False,
+            use_existing_column=True,
+        )
+    )
 
     __mapper_args__ = {
         "polymorphic_identity": "AddSemanticAnnotationModificationDAO",

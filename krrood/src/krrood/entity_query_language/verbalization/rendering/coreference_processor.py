@@ -26,9 +26,8 @@ from typing import Iterable, List, Optional
 import uuid
 
 from krrood.entity_query_language.verbalization.fragments.base import (
-    BlockFragment,
+    map_structural_children,
     NounPhrase,
-    PhraseFragment,
     SubjectScope,
     VerbFragment,
 )
@@ -58,7 +57,14 @@ class CoreferenceProcessor:
         return self._walk(fragment)
 
     def _walk(self, fragment: VerbFragment) -> VerbFragment:
-        """Document-order rebuild, threading the accumulating discourse state."""
+        """Document-order rebuild, threading the accumulating discourse state.
+
+        Only the two coreference-relevant nodes are handled here — a ``SubjectScope`` pushes its
+        subject for the extent of its child and is then stripped; a ``NounPhrase`` is resolved.
+        Every other structural container is rebuilt by the shared
+        :func:`~krrood.entity_query_language.verbalization.fragments.base.map_structural_children`
+        (recursing through ``self._walk``), and a leaf is returned unchanged.
+        """
         match fragment:
             case SubjectScope(subject_id=subject_id, child=child):
                 self._subject_stack.append(subject_id)
@@ -66,19 +72,11 @@ class CoreferenceProcessor:
                     return self._walk(child)
                 finally:
                     self._subject_stack.pop()
-            case PhraseFragment(parts=parts, separator=separator):
-                return PhraseFragment(
-                    parts=[self._walk(p) for p in parts], separator=separator
-                )
-            case BlockFragment(header=header, items=items):
-                return BlockFragment(
-                    header=None if header is None else self._walk(header),
-                    items=[self._walk(i) for i in items],
-                )
             case NounPhrase():
                 return self._noun_phrase(fragment)
             case _:
-                return fragment
+                rebuilt = map_structural_children(fragment, self._walk)
+                return rebuilt if rebuilt is not None else fragment
 
     def _noun_phrase(self, np: NounPhrase) -> VerbFragment:
         """Resolve a referring NP (first / repeat) in document order; recurse otherwise.

@@ -301,13 +301,49 @@ def fold_fragment(
 # ── Fragment transform (tree → tree) ────────────────────────────────────────────
 
 
+def map_structural_children(
+    fragment: VerbFragment, recurse: Callable[[VerbFragment], VerbFragment]
+) -> Optional[VerbFragment]:
+    """
+    Rebuild a **structural container** (the nodes that merely hold children —
+    :class:`PhraseFragment`, :class:`BlockFragment`, :class:`SubjectScope`) by applying *recurse*
+    to each child, or return ``None`` for anything else (a leaf, or a node the caller treats
+    specially).
+
+    This is the one definition of *"how the recursive containers are rebuilt"*, shared by every
+    tree→tree pass (:func:`map_fragment` and the stateful
+    :class:`~krrood.entity_query_language.verbalization.rendering.coreference_processor.CoreferenceProcessor`
+    walk) so the container shapes are enumerated once.  Each pass supplies its own *recurse*
+    (plain self-recursion for ``map_fragment``; a scope-tracking walk for coreference) and keeps
+    its own handling of the *non*-container nodes it cares about.
+
+    :param fragment: Node to rebuild.
+    :param recurse: Transform applied to each child.
+    :return: The rebuilt container, or ``None`` when *fragment* is not a structural container.
+    """
+    match fragment:
+        case PhraseFragment(parts=parts, separator=separator):
+            return PhraseFragment(
+                parts=[recurse(p) for p in parts], separator=separator
+            )
+        case BlockFragment(header=header, items=items):
+            return BlockFragment(
+                header=None if header is None else recurse(header),
+                items=[recurse(i) for i in items],
+            )
+        case SubjectScope(subject_id=subject_id, child=child):
+            return SubjectScope(subject_id=subject_id, child=recurse(child))
+        case _:
+            return None
+
+
 def map_fragment(
     fragment: VerbFragment, leaf: Callable[[VerbFragment], VerbFragment]
 ) -> VerbFragment:
     """
     Rebuild a :class:`VerbFragment` tree, replacing each **leaf** (``WordFragment`` /
-    ``RoleFragment``) by ``leaf(node)`` and reconstructing ``PhraseFragment`` /
-    ``BlockFragment`` structure around the transformed children.
+    ``RoleFragment``) by ``leaf(node)`` and reconstructing the structural containers
+    (:func:`map_structural_children`) around the transformed children.
 
     The structural dual of :func:`fold_fragment` (which folds *to a value*): this maps a
     tree *to a tree*, the recursion scheme a realisation pass (e.g. the
@@ -320,20 +356,8 @@ def map_fragment(
     :return: The rebuilt tree.
     :rtype: ~krrood.entity_query_language.verbalization.fragments.base.VerbFragment
     """
-    match fragment:
-        case PhraseFragment(parts=parts, separator=separator):
-            return PhraseFragment(
-                parts=[map_fragment(p, leaf) for p in parts], separator=separator
-            )
-        case BlockFragment(header=header, items=items):
-            return BlockFragment(
-                header=None if header is None else map_fragment(header, leaf),
-                items=[map_fragment(i, leaf) for i in items],
-            )
-        case SubjectScope(subject_id=subject_id, child=child):
-            return SubjectScope(subject_id=subject_id, child=map_fragment(child, leaf))
-        case _:
-            return leaf(fragment)
+    rebuilt = map_structural_children(fragment, lambda f: map_fragment(f, leaf))
+    return rebuilt if rebuilt is not None else leaf(fragment)
 
 
 # ── Fragment flattening ────────────────────────────────────────────────────────

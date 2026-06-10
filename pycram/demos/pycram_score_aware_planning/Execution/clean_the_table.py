@@ -1,5 +1,7 @@
 import math
 
+import time
+
 from Evaluate.CompositeEvaluator import CompositeEvaluator
 from common.types import Task
 from common.values import TASKS
@@ -9,13 +11,12 @@ from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms
 from pycram.motion_executor import simulated_robot
 
-from pycram.plans.factories import sequential
+from pycram.plans.factories import sequential, make_node
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
 
 from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
 from demos.pycram_score_aware_planning.common.types import TaskMode
 from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
-from demos.pycram_score_aware_planning.helper_methods import generate_plan
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.semantic_annotations.mixins import HasSupportingSurface
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Table
@@ -140,18 +141,23 @@ while task_plan != []:
     evaluated_tasks: list[Task] = task_evaluator.estimate(task_plan)
     task_plan: list[Task] = task_structurizer.structurize(evaluated_tasks)
     plan_x = task_plan[0]
+
     task_plan.pop(0)
 
-    plan = generate_plan_task(task=plan_x, context=context)
+    action_list = generate_plan_task(task=plan_x, context=context)
+
+
     """
     Generate the actual plan
     """
-
     # Have to check before some long taking action
     # TODO: what happens, if the score event fails and the robot has to fallback, how to re-evaluated / stailize
     # TODO: maybe add a on the fly monitor, that basically checks a action in the task_list as done, resulting in instant feedback, where to implement that?
     with simulated_robot:
-        plan.perform()
+        for action in action_list:
+            plan = sequential([], context=context)
+            plan.add_child(make_node(action))
+            result = plan.perform()
 
 
 # if visible_bodies is None:

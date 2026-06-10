@@ -35,10 +35,6 @@ class CompositeEvaluator:
         task_list_probability_evaluated = self.probability_evaluator.estimate(task_list=task_list)
         task_list_score_evaluated = self.score_evaluator.estimate(task_list=task_list_probability_evaluated)
 
-        # TODO: change to one unified print
-        # self.score_evaluator.summary_estimate(task_list_probability_evaluated)
-        # self.probability_evaluator.summary_estimate(task_list_score_evaluated)
-
         # normalize list
         normalized_evaluated_task_list = normalize_task_estimation(task_list_score_evaluated)
         self.summary(normalized_evaluated_task_list)

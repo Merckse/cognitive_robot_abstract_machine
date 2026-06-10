@@ -41,13 +41,6 @@ class TaskMode(str, Enum):
     GPSR = "gpsr"
     PP = "pp"
     FD = "fd"
-
-class ScoreModel:
-    current_points: int
-    current_penalty: float
-    time_left: float
-    ScoreEvents : list[ScoreEvent]
-
 @dataclass(kw_only=True)
 class ScoreEvent:
     timestamp: float
@@ -61,6 +54,13 @@ class ScoreEvent:
     cumulative_score: int
     cumulative_time: float
     note: Optional[str] = None
+
+class ScoreModel:
+    current_points: int
+    current_penalty: float
+    time_left: float
+    ScoreEvents : list[ScoreEvent]
+
 
 # The action step is equivilant to an action, just has been named TaskStep to find seperation, between the two
 @dataclass

@@ -84,13 +84,6 @@ task_mode = TaskMode.PP
 context.evaluate_conditions = False
 dispatcher.known_furniture = world.bodies
 
-# COOKING TABLE [X]
-# DINING_TABLE [X]
-# table [X]
-# lowerTable [X]
-# desk [X]
-# SHELF_1 [x]
-# SHELF_2 [X]
 explorable_locations = ["cooking_table","counterTop", "dining_table", "table", "lowerTable", "desk", "shelf_1", "shelf_2"]
 kitchen_tables = ["table", "counterTop"]
 livingroom_tables = ["lowerTable", "dining_table", "shelf_1", "shelf_2"]
@@ -130,26 +123,21 @@ pre_table_pose = Pose(
 Generate a structurized plan - based on standard evaluation 
 """
 taskmode = TaskMode.PP
-task_plan : list[Task] = TASKS.get(taskmode)
+task_list : list[Task] = TASKS.get(taskmode)
+evaluator = CompositeEvaluator()
+structurizer = PlanStructurizer()
 
-task_evaluator :CompositeEvaluator= CompositeEvaluator(context=context)
-task_structurizer : PlanStructurizer= PlanStructurizer()
 
-evaluated_tasks: list[Task] = task_evaluator.estimate(task_plan)
-task_plan: list[Task] = task_structurizer.structurize(evaluated_tasks)
-while task_plan != []:
-    evaluated_tasks: list[Task] = task_evaluator.estimate(task_plan)
-    task_plan: list[Task] = task_structurizer.structurize(evaluated_tasks)
-    plan_x = task_plan[0]
+while task_list != []:
+    evaluated_tasks: list[Task] = evaluator.estimate(context=context, task_list=task_list)
+    task_list: list[Task] = structurizer.structurize(task_list=evaluated_tasks)
+    plan_x = task_list[0]
 
-    task_plan.pop(0)
+    task_list.pop(0)
 
+    #
     action_list = generate_plan_task(task=plan_x, context=context)
 
-
-    """
-    Generate the actual plan
-    """
     # Have to check before some long taking action
     # TODO: what happens, if the score event fails and the robot has to fallback, how to re-evaluated / stailize
     # TODO: maybe add a on the fly monitor, that basically checks a action in the task_list as done, resulting in instant feedback, where to implement that?
@@ -158,7 +146,6 @@ while task_plan != []:
             plan = sequential([], context=context)
             plan.add_child(make_node(action))
             result = plan.perform()
-            print(result)
 
 
 # if visible_bodies is None:

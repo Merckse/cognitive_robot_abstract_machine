@@ -15,10 +15,9 @@ from pycram.datastructures.enums import TaskStatus
 @dataclass(kw_only=True)
 class CompositeEvaluator:
 
-    def __init__(self, context: Context):
+    def __init__(self):
         self.score_evaluator = RobotScorer()
         self.probability_evaluator = RobotProbability()
-        self.context: Context = context
         # self.plan_stability_evaluator = RobotPlanStability()
 
     def record(self,context : Context, action_type : Optional[ActionType]= None,

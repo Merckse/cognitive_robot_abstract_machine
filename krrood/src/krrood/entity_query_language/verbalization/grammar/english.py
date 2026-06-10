@@ -46,11 +46,7 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     PhraseFragment,
     RoleFragment,
     VerbFragment,
-)
-from krrood.entity_query_language.verbalization.fragments.factory import (
-    phrase,
-    role,
-    word,
+    WordFragment,
 )
 from krrood.entity_query_language.verbalization.fragments.features import (
     Definiteness,
@@ -176,7 +172,10 @@ class LiteralRule(PhraseRule):
     name = "literal"
 
     def build(self, node, ctx: Ctx):
-        return role(ctx.context.type_name_of_value(node._value_), SemanticRole.LITERAL)
+        return RoleFragment(
+            text=ctx.context.type_name_of_value(node._value_),
+            role=SemanticRole.LITERAL,
+        )
 
 
 class ExternalVariableRule(PhraseRule):
@@ -189,7 +188,7 @@ class ExternalVariableRule(PhraseRule):
         type_name = (
             node._type_.__name__ if getattr(node, "_type_", None) else "variable"
         )
-        return NounPhrase(head=role(type_name, SemanticRole.VARIABLE))
+        return NounPhrase(head=RoleFragment(text=type_name, role=SemanticRole.VARIABLE))
 
 
 # ── logical ──────────────────────────────────────────────────────────────────
@@ -249,15 +248,17 @@ class OrRule(PhraseRule):
         head_with_comma = PhraseFragment(
             parts=[
                 PhraseFragment(parts=parts[:-1], separator=", "),
-                word(","),
+                WordFragment(text=","),
             ],
             separator="",
         )
-        return phrase(
-            Logicals.EITHER.as_fragment(),
-            head_with_comma,
-            Conjunctions.OR.as_fragment(),
-            parts[-1],
+        return PhraseFragment(
+            parts=[
+                Logicals.EITHER.as_fragment(),
+                head_with_comma,
+                Conjunctions.OR.as_fragment(),
+                parts[-1],
+            ]
         )
 
 
@@ -269,9 +270,18 @@ class NotRule(PhraseRule):
 
     def build(self, node, ctx: Ctx):
         child_fragment = ctx.child(node._child_)
-        return phrase(
-            Logicals.NOT.as_fragment(),
-            PhraseFragment(parts=[word("("), child_fragment, word(")")], separator=""),
+        return PhraseFragment(
+            parts=[
+                Logicals.NOT.as_fragment(),
+                PhraseFragment(
+                    parts=[
+                        WordFragment(text="("),
+                        child_fragment,
+                        WordFragment(text=")"),
+                    ],
+                    separator="",
+                ),
+            ]
         )
 
 
@@ -373,11 +383,13 @@ class ForAllRule(PhraseRule):
     def build(self, node, ctx: Ctx):
         variable_fragment = ctx.child(node.variable, number=Number.PLURAL)
         condition_fragment = ctx.child(node.condition)
-        return phrase(
-            Logicals.FOR_ALL.as_fragment(),
-            variable_fragment,
-            word(","),
-            condition_fragment,
+        return PhraseFragment(
+            parts=[
+                Logicals.FOR_ALL.as_fragment(),
+                variable_fragment,
+                WordFragment(text=","),
+                condition_fragment,
+            ]
         )
 
 
@@ -390,11 +402,13 @@ class ExistsRule(PhraseRule):
     def build(self, node, ctx: Ctx):
         variable_fragment = ctx.child(node.variable)
         condition_fragment = ctx.child(node.condition)
-        return phrase(
-            Logicals.THERE_EXISTS.as_fragment(),
-            variable_fragment,
-            Keywords.SUCH_THAT.as_fragment(),
-            condition_fragment,
+        return PhraseFragment(
+            parts=[
+                Logicals.THERE_EXISTS.as_fragment(),
+                variable_fragment,
+                Keywords.SUCH_THAT.as_fragment(),
+                condition_fragment,
+            ]
         )
 
 
@@ -522,7 +536,7 @@ class InstantiatedVerbalizableRule(PhraseRule):
             name: realize_subtree(ctx.child(child))
             for name, child in node._child_vars_.items()
         }
-        return word(template.format(**kwargs))
+        return WordFragment(text=template.format(**kwargs))
 
 
 # ── the full grammar (one instance per rule) ─────────────────────────────────────

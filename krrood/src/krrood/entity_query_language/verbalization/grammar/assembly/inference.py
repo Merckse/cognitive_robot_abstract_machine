@@ -27,9 +27,9 @@ from krrood.entity_query_language.verbalization.chain_utils import (
 )
 from krrood.entity_query_language.verbalization.fragments.base import (
     BlockFragment,
+    PhraseFragment,
     VerbFragment,
 )
-from krrood.entity_query_language.verbalization.fragments.factory import phrase
 from krrood.entity_query_language.verbalization.grammar.assembly.base import Assembler
 from krrood.entity_query_language.verbalization.grammar.conditions.verbalizer import (
     ConditionVerbalizer,
@@ -165,9 +165,11 @@ class InferenceAssembler(Assembler[Entity, RuleStructure]):
             binding.is_plural_field
             and binding.aggregation_status == AggregationStatus.AGGREGATED
         ):
-            return phrase(
-                Articles.THE.as_fragment(),
-                self.ctx.child(binding.value_expression, number=Number.PLURAL),
+            return PhraseFragment(
+                parts=[
+                    Articles.THE.as_fragment(),
+                    self.ctx.child(binding.value_expression, number=Number.PLURAL),
+                ]
             )
         if binding.is_plural_field:
             return self.ctx.child(binding.value_expression, number=Number.PLURAL)

@@ -37,8 +37,8 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     PossessiveChain,
     RoleFragment,
     VerbFragment,
+    WordFragment,
 )
-from krrood.entity_query_language.verbalization.fragments.factory import phrase, word
 from krrood.entity_query_language.verbalization.fragments.features import (
     Definiteness,
     Number,
@@ -152,21 +152,25 @@ class ChainAssembler(Assembler[MappedVariable, None]):
         elif isinstance(nav_chain[-1], Index) and isinstance(nav_chain[-1]._key_, int):
             ordinal = morphology.ordinal(nav_chain[-1]._key_)
             pre_frag = possessive_path(build_path_parts(nav_chain[:-1]), root_fragment)
-            nav_fragment = phrase(
-                Articles.THE.as_fragment(),
-                word(ordinal),
-                Prepositions.OF.as_fragment(),
-                pre_frag,
+            nav_fragment = PhraseFragment(
+                parts=[
+                    Articles.THE.as_fragment(),
+                    WordFragment(text=ordinal),
+                    Prepositions.OF.as_fragment(),
+                    pre_frag,
+                ]
             )
         else:
             nav_fragment = possessive_path(build_path_parts(nav_chain), root_fragment)
 
         copula = Copulas.IS_NOT.as_fragment() if negated else Copulas.IS.as_fragment()
         terminal = chain[-1]
-        return phrase(
-            nav_fragment,
-            copula,
-            RoleFragment.for_attribute(
-                terminal._owner_class_, terminal._attribute_name_
-            ),
+        return PhraseFragment(
+            parts=[
+                nav_fragment,
+                copula,
+                RoleFragment.for_attribute(
+                    terminal._owner_class_, terminal._attribute_name_
+                ),
+            ]
         )

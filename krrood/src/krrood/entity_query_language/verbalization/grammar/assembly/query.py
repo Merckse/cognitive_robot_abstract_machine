@@ -27,10 +27,7 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     RoleFragment,
     SubjectScope,
     VerbFragment,
-)
-from krrood.entity_query_language.verbalization.fragments.factory import (
-    phrase,
-    word,
+    WordFragment,
 )
 from krrood.entity_query_language.verbalization.fragments.features import (
     Definiteness,
@@ -110,7 +107,8 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
             ]
             vars_phrase = PhraseFragment(parts=variable_fragments, separator=", ")
             selection = PhraseFragment(
-                parts=[word("("), vars_phrase, word(")")], separator=""
+                parts=[WordFragment(text="("), vars_phrase, WordFragment(text=")")],
+                separator="",
             )
             return self._query_body(
                 node,
@@ -150,9 +148,9 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
             return selected, None
         whose, residual = self._render_restrictions(restriction, plan.subject)
         if whose is not None:
-            selected = phrase(selected, whose)
+            selected = PhraseFragment(parts=[selected, whose])
         where_item = (
-            phrase(Keywords.SUCH_THAT.as_fragment(), residual)
+            PhraseFragment(parts=[Keywords.SUCH_THAT.as_fragment(), residual])
             if residual is not None
             else None
         )
@@ -180,7 +178,9 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
             if whose is not None:
                 modifiers.append(whose)
             if residual is not None:
-                modifiers.append(phrase(Keywords.WHERE.as_fragment(), residual))
+                modifiers.append(
+                    PhraseFragment(parts=[Keywords.WHERE.as_fragment(), residual])
+                )
 
         noun = NounPhrase(
             head=RoleFragment.for_variable(plan.selected_type, var),
@@ -246,7 +246,7 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
         if having is not None:
             parts.append(having)
 
-        return phrase(*parts)
+        return PhraseFragment(parts=parts)
 
     # ── restriction rendering ──────────────────────────────────────────────────
 
@@ -302,7 +302,7 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
     ) -> VerbFragment:
         if find_header is None:
             find_header = Keywords.FIND.as_fragment()
-        header = phrase(find_header, selection)
+        header = PhraseFragment(parts=[find_header, selection])
         clauses = [
             clause
             for clause in [where_item, *self._trailing_clauses(node)]
@@ -322,8 +322,11 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
     def _where_clause(self, plan: QueryPlan) -> Optional[VerbFragment]:
         if plan.where_condition is None:
             return None
-        return phrase(
-            Keywords.SUCH_THAT.as_fragment(), self.ctx.child(plan.where_condition)
+        return PhraseFragment(
+            parts=[
+                Keywords.SUCH_THAT.as_fragment(),
+                self.ctx.child(plan.where_condition),
+            ]
         )
 
     def inline_noun(self, entity) -> VerbFragment:

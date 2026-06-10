@@ -22,8 +22,8 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     oxford_and,
     PhraseFragment,
     VerbFragment,
+    WordFragment,
 )
-from krrood.entity_query_language.verbalization.fragments.factory import phrase, word
 from krrood.entity_query_language.verbalization.fragments.features import Number
 from krrood.entity_query_language.verbalization.grammar.assembly.base import Assembler
 from krrood.entity_query_language.verbalization.grammar.planning.clauses import (
@@ -55,15 +55,17 @@ class GroupedByAssembler(Assembler[Any, GroupPlan]):
             aggregated_phrase = oxford_and(
                 aggregated_frags, Conjunctions.AND.as_fragment()
             )
-            return phrase(
-                Conjunctions.AND.as_fragment(),
-                Articles.THE.as_fragment(),
-                aggregated_phrase,
-                Copulas.ARE.as_fragment(),
-                Keywords.GROUPED_BY.as_fragment(),
-                groups_phrase,
+            return PhraseFragment(
+                parts=[
+                    Conjunctions.AND.as_fragment(),
+                    Articles.THE.as_fragment(),
+                    aggregated_phrase,
+                    Copulas.ARE.as_fragment(),
+                    Keywords.GROUPED_BY.as_fragment(),
+                    groups_phrase,
+                ]
             )
-        return phrase(Keywords.GROUPED_BY.as_fragment(), groups_phrase)
+        return PhraseFragment(parts=[Keywords.GROUPED_BY.as_fragment(), groups_phrase])
 
     def clause(self, node) -> Optional[VerbFragment]:
         """The in-query GROUP BY clause, or ``None`` when there are no group keys."""
@@ -86,10 +88,19 @@ class OrderedByAssembler(Assembler[Any, None]):
             SortDirections.DESCENDING if node.descending else SortDirections.ASCENDING
         )
         paren = PhraseFragment(
-            parts=[word("("), direction.as_fragment(), word(")")], separator=""
+            parts=[
+                WordFragment(text="("),
+                direction.as_fragment(),
+                WordFragment(text=")"),
+            ],
+            separator="",
         )
-        return phrase(
-            Keywords.ORDERED_BY.as_fragment(), self.ctx.child(node.variable), paren
+        return PhraseFragment(
+            parts=[
+                Keywords.ORDERED_BY.as_fragment(),
+                self.ctx.child(node.variable),
+                paren,
+            ]
         )
 
     def clause(self, query) -> Optional[VerbFragment]:
@@ -104,7 +115,7 @@ class HavingAssembler(Assembler[Any, None]):
     def realize(self, node, plan: None = None) -> VerbFragment:
         with self.ctx.context.compact_predicates_scope():
             having_frag = self.ctx.child(node._having_expression_.condition)
-        return phrase(Keywords.HAVING.as_fragment(), having_frag)
+        return PhraseFragment(parts=[Keywords.HAVING.as_fragment(), having_frag])
 
     def clause(self, query) -> Optional[VerbFragment]:
         """The in-query HAVING clause, or ``None`` when there is no HAVING."""

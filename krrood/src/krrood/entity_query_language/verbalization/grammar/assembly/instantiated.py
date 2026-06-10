@@ -26,8 +26,8 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     PhraseFragment,
     RoleFragment,
     VerbFragment,
+    WordFragment,
 )
-from krrood.entity_query_language.verbalization.fragments.factory import phrase, word
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
 from krrood.entity_query_language.verbalization.fragments.source_ref import SourceRef
 from krrood.entity_query_language.verbalization.grammar.assembly.base import Assembler
@@ -36,12 +36,14 @@ from krrood.entity_query_language.verbalization.grammar.planning.instantiated im
     InstantiatedPlan,
     InstantiatedPlanner,
 )
+from krrood.entity_query_language.verbalization.rendering.possessive import (
+    possessive_path,
+)
 from krrood.entity_query_language.verbalization.vocabulary.english import (
     Articles,
     Conjunctions,
     Copulas,
     Keywords,
-    Prepositions,
 )
 from krrood.entity_query_language.verbalization.vocabulary.words import Number
 
@@ -73,18 +75,19 @@ class InstantiatedAssembler(Assembler[InstantiatedVariable, InstantiatedPlan]):
         for binding in plan.bindings:
             field_ref = self._field_ref(binding.field_name, plan.type_name, type_cls)
             binding_frags.append(
-                phrase(field_ref, self._copula(binding), self._value(binding))
+                PhraseFragment(
+                    parts=[field_ref, self._copula(binding), self._value(binding)]
+                )
             )
             overrides[binding.value._id_] = field_ref
         return binding_frags, overrides
 
     def _field_ref(self, field_name: str, type_name: str, type_cls) -> VerbFragment:
-        """*"the <field> of the <Type>"* with proper semantic roles + source link."""
-        return PhraseFragment(
+        """*"the <field> of the <Type>"* — a single-hop possessive, built by the shared
+        :func:`~krrood.entity_query_language.verbalization.rendering.possessive.possessive_path`
+        so the genitive structure lives in exactly one place."""
+        type_root = PhraseFragment(
             parts=[
-                Articles.THE.as_fragment(),
-                RoleFragment(text=field_name, role=SemanticRole.ATTRIBUTE),
-                Prepositions.OF.as_fragment(),
                 Articles.THE.as_fragment(),
                 RoleFragment(
                     text=type_name,
@@ -97,6 +100,7 @@ class InstantiatedAssembler(Assembler[InstantiatedVariable, InstantiatedPlan]):
                 ),
             ]
         )
+        return possessive_path([(field_name, None)], type_root)
 
     def _copula(self, binding: BindingPlan) -> VerbFragment:
         return Copulas.for_number(Number.of(binding.is_plural))
@@ -117,13 +121,19 @@ class InstantiatedAssembler(Assembler[InstantiatedVariable, InstantiatedPlan]):
         if binding_frags:
             joined = oxford_and(binding_frags, Conjunctions.AND.as_fragment())
             modifiers.append(
-                PhraseFragment(parts=[word(","), Keywords.WHERE.as_fragment(), joined])
+                PhraseFragment(
+                    parts=[WordFragment(text=","), Keywords.WHERE.as_fragment(), joined]
+                )
             )
         if constraint_frags:
             joined_c = oxford_and(constraint_frags, Conjunctions.AND.as_fragment())
             modifiers.append(
                 PhraseFragment(
-                    parts=[word(","), Keywords.SUCH_THAT.as_fragment(), joined_c]
+                    parts=[
+                        WordFragment(text=","),
+                        Keywords.SUCH_THAT.as_fragment(),
+                        joined_c,
+                    ]
                 )
             )
         # A referring NP: "a <type>" first mention (+ appositive clauses), reduced to

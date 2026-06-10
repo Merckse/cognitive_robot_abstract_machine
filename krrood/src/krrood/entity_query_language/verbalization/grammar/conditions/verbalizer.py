@@ -26,7 +26,6 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     RoleFragment,
     VerbFragment,
 )
-from krrood.entity_query_language.verbalization.fragments.factory import phrase, role
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
 from krrood.entity_query_language.verbalization.grammar.assembly.base import Assembler
 from krrood.entity_query_language.verbalization.grammar.conditions.operator_phrase import (
@@ -54,10 +53,12 @@ class ConditionVerbalizer(Assembler[Any, None]):
 
     def predicate(self, comparator, *, negated: bool = False) -> VerbFragment:
         """*"<left> <operator> <right>"* — the standalone comparator form."""
-        return phrase(
-            self.ctx.child(comparator.left),
-            comparator_operator(comparator, self.ctx.context, negated=negated),
-            self.ctx.child(comparator.right),
+        return PhraseFragment(
+            parts=[
+                self.ctx.child(comparator.left),
+                comparator_operator(comparator, self.ctx.context, negated=negated),
+                self.ctx.child(comparator.right),
+            ]
         )
 
     def attribute_modifier(self, comparator, subject) -> VerbFragment:
@@ -91,13 +92,15 @@ class ConditionVerbalizer(Assembler[Any, None]):
         The *value* fragment is supplied by the caller (it may itself be number-folded);
         the attribute noun and copula agree with *number*.
         """
-        return phrase(
-            Keywords.WHOSE.as_fragment(),
-            self._attr_noun(attr_name, number),
-            Copulas.for_number(number),
-            value,
+        return PhraseFragment(
+            parts=[
+                Keywords.WHOSE.as_fragment(),
+                self._attr_noun(attr_name, number),
+                Copulas.for_number(number),
+                value,
+            ]
         )
 
     def _attr_noun(self, name: str, number: Number) -> VerbFragment:
         """A role-tagged attribute noun tagged with *number* (the pass inflects it)."""
-        return role(name, SemanticRole.ATTRIBUTE, number=number)
+        return RoleFragment(text=name, role=SemanticRole.ATTRIBUTE, number=number)

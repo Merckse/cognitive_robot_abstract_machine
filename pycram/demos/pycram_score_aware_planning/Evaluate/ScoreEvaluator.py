@@ -89,14 +89,10 @@ class RobotScorer:
     Thread-safe reads; not designed for concurrent writes.
     """
 
-    task_name: str = "unnamed_task"
-    task_mode: TaskMode = TaskMode.PP
-    context: Context
     """
     The context providing world and robot.
     """
 
-    challenge_starting_time: int = MAX_TIME_ESTIMATE.get(task_mode, 0)
     events: list[ScoreEvent] = field(default_factory=list)
     _score: int = field(default=0, init=False, repr=False)
     _time: int = field(default=0, init=False, repr=False)
@@ -123,10 +119,8 @@ class RobotScorer:
                 base_score: int = 0
                 expected_time: int = 0
                 penalty: int = 0
-                outcome: ActionOutcome = ActionOutcome.SUCCESS #  Default assumption, that a success will occure.
 
                 if step.action_probability <= probability_threshold:
-                    outcome = ActionOutcome.SUCCESS_WITH_ASSIST
                     penalty : int = FLAT_PENALTIES.get(outcome)
 
                     step.action_assisted = True
@@ -138,6 +132,7 @@ class RobotScorer:
                     (step.action_type, step.object_name or ""), 1
                 )
 
+                # calculation of total scores
                 total_score += base_score
                 total_time += expected_time
                 total_score_penalized += base_score - penalty

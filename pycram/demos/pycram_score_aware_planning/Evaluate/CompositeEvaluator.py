@@ -16,12 +16,12 @@ from pycram.datastructures.enums import TaskStatus
 class CompositeEvaluator:
 
     def __init__(self, context: Context):
-        self.score_evaluator = RobotScorer(context=context)
-        self.probability_evaluator = RobotProbability(context=context)
+        self.score_evaluator = RobotScorer()
+        self.probability_evaluator = RobotProbability()
         self.context: Context = context
         # self.plan_stability_evaluator = RobotPlanStability()
 
-    def record(self, action_type : Optional[ActionType]= None,
+    def record(self,context : Context, action_type : Optional[ActionType]= None,
                outcome : Optional[ActionOutcome] | Optional[TaskStatus]= None, object_name : Optional[str]= None,**kwargs):
         if action_type is not None:
             if outcome is None:
@@ -30,7 +30,7 @@ class CompositeEvaluator:
         self.plan_stability_evaluator.record()
         self.probability_evaluator.record()
 
-    def estimate(self, task_list : list[Task]) -> list[Task]:
+    def estimate(self, context : Context, task_list : list[Task]) -> list[Task]:
         # estimating score and probability, with score relying on probability
         task_list_probability_evaluated = self.probability_evaluator.estimate(task_list=task_list)
         task_list_score_evaluated = self.score_evaluator.estimate(task_list=task_list_probability_evaluated)

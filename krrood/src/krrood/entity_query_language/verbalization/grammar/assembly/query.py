@@ -19,6 +19,7 @@ from typing_extensions import List, Optional, Tuple
 from krrood.entity_query_language.query.query import Query
 from krrood.entity_query_language.verbalization.fragments.base import (
     BlockFragment,
+    NounPhrase,
     oxford_and,
     PhraseFragment,
     RoleFragment,
@@ -29,7 +30,10 @@ from krrood.entity_query_language.verbalization.fragments.factory import (
     role,
     word,
 )
-from krrood.entity_query_language.verbalization.fragments.features import Number
+from krrood.entity_query_language.verbalization.fragments.features import (
+    Definiteness,
+    Number,
+)
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
 from krrood.entity_query_language.verbalization.grammar.aggregation_kinds import (
     AGGREGATION_KIND,
@@ -179,9 +183,8 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
                 RoleFragment.for_variable(selected_type, var),
             )
         else:
-            article_noun = phrase(
-                Articles.indefinite(selected_type),
-                RoleFragment.for_variable(selected_type, var),
+            article_noun = NounPhrase(
+                head=RoleFragment.for_variable(selected_type, var)
             )
 
         if plan.subject_restriction is None:
@@ -216,8 +219,10 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
             av.leaf._attribute_name_,
             number=Number.of(plural_leaf),
         )
-        aggregate = phrase(
-            Articles.THE.as_fragment(), aggregation_kind.as_fragment(), leaf_frag
+        aggregate = NounPhrase(
+            head=aggregation_kind.as_fragment(),
+            definiteness=Definiteness.DEFINITE,
+            modifiers=[leaf_frag],
         )
 
         if av.aggregator._id_ not in self.ctx.context.seen:
@@ -364,6 +369,4 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
         if where_expression is not None:
             self.ctx.context.defer_constraint(where_expression.condition)
 
-        return phrase(
-            Articles.indefinite(type_name), RoleFragment.for_variable(type_name, var)
-        )
+        return NounPhrase(head=RoleFragment.for_variable(type_name, var))

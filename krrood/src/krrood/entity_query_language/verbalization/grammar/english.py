@@ -19,7 +19,6 @@ from __future__ import annotations
 from typing_extensions import List
 
 from krrood.entity_query_language.core.mapped_variable import (
-    Attribute,
     FlatVariable,
     MappedVariable,
 )
@@ -41,10 +40,6 @@ from krrood.entity_query_language.operators.core_logical_operators import (
     flatten_operands,
 )
 from krrood.entity_query_language.operators.logical_quantifiers import Exists, ForAll
-from krrood.entity_query_language.verbalization.chain_utils import (
-    chain_root,
-    walk_chain,
-)
 from krrood.entity_query_language.verbalization.fragments.base import (
     join_with,
     NounPhrase,

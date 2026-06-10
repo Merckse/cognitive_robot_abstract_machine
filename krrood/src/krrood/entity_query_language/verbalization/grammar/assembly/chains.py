@@ -16,7 +16,7 @@ Reference: Gatt & Reiter (2009), SimpleNLG — surface realisation.
 
 from __future__ import annotations
 
-from typing_extensions import List, Optional, Tuple
+from typing_extensions import List, Optional
 
 from krrood.entity_query_language.core.mapped_variable import (
     Attribute,
@@ -44,7 +44,6 @@ from krrood.entity_query_language.verbalization.fragments.features import (
     Number,
 )
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
-from krrood.entity_query_language.verbalization.fragments.source_ref import SourceRef
 from krrood.entity_query_language.verbalization.grammar.assembly.base import Assembler
 from krrood.entity_query_language.verbalization.grammar.assembly.query import (
     QueryAssembler,

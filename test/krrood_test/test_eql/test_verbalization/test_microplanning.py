@@ -27,9 +27,6 @@ from krrood.entity_query_language.verbalization.fragments.features import Defini
 from krrood.entity_query_language.verbalization.microplanning.referring import (
     ReferringExpressions,
 )
-from krrood.entity_query_language.verbalization.rendering.determiner_processor import (
-    DeterminerProcessor,
-)
 from krrood.entity_query_language.verbalization.vocabulary.english import RangePhrases
 
 
@@ -62,38 +59,12 @@ def test_noun_for_parts_numbered_variable_takes_no_article():
     assert (definiteness, label) == (Definiteness.BARE, "Robot 2")
 
 
-def test_seen_reference_is_none_until_mentioned_then_definite():
+def test_noun_for_parts_records_the_mention():
     refer = ReferringExpressions()
     var = variable(Robot, domain=[])
-
-    assert refer.seen_reference(var) is None
-    refer.noun_for_parts(var)  # records the mention
-    # seen_reference returns a NounPhrase spec; the determiner phase realises "the Robot"
-    reference = DeterminerProcessor().process(refer.seen_reference(var))
-    assert flatten_fragment_to_plain_text(reference) == "the Robot"
-
-
-def test_pronoun_only_for_current_unnumbered_seen_subject():
-    refer = ReferringExpressions()
-    var = variable(Robot, domain=[])
-
-    # Not yet a subject / not yet seen → no pronoun.
-    assert refer.pronoun_for(var) is None
-
-    refer.noun_for_parts(var)  # mark seen
-    refer.push_subject(var)  # make it the current subject
-    assert flatten_fragment_to_plain_text(refer.pronoun_for(var)) == "its"
-
-    refer.pop_subject()
-    assert refer.pronoun_for(var) is None
-
-
-def test_pronoun_suppressed_for_numbered_variable():
-    var = variable(Robot, domain=[])
-    refer = ReferringExpressions(disambiguation_map={var._id_: "Robot 2"})
-    refer.noun_for_parts(var)
-    refer.push_subject(var)
-    assert refer.pronoun_for(var) is None
+    assert var._id_ not in refer.seen
+    refer.noun_for_parts(var)  # records the mention (for cross-build seeding)
+    assert var._id_ in refer.seen
 
 
 # ── BindingScope ─────────────────────────────────────────────────────────────

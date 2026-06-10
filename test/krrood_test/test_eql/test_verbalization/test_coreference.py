@@ -1,21 +1,16 @@
 """
-Unit tests for the de-stringified coreference store (:class:`ReferringExpressions`):
-labels are now **fragments**, registration is encapsulated, and ``seen_reference``
-composes a definite-reference :class:`NounPhrase` (*"the <label>"*) from the stored fragment.
+Unit tests for :class:`ReferringExpressions` after coreference moved into the document-order
+:class:`~krrood.entity_query_language.verbalization.rendering.coreference_processor.CoreferenceProcessor`.
+
+What remains here is *pre-computed* / *cross-build* state: the disambiguation map and the set of
+introduced referents (consulted only to seed a later build sharing the same context).  The
+first/subsequent/pronoun decision itself is tested in ``test_coreference_phase.py``.
 """
 
 from __future__ import annotations
 
-from krrood.entity_query_language.verbalization.fragments.base import (
-    flatten_fragment_to_plain_text,
-    RoleFragment,
-)
-from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
 from krrood.entity_query_language.verbalization.microplanning.referring import (
     ReferringExpressions,
-)
-from krrood.entity_query_language.verbalization.rendering.determiner_processor import (
-    DeterminerProcessor,
 )
 
 
@@ -26,39 +21,14 @@ class _Ref:
         self._id_ = identifier
 
 
-def _text(fragment) -> str:
-    """Lower the DP (``seen_reference`` returns a NounPhrase spec) then flatten."""
-    return flatten_fragment_to_plain_text(DeterminerProcessor().process(fragment))
-
-
-def test_register_label_stores_a_fragment_and_composes_definite_reference():
+def test_register_label_marks_the_referent_introduced():
     refer = ReferringExpressions()
     robot = _Ref(1)
+    assert robot._id_ not in refer.seen
     refer.register_label(robot, "Robot")
-    assert isinstance(refer.label_of(robot), RoleFragment)
-    assert _text(refer.seen_reference(robot)) == "the Robot"
+    # Recorded so a later build sharing this context seeds it as already-mentioned.
+    assert robot._id_ in refer.seen
 
 
-def test_register_keeps_a_structured_label_fragment():
-    refer = ReferringExpressions()
-    aggregate = _Ref(2)
-    label = RoleFragment(text="maximum amount", role=SemanticRole.AGGREGATION)
-    refer.register(aggregate, label)
-    # The stored label is the fragment itself (not a flattened string).
-    assert refer.label_of(aggregate) is label
-    assert _text(refer.seen_reference(aggregate)) == "the maximum amount"
-
-
-def test_alias_shares_the_source_label():
-    refer = ReferringExpressions()
-    source, target = _Ref(3), _Ref(4)
-    refer.register_label(source, "Cabinet")
-    refer.alias(target, source)
-    assert _text(refer.seen_reference(target)) == "the Cabinet"
-
-
-def test_seen_reference_is_none_when_unseen():
-    refer = ReferringExpressions()
-    assert refer.seen_reference(_Ref(5)) is None
-    refer.alias(_Ref(6), _Ref(7))  # aliasing an unseen source is a no-op
-    assert refer.seen_reference(_Ref(6)) is None
+def test_seen_starts_empty():
+    assert ReferringExpressions().seen == {}

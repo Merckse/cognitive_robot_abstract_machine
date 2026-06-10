@@ -24,9 +24,8 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from typing_extensions import Any, Optional
+from typing_extensions import Any
 
-from krrood.entity_query_language.verbalization.fragments.base import VerbFragment
 from krrood.entity_query_language.verbalization.microplanning.binding_scope import (
     BindingScope,
 )
@@ -78,7 +77,8 @@ class VerbalizationContext:
 
     @property
     def seen(self) -> dict:
-        """Coreference map (``_id_`` → label); see :attr:`ReferringExpressions.seen`."""
+        """Referents introduced so far (for cross-build seeding); see
+        :attr:`ReferringExpressions.seen`."""
         return self.referring.seen
 
     @property
@@ -86,38 +86,9 @@ class VerbalizationContext:
         """Pre-computed disambiguation labels; see :attr:`ReferringExpressions.disambiguation_map`."""
         return self.referring.disambiguation_map
 
-    def push_subject(self, var) -> None:
-        """Delegate to :meth:`ReferringExpressions.push_subject`."""
-        self.referring.push_subject(var)
-
-    def pop_subject(self) -> None:
-        """Delegate to :meth:`ReferringExpressions.pop_subject`."""
-        self.referring.pop_subject()
-
-    @property
-    def current_subject_id(self):
-        """``_id_`` of the current coreference subject, or ``None``."""
-        return self.referring.current_subject_id
-
-    def register(self, expression, label: VerbFragment) -> None:
-        """Delegate to :meth:`ReferringExpressions.register`."""
-        self.referring.register(expression, label)
-
     def register_label(self, expression, text: str) -> None:
         """Delegate to :meth:`ReferringExpressions.register_label`."""
         self.referring.register_label(expression, text)
-
-    def alias(self, target, source) -> None:
-        """Delegate to :meth:`ReferringExpressions.alias`."""
-        self.referring.alias(target, source)
-
-    def seen_reference(self, expression) -> Optional[VerbFragment]:
-        """Delegate to :meth:`ReferringExpressions.seen_reference`."""
-        return self.referring.seen_reference(expression)
-
-    def pronoun_for(self, root) -> Optional[VerbFragment]:
-        """Delegate to :meth:`ReferringExpressions.pronoun_for`."""
-        return self.referring.pronoun_for(root)
 
     def noun_for_parts(self, var) -> tuple[Definiteness, str]:
         """Delegate to :meth:`ReferringExpressions.noun_for_parts`."""

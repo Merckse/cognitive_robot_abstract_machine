@@ -115,8 +115,7 @@ class PhraseRule(ABC):
         The default accepts everything; override to express the non-``isinstance``
         part of the rule's applicability (a *guarded* rule outranks an unguarded one
         on the same construct).  Receives the same :class:`Ctx` as :meth:`build`, so a
-        guard may consult the microplanning services (e.g. ``ctx.refer.pronoun_for`` or
-        ``ctx.config.query_depth``).
+        guard may consult the microplanning services (e.g. ``ctx.config.query_depth``).
 
         :param node: The candidate EQL expression.
         :param ctx: The per-node context (recursion + services).

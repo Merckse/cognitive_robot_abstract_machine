@@ -24,12 +24,11 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
-from typing_extensions import Dict, List, Optional
+from typing_extensions import Dict, List
 
 from krrood.entity_query_language.core.variable import Variable, Literal
 from krrood.entity_query_language.query.query import Entity, Query
 from krrood.entity_query_language.verbalization.fragments.base import (
-    NounPhrase,
     RoleFragment,
     VerbFragment,
 )
@@ -39,7 +38,6 @@ from krrood.entity_query_language.verbalization.subquery import (
     aggregation_source_root,
     selected_aggregator,
 )
-from krrood.entity_query_language.verbalization.vocabulary.english import Pronouns
 
 if TYPE_CHECKING:
     from krrood.entity_query_language.core.base_expressions import SymbolicExpression
@@ -113,115 +111,35 @@ def _build_disambiguation_map(expression) -> Dict[uuid.UUID, str]:
 @dataclass
 class ReferringExpressions:
     """
-    Tracks discourse state and chooses the referring expression for each mention.
+    Pre-computed referring-expression state for a verbalization pass.
 
-    Owns the coreference state for a single verbalization pass: which variables
-    have been mentioned (:attr:`seen`), the pre-computed disambiguation labels
-    (:attr:`disambiguation_map`), and the stack of pronoun-eligible subjects
-    (:attr:`coref_subjects`).
+    Since coreference resolution moved into the document-order
+    :class:`~krrood.entity_query_language.verbalization.rendering.coreference_processor.CoreferenceProcessor`,
+    this holds only *pre-computed* / *cross-build* state: the disambiguation labels
+    (:attr:`disambiguation_map`, numbering colliding types) and the set of referents already
+    introduced (:attr:`seen`) — the latter solely so a second verbalization sharing this context
+    is seeded as already-mentioned (the within-build first/subsequent decision is the pass's).
     """
 
     seen: "Dict[uuid.UUID, VerbFragment]" = field(default_factory=dict)
-    """Maps expression ``_id_`` → its **label fragment** for every expression already
-    verbalized in this pass (a subsequent mention renders as *"the <label>"*).  Storing a
-    fragment (not a flattened string) keeps discourse state structural — surface inflection
-    is applied once, later, by the morphology pass."""
+    """Referents introduced so far (keyed by expression ``_id_``).  Only the *keys* are used now
+    — to seed the coreference pass across builds sharing this context (see
+    :meth:`EQLVerbalizer.build`); the within-build decision is the pass's.  (The stored values are
+    vestigial and this could shrink to a ``Set``.)"""
 
     disambiguation_map: Dict[uuid.UUID, str] = field(default_factory=dict)
     """Maps variable ``_id_`` → display label, pre-computed before verbalization
     begins.  Single-type variables keep the plain type name; colliding types get
     ``"TypeName 1"``, ``"TypeName 2"`` labels."""
 
-    coref_subjects: List[uuid.UUID] = field(default_factory=list)
-    """Stack of subject variable ``_id_`` s (or ``None`` when the enclosing clause
-    has no single coreference subject, e.g. ``SetOf``).  A chain rooted at the
-    top-of-stack subject is eligible for pronominalisation — see :meth:`pronoun_for`."""
-
     @classmethod
     def from_expression(cls, expression) -> ReferringExpressions:
         """Create an instance with the disambiguation map pre-built for *expression*."""
         return cls(disambiguation_map=_build_disambiguation_map(expression))
 
-    def push_subject(self, var) -> None:
-        """
-        Push *var* as the current coreference subject.
-
-        Stores the variable's ``_id_`` when *var* is a single
-        :class:`~krrood.entity_query_language.core.variable.Variable`; otherwise
-        stores ``None`` so no pronoun fires (e.g. a ``SetOf`` with several subjects).
-        Always pushes exactly one frame so callers can pair it with
-        :meth:`pop_subject` unconditionally.
-
-        :param var: The subject variable being described, or any non-Variable.
-        """
-        self.coref_subjects.append(var._id_ if isinstance(var, Variable) else None)
-
-    def pop_subject(self) -> None:
-        """Pop the current coreference subject pushed by :meth:`push_subject`."""
-        if self.coref_subjects:
-            self.coref_subjects.pop()
-
-    @property
-    def current_subject_id(self):
-        """``_id_`` of the current coreference subject, or ``None`` when there is none."""
-        return self.coref_subjects[-1] if self.coref_subjects else None
-
-    def register(self, expression, label: VerbFragment) -> None:
-        """Record *expression*'s label **fragment** (reused for a definite later mention)."""
-        self.seen[expression._id_] = label
-
     def register_label(self, expression, text: str) -> None:
-        """Record *expression*'s label as a plain ``VARIABLE``-role noun (the common case)."""
+        """Record *expression* as introduced (so a later build sharing this context seeds it)."""
         self.seen[expression._id_] = RoleFragment(text=text, role=SemanticRole.VARIABLE)
-
-    def alias(self, target, source) -> None:
-        """Give *target* the label already registered for *source* (no-op if *source* unseen)."""
-        label = self.seen.get(source._id_)
-        if label is not None:
-            self.seen[target._id_] = label
-
-    def label_of(self, expression) -> Optional[VerbFragment]:
-        """The registered label fragment for *expression*, or ``None``."""
-        return self.seen.get(getattr(expression, "_id_", None))
-
-    def seen_reference(self, expression) -> Optional[VerbFragment]:
-        """
-        Return *"the <label>"* when *expression* has already been verbalized in this pass,
-        else ``None``.
-
-        :param expression: Any expression carrying an ``_id_``.
-        :return: The definite-reference phrase, or ``None`` when *expression* is unseen.
-        :rtype: ~krrood.entity_query_language.verbalization.fragments.base.VerbFragment or None
-        """
-        variable_id = getattr(expression, "_id_", None)
-        if variable_id is None or variable_id not in self.seen:
-            return None
-        return NounPhrase(
-            head=self.seen[variable_id], definiteness=Definiteness.DEFINITE
-        )
-
-    def pronoun_for(self, root) -> Optional[VerbFragment]:
-        """
-        Return the possessive-pronoun fragment (*"its"*) for *root* when it is the
-        current, unambiguous, already-introduced coreference subject; else ``None``.
-
-        Eligibility (all required): *root* is a Variable; ``root._id_`` is the top of
-        :attr:`coref_subjects`; *root* is not numbered in :attr:`disambiguation_map`;
-        *root* has already been mentioned (is in :attr:`seen`).
-
-        :param root: Candidate chain-root expression.
-        :return: The *"its"* fragment, or ``None`` when pronominalisation is unsafe.
-        :rtype: ~krrood.entity_query_language.verbalization.fragments.base.VerbFragment or None
-        """
-        if not isinstance(root, Variable):
-            return None
-        if root._id_ != self.current_subject_id or root._id_ not in self.seen:
-            return None
-        type_name = root._type_.__name__ if getattr(root, "_type_", None) else None
-        label = self.disambiguation_map.get(root._id_, type_name)
-        if type_name is not None and label != type_name:
-            return None
-        return Pronouns.ITS.as_fragment()
 
     def noun_for_parts(self, var) -> tuple[Definiteness, str]:
         """
@@ -233,9 +151,7 @@ class ReferringExpressions:
         with a ``referent_id`` and the
         :class:`~krrood.entity_query_language.verbalization.rendering.coreference_processor.CoreferenceProcessor`
         downgrades repeats in document order (the discourse decision, in one place).  The mention
-        is still recorded in :attr:`seen` because the build-time pronoun / definite-reference
-        services (``pronoun_for``, ``seen_reference`` for not-yet-deferred constructs) still
-        consult it.
+        is still recorded in :attr:`seen` so a later build sharing this context seeds it.
 
         :param var: A :class:`~krrood.entity_query_language.core.variable.Variable` instance.
         :return: Tuple of ``(first-mention Definiteness, display_label)``.

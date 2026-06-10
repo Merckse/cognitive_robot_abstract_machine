@@ -29,14 +29,12 @@ from krrood.entity_query_language.verbalization.fragments.base import (
 )
 from krrood.entity_query_language.verbalization.fragments.factory import (
     phrase,
-    role,
     word,
 )
 from krrood.entity_query_language.verbalization.fragments.features import (
     Definiteness,
     Number,
 )
-from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
 from krrood.entity_query_language.verbalization.grammar.aggregation_kinds import (
     AGGREGATION_KIND,
 )
@@ -57,7 +55,6 @@ from krrood.entity_query_language.verbalization.microplanning.coordination impor
     RangeFold,
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import (
-    Articles,
     Conjunctions,
     FallbackNouns,
     Keywords,

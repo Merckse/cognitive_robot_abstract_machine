@@ -400,13 +400,26 @@ All tests must stay green.
 A single {py:class}`~krrood.entity_query_language.verbalization.context.VerbalizationContext`
 instance is threaded through the entire `EQLVerbalizer.build()` call tree.
 
-### Coreference Tracking (`seen`)
+### Coreference (the `CoreferenceProcessor` pass)
 
-```python
-context.seen: dict   # maps expression._id_ → display label
-```
+Coreference is resolved **after** the fold, in document order, by
+{py:class}`~krrood.entity_query_language.verbalization.rendering.coreference_processor.CoreferenceProcessor`
+(the first stage of `realize_tree`, before the determiner phase).  Rules emit the *first-mention*
+form — a `NounPhrase` tagged with a `referent_id` (and `Definiteness` INDEFINITE / UNIQUE / BARE),
+optionally wrapped in a `SubjectScope(subject_id, …)` — and the pass **downgrades** each repeat
+mention in output order:
 
-The first time a `Variable` is encountered, `noun_for_parts()` records it in `seen` and returns `INDEFINITE` (→ "a Robot").  Subsequent encounters return `DEFINITE` (→ "the Robot").
+* first mention of a referent → kept as-is (e.g. "a Robot"); the referent is marked introduced;
+* a repeat **singular** mention → definite, dropping the first-mention modifiers ("the Robot");
+  `UNIQUE` ("the unique Robot") downgrades to `DEFINITE` ("the Robot");
+* a chain whose root is the current `SubjectScope` subject → pronoun ("its …") via a
+  `PossessiveChain` node, else the possessive path; numbered labels ("Robot 2") never downgrade.
+
+The build is therefore free of in-fold coreference mutation.  `ReferringExpressions` keeps only the
+pre-computed disambiguation map and a `seen` set of introduced referents — the latter solely to
+**seed** the pass across builds sharing one context (so verbalizing the same expression twice on a
+shared context reads "a Robot" then "the Robot"); `noun_for_parts()` returns the first-mention
+`Definiteness` and records the referent for that seeding.
 
 ### Disambiguation Map
 

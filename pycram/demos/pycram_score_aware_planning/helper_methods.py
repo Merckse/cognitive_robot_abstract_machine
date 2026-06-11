@@ -3,6 +3,7 @@ import math
 from time import sleep
 from typing import Optional
 
+from common.values import BASE_POINTS, BASE_PENALTIES, BASE_TIME_ESTIMATE, BASE_PROBABILITY
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
 from pycram.datastructures.grasp import GraspDescription
@@ -469,7 +470,7 @@ def generate_plan_task(task: Task, context: Context):
 def _quat(yaw: float) -> tuple[float, float, float, float]:
     return (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))
 
-def find_sufrace_of_object(context:Context, body: Body) -> HasSupportingSurface | None:
+def find_surface_of_object(context:Context, body: Body) -> HasSupportingSurface | None:
     world = context.world
     surfaces = world.get_semantic_annotations_by_type(HasSupportingSurface)
     for surface in surfaces:
@@ -488,3 +489,26 @@ NAVIGATION_POSES: dict[str, tuple[float, float, tuple[float, float, float, float
     "shelf_2":       (3.3,  4.7,  _quat( 0.0)),          # same approach as shelf_1
     "counterTop":    (1.859, -0.852, _quat(-math.pi / 2)), # north of counter, facing south
 }
+
+def _lookup(table: dict[tuple[ActionType, str, str], float],
+            action_type: ActionType, object_name: str = "", location: str = "",
+            default: float = 0) -> float:
+
+    obj = (object_name or "").lower()
+    loc = (location or "").lower()
+    for key in ((action_type, obj, loc),
+                (action_type, obj, ""),
+                (action_type, "", loc),
+                (action_type, "", "")):
+        if key in table:
+            return table[key]
+    return default
+
+
+def get_values(action_type: ActionType, object_name: str = "", location: str = ""
+               ) -> tuple[int, int, int, float]:
+    points = int(_lookup(BASE_POINTS, action_type, object_name, location, default=0))
+    penalty = int(_lookup(BASE_PENALTIES, action_type, object_name, location, default=0))
+    time_estimate = int(_lookup(BASE_TIME_ESTIMATE, action_type, object_name, location, default=0))
+    probability = _lookup(BASE_PROBABILITY, action_type, object_name, location, default=1.0)
+    return points, penalty, time_estimate, probability

@@ -88,6 +88,11 @@ class TaskStatus(int, Enum):
     FAILED = 3
     INTERRUPTED = 4
     PAUSE = 5
+21
+class UncertaintyReason(int, Enum):
+    OBJECT_MISSING = 1
+    ROOM_MISSING = 2
+
 
 class JointType(Enum):
     """

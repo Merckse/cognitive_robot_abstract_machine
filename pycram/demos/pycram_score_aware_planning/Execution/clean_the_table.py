@@ -1,14 +1,17 @@
 import math
 
 import time
+from asyncio import staggered
 
 from Evaluate.CompositeEvaluator import CompositeEvaluator
-from common.types import Task
+from ScoreTimeMonitor import ScoreTimeMonitor
+from Stabilizer.PlanStabilizer import PlanStabilizer
+from common.types import Task, TaskStep
 from common.values import TASKS
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from helper_methods import generate_plan_task
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import Arms
+from pycram.datastructures.enums import Arms, TaskStatus
 from pycram.motion_executor import simulated_robot
 
 from pycram.plans.factories import sequential, make_node
@@ -124,8 +127,11 @@ Generate a structurized plan - based on standard evaluation
 """
 taskmode = TaskMode.PP
 task_list : list[Task] = TASKS.get(taskmode)
+
 evaluator = CompositeEvaluator()
 structurizer = PlanStructurizer()
+stabilizer = PlanStabilizer()
+scoretime_monitor = ScoreTimeMonitor()
 
 
 while task_list != []:
@@ -135,17 +141,24 @@ while task_list != []:
 
     task_list.pop(0)
 
-    #
-    action_list = generate_plan_task(task=plan_x, context=context)
+    plan_x.action_list = generate_plan_task(task=plan_x, context=context)
 
     # Have to check before some long taking action
     # TODO: what happens, if the score event fails and the robot has to fallback, how to re-evaluated / stailize
     # TODO: maybe add a on the fly monitor, that basically checks a action in the task_list as done, resulting in instant feedback, where to implement that?
     with simulated_robot:
-        for action in action_list:
+        for i in range(len(plan_x.action_list)):
+            task_step : TaskStep = plan_x.task_steps[i]
+            action = plan_x.action_list[i]
+
             plan = sequential([], context=context)
             plan.add_child(make_node(action))
-            result = plan.perform()
+            plan.perform()
+            scoretime_monitor.record_score(task_step, plan)
+
+            if plan.status is TaskStatus.FAILED:
+                plan = stabilizer.stabilize(plan)
+
 
 
 # if visible_bodies is None:

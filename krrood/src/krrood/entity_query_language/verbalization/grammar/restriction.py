@@ -18,8 +18,9 @@ Reference: Dale & Reiter (1995) — referring expressions / post-nominal modific
 from __future__ import annotations
 
 from abc import abstractmethod
+from enum import Enum, auto
 from typing import TYPE_CHECKING
-from typing_extensions import Optional, Type
+from typing_extensions import ClassVar, Optional, Type
 
 from krrood.entity_query_language.core.variable import Variable
 from krrood.entity_query_language.operators.aggregators import Aggregator
@@ -28,6 +29,7 @@ from krrood.entity_query_language.verbalization.fragments.base import VerbFragme
 from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
     references,
     single_hop_attr,
+    superlative_aggregation,
 )
 from krrood.entity_query_language.verbalization.grammar.conditions.verbalizer import (
     ConditionVerbalizer,
@@ -43,31 +45,52 @@ if TYPE_CHECKING:
     from krrood.entity_query_language.verbalization.context import VerbalizationContext
 
 
-# ── restriction rules (groupable conjunct → bare predicate) ──────────────────
+# ── restriction rules (folded conjunct → fragment + its placement) ───────────
+
+
+class Placement(Enum):
+    """**Where** a matched restriction's fragment attaches in the query — the single, extensible
+    taxonomy of restriction surface slots.
+
+    A rule declares its placement and the :class:`RestrictionAssembler` groups by it, so a new
+    fold that targets an *existing* slot is one rule class (no other change); only a genuinely new
+    syntactic slot adds an enum member (and a field on ``RestrictionFragments``).
+
+    :cvar SELECTION_MODIFIER: A post-nominal PP on the selection — *"<noun> with the maximum amount"*.
+    :cvar WHOSE_GROUP: A bare predicate gathered under one shared *"whose …, and …"* envelope.
+    """
+
+    SELECTION_MODIFIER = auto()
+    WHOSE_GROUP = auto()
 
 
 class RestrictionRule(SpecificityRule):
     """
-    Recognise a folded conjunct as a groupable subject restriction and render it as a
-    bare post-nominal predicate (the enclosing *"whose"* supplies the subject).  A
-    conjunct matched by no rule is residual and stays in a *"such that …"* clause.
+    Recognise a folded conjunct as a subject restriction and render its fragment, declaring
+    **where** that fragment attaches via :attr:`placement`.  A conjunct matched by no rule is
+    residual and stays in a *"such that …"* clause.
 
     Self-registering alternative (see :class:`SpecificityRule`); ranked by ``priority``.
     """
 
+    placement: ClassVar[Placement]
+    """The slot this rule's :meth:`render` output occupies (see :class:`Placement`)."""
+
     @classmethod
     @abstractmethod
     def applies(cls, item, subject_variable, context: "VerbalizationContext") -> bool:
-        """Return ``True`` when *item* is a groupable restriction on *subject_variable*."""
+        """Return ``True`` when *item* is a restriction on *subject_variable* this rule renders."""
 
     @classmethod
     @abstractmethod
     def render(cls, item, subject_variable, ctx: Ctx) -> VerbFragment:
-        """Render *item* as a bare predicate fragment (recurses via ``ctx.child``)."""
+        """Render *item* as the fragment for its :attr:`placement` (recurses via ``ctx.child``)."""
 
 
 class RangeRestrictionRule(RestrictionRule):
     """A :class:`RangeFold` on a single-hop subject attribute → *"<attr> is between lo and hi"*."""
+
+    placement = Placement.WHOSE_GROUP
 
     @classmethod
     def applies(cls, item, subject_variable, context: "VerbalizationContext") -> bool:
@@ -87,6 +110,8 @@ class AttributePredicateRestrictionRule(RestrictionRule):
     reference the subject → *"<attr> is greater than 100"* / *"<attr> is equal to <calc>"*.
     """
 
+    placement = Placement.WHOSE_GROUP
+
     @classmethod
     def applies(cls, item, subject_variable, context: "VerbalizationContext") -> bool:
         if not isinstance(item, Comparator):
@@ -99,6 +124,26 @@ class AttributePredicateRestrictionRule(RestrictionRule):
     @classmethod
     def render(cls, item, subject_variable, ctx: Ctx) -> VerbFragment:
         return ConditionVerbalizer(ctx).attribute_modifier(item, subject_variable)
+
+
+class SuperlativeRestrictionRule(RestrictionRule):
+    """
+    ``subject.<chain> == max/min(over all <same-type>.<same chain>)`` → the superlative selection
+    modifier *"with the maximum/minimum <leaf>"* (see :func:`superlative_aggregation`).  Higher
+    ``priority`` than :class:`AttributePredicateRestrictionRule` so a single-hop superlative folds
+    to the superlative rather than *"<attr> is equal to <calc>"*.
+    """
+
+    placement = Placement.SELECTION_MODIFIER
+    priority = 1
+
+    @classmethod
+    def applies(cls, item, subject_variable, context: "VerbalizationContext") -> bool:
+        return superlative_aggregation(item, subject_variable) is not None
+
+    @classmethod
+    def render(cls, item, subject_variable, ctx: Ctx) -> VerbFragment:
+        return ConditionVerbalizer(ctx).superlative_modifier(item, subject_variable)
 
 
 def match_restriction(

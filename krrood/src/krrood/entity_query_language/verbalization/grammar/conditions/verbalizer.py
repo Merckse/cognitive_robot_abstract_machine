@@ -27,19 +27,25 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     VerbFragment,
 )
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
+from krrood.entity_query_language.verbalization.grammar.aggregation_kinds import (
+    AGGREGATION_KIND,
+)
 from krrood.entity_query_language.verbalization.grammar.assembly.base import Assembler
 from krrood.entity_query_language.verbalization.grammar.conditions.operator_phrase import (
     comparator_operator,
 )
 from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
     single_hop_attr,
+    superlative_aggregation,
 )
 from krrood.entity_query_language.verbalization.microplanning.coordination import (
     build_between,
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import (
+    Articles,
     Copulas,
     Keywords,
+    Prepositions,
 )
 from krrood.entity_query_language.verbalization.vocabulary.words import Number
 
@@ -70,6 +76,21 @@ class ConditionVerbalizer(Assembler[Any, None]):
                 RoleFragment.for_attribute(attr._owner_class_, attr._attribute_name_),
                 comparator_operator(comparator, self.ctx.context, compact=False),
                 self.ctx.child(comparator.right),
+            ]
+        )
+
+    def superlative_modifier(self, comparator, subject) -> VerbFragment:
+        """*"with the maximum <leaf>"* / *"with the minimum <leaf>"* — a subject restriction
+        ``subject.<chain> == max/min(over all <Type>.<chain>)`` folded to its superlative
+        (recognised by :func:`superlative_aggregation`)."""
+        fold = superlative_aggregation(comparator, subject)
+        leaf = fold.aggregator._leaf_attribute_
+        return PhraseFragment(
+            parts=[
+                Prepositions.WITH.as_fragment(),
+                Articles.THE.as_fragment(),
+                AGGREGATION_KIND[type(fold.aggregator)].as_fragment(),
+                RoleFragment.for_attribute(leaf._owner_class_, leaf._attribute_name_),
             ]
         )
 

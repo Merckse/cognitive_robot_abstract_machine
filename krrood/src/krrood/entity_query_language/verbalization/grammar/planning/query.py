@@ -32,10 +32,6 @@ from krrood.entity_query_language.operators.core_logical_operators import (
 )
 from krrood.entity_query_language.query.quantifiers import The
 from krrood.entity_query_language.query.query import Entity, Query, SetOf
-from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
-    superlative_aggregation,
-    SuperlativeFold,
-)
 from krrood.entity_query_language.verbalization.grammar.planning.base import Planner
 from krrood.entity_query_language.verbalization.grammar.restriction import (
     RestrictionRule,
@@ -72,24 +68,17 @@ class SelectionKind(Enum):
 
 @dataclass(frozen=True)
 class RestrictionPlan:
-    """Partition of a subject's WHERE condition into superlative / grouped / residual conjuncts."""
+    """Partition of a subject's WHERE condition into rule-matched conjuncts vs. the residual.
 
-    superlatives: List[SuperlativeFold] = field(default_factory=list)
-    """Conjuncts folded to a superlative selection modifier (*"with the maximum <leaf>"*)."""
+    A matched conjunct carries the :class:`RestrictionRule` that recognised it; the rule's
+    :attr:`~RestrictionRule.placement` decides where its rendering lands (the assembler groups by
+    it).  An unmatched conjunct is residual and stays in a *"such that …"* clause."""
 
-    grouped: List[Tuple[Type[RestrictionRule], Any]] = field(default_factory=list)
-    """``(rule, folded item)`` pairs that fold into *"whose …"* (the rule renders each)."""
+    matched: List[Tuple[Type[RestrictionRule], Any]] = field(default_factory=list)
+    """``(rule, folded item)`` pairs — the rule renders each into its declared placement."""
 
     residual: List[Any] = field(default_factory=list)
     """Folded items (``RangeFold`` or raw expression) for the residual *"such that …"*."""
-
-    @property
-    def has_superlatives(self) -> bool:
-        return bool(self.superlatives)
-
-    @property
-    def has_grouped(self) -> bool:
-        return bool(self.grouped)
 
     @property
     def has_residual(self) -> bool:
@@ -185,28 +174,17 @@ class QueryPlanner(Planner[Query, QueryPlan]):
         return self._partition(subject, condition)
 
     def _partition(self, subject, condition) -> RestrictionPlan:
-        """Fold range pairs, then sort each conjunct into a superlative (*"with the maximum
-        …"*), a grouped *"whose …"* predicate, or the residual *"such that …"* clause.
-        """
-        superlatives: List[SuperlativeFold] = []
-        grouped: List[Tuple[Type[RestrictionRule], Any]] = []
+        """Fold range pairs, then split each conjunct into a rule-matched restriction (the rule's
+        placement decides its slot) or the residual *"such that …"* clause."""
+        matched: List[Tuple[Type[RestrictionRule], Any]] = []
         residual: List[Any] = []
         for item in fold_range_pairs(flatten_operands(condition, AND)):
-            superlative = superlative_aggregation(item, subject)
-            rule = (
-                None
-                if superlative is not None
-                else match_restriction(item, subject, None)
-            )
-            if superlative is not None:
-                superlatives.append(superlative)
-            elif rule is not None:
-                grouped.append((rule, item))
-            else:
+            rule = match_restriction(item, subject, None)
+            if rule is None:
                 residual.append(item)
-        return RestrictionPlan(
-            superlatives=superlatives, grouped=grouped, residual=residual
-        )
+            else:
+                matched.append((rule, item))
+        return RestrictionPlan(matched=matched, residual=residual)
 
     # ── clauses ──────────────────────────────────────────────────────────────
 

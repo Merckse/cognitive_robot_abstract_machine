@@ -1589,6 +1589,7 @@ def test_query_planner_decomposes_subject_restriction_without_rendering():
     )
     from krrood.entity_query_language.verbalization.grammar.restriction import (
         AttributePredicateRestrictionRule,
+        Placement,
     )
 
     r = variable(_Robot, [])
@@ -1601,13 +1602,14 @@ def test_query_planner_decomposes_subject_restriction_without_rendering():
     assert plan.subject is not None
     assert plan.is_aggregation_subquery is False
 
-    # "battery > 50" is a single-hop, non-boolean attribute predicate → grouped (foldable
+    # "battery > 50" is a single-hop, non-boolean attribute predicate → matched (foldable
     # to "whose battery is greater than 50"); nothing is residual.
     assert plan.subject_restriction is not None
     assert plan.subject_restriction.residual == []
-    assert [rule for rule, _ in plan.subject_restriction.grouped] == [
+    assert [rule for rule, _ in plan.subject_restriction.matched] == [
         AttributePredicateRestrictionRule
     ]
+    assert AttributePredicateRestrictionRule.placement is Placement.WHOSE_GROUP
 
 
 def test_instantiated_planner_decomposes_bindings_without_rendering(

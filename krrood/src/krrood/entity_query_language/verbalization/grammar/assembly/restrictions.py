@@ -15,35 +15,28 @@ Reference: Reiter & Dale (2000) — content structuring (the WHERE partition is 
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 
-from typing_extensions import List, Optional
+from typing_extensions import Dict, List, Optional
 
 from krrood.entity_query_language.verbalization.fragments.base import (
     oxford_and,
     PhraseFragment,
-    RoleFragment,
     VerbFragment,
-)
-from krrood.entity_query_language.verbalization.grammar.aggregation_kinds import (
-    AGGREGATION_KIND,
-)
-from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
-    SuperlativeFold,
 )
 from krrood.entity_query_language.verbalization.grammar.phrase_rule import Ctx
 from krrood.entity_query_language.verbalization.grammar.planning.query import (
     RestrictionPlan,
 )
+from krrood.entity_query_language.verbalization.grammar.restriction import Placement
 from krrood.entity_query_language.verbalization.microplanning.coordination import (
     build_between,
     RangeFold,
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import (
-    Articles,
     Conjunctions,
     Keywords,
-    Prepositions,
 )
 
 
@@ -69,36 +62,37 @@ class RestrictionAssembler:
     """The per-node context (recursion entry + microplanning services)."""
 
     def render(self, restriction: RestrictionPlan, subject) -> RestrictionFragments:
-        """Render the superlative modifiers, the *"whose"* modifier, and the residual condition."""
-        superlatives = [self._superlative(fold) for fold in restriction.superlatives]
-        grouped_frags = [
-            rule.render(item, subject, self.ctx) for rule, item in restriction.grouped
-        ]
-        whose = None
-        if grouped_frags:
-            whose = PhraseFragment(
+        """Render each matched conjunct via its rule and place it by the rule's
+        :class:`Placement`; then build the residual condition."""
+        by_placement: Dict[Placement, List[VerbFragment]] = defaultdict(list)
+        for rule, item in restriction.matched:
+            by_placement[rule.placement].append(rule.render(item, subject, self.ctx))
+
+        superlatives = by_placement.pop(Placement.SELECTION_MODIFIER, [])
+        grouped = by_placement.pop(Placement.WHOSE_GROUP, [])
+        # Loud, not silent: a rule declaring a placement no slot surfaces is a bug, not a drop.
+        if by_placement:
+            raise ValueError(
+                "Restriction placement(s) with no RestrictionFragments slot: "
+                f"{[p.name for p in by_placement]} — add a field here and surface it in "
+                "the consumers (QueryAssembler / AggregationValueAssembler)."
+            )
+
+        whose = (
+            PhraseFragment(
                 parts=[
                     Keywords.WHOSE.as_fragment(),
-                    oxford_and(grouped_frags, Conjunctions.AND.as_fragment()),
+                    oxford_and(grouped, Conjunctions.AND.as_fragment()),
                 ]
             )
+            if grouped
+            else None
+        )
         residual = (
             self._residual(restriction.residual) if restriction.has_residual else None
         )
         return RestrictionFragments(
             superlatives=superlatives, whose=whose, residual=residual
-        )
-
-    def _superlative(self, fold: SuperlativeFold) -> VerbFragment:
-        """*"with the maximum <leaf>"* / *"with the minimum <leaf>"* — the folded superlative."""
-        leaf = fold.aggregator._leaf_attribute_
-        return PhraseFragment(
-            parts=[
-                Prepositions.WITH.as_fragment(),
-                Articles.THE.as_fragment(),
-                AGGREGATION_KIND[type(fold.aggregator)].as_fragment(),
-                RoleFragment.for_attribute(leaf._owner_class_, leaf._attribute_name_),
-            ]
         )
 
     def _residual(self, items) -> VerbFragment:

@@ -48,7 +48,7 @@ class ScoreEvent:
     action_type: str
     outcome: str
     object_name: Optional[str]
-    base_points: int
+    points: int
     penalty: int
     time_spent: float
     cumulative_score: int
@@ -64,17 +64,19 @@ class TaskStep:
     action_penatly: int = 0
     action_time : float = 0
     action_assisted: bool = False
-    location : Optional[str] = ""
-    object_name: Optional[str] = "" # Object that can be named for interaction. E.g: "bowl", with action_type: Pick_Up
-    object_pickup: Optional["str"] = None # Possible: cooking_table, shelf, lowerTable, table, desk, dining_table, shelf_1, shelf_2
-    object_placement: Optional["str"] = None # Possible:a
+    uncertain: bool = False # Meaning, if not all informations to a task are known, then there has to be something done
+    location : str = ""
+    object_name: str = "" # Object that can be named for interaction. E.g: "bowl", with action_type: Pick_Up
+    object_pickup: str = None # Possible: cooking_table, shelf, lowerTable, table, desk, dining_table, shelf_1, shelf_2
+    object_placement: str = None # Possible:a
 
 # The Task is equivilent to a whole plan, containing of exactly one task.
 @dataclass
 class Task:
     id: int
     task_steps: list[TaskStep]
-    action_list: list[ActionDescription]
+    action_list: list[ActionDescription] = field(default_factory=list)
+    uncertain: bool = False # Meaning, if not all informations to a task are known, then there has to be something done
     status : TaskStatus = ActionOutcome.NOT_ASSIGNED
     score: int = 0
     penatly: int = 0

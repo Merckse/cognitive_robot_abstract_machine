@@ -1,14 +1,10 @@
 from dataclasses import dataclass
-from typing import Optional
 
-from common.types import TaskEstimation, ExpectedProbabilityModel, Task
-from common.values import TASKS
+from common.types import Task
 from demos.pycram_score_aware_planning.Evaluate.ProbabilityEvaluator import RobotProbability
 from demos.pycram_score_aware_planning.Evaluate.ScoreEvaluator import RobotScorer, ScoreEvent
-from demos.pycram_score_aware_planning.common.types import ActionType, ActionOutcome
 from helper_methods import normalize_task_estimation
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import TaskStatus
 
 # TODO: replace the contexts here, they shouldnt be in the Class initializations, this would mean the classes are left with unupdated fucked up contexts, very whacky.
 # TODO: implement, this hasnt been touched in a week
@@ -29,6 +25,7 @@ class CompositeEvaluator:
 
         # normalize list
         normalized_evaluated_task_list = normalize_task_estimation(task_list_score_evaluated)
+
         self.summary(normalized_evaluated_task_list)
         return normalized_evaluated_task_list
 

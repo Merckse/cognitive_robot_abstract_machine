@@ -1,21 +1,14 @@
 import math
-import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import ApproachDirection
 from pycram.locations.costmaps import OccupancyCostmap
-from demos.pycram_score_aware_planning.common.types import Task, TaskMode, ExpectedProbabilityModel
-from demos.pycram_score_aware_planning.common.values import BASE_PROBABILITY, TASKS
-from demos.pycram_score_aware_planning.helper_methods import compute_surface_spaces, objects_on_surface, \
-    find_surface_of_object
+from demos.pycram_score_aware_planning.common.types import Task
+from demos.pycram_score_aware_planning.common.values import BASE_PROBABILITY
+from demos.pycram_score_aware_planning.helper_methods import find_surface_of_object
 
 from semantic_digital_twin.reasoning.predicates import compute_euclidean_planar_distance
-from semantic_digital_twin.robots.hsrb import HSRB
-from semantic_digital_twin.semantic_annotations.mixins import HasSupportingSurface
 from semantic_digital_twin.spatial_types import Vector3
-from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation, Body
 
 
@@ -84,36 +77,6 @@ class RobotProbability:
 
     def record(self, **kwargs):
         pass
-
-    def evaluate(self, **kwargs):
-        pass
-
-    def summary(self, **kwargs):
-        pass
-
-    def summary_estimate(self, estimates: list[ExpectedProbabilityModel]) -> None:
-        """
-        Prints a ranked table of task probability estimates to stdout.
-
-        :param estimates: List of probability estimates, expected best-first.
-        """
-        sum_score = 0
-        sum_time = 0
-        sum_score_per_seconds = 0
-        sum_tasksteps = 0
-
-        if not estimates:
-            print(f"There were no estimates.")
-        best = estimates[0]
-        lines = [
-            f"Estimate",
-            "=" * 56,
-            f"{'Rank':<6} {'Task ID':<10} {'p Percentage':>8}",
-            "-" * 56,
-        ]
-        for rank, e in enumerate(estimates, 1):
-            lines.append(f"{rank:<6} {e.task_id:<10} {e.expected_probability:>8} ")
-        print("\n".join(lines))
 
     # noinspection D
     def estimate(self, context : Context, task_list: list[Task]) -> list[Task]:

@@ -1,10 +1,7 @@
 import math
 
-import time
-from asyncio import staggered
-
 from Evaluate.CompositeEvaluator import CompositeEvaluator
-from ScoreTimeMonitor import ScoreTimeMonitor
+from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from Stabilizer.PlanStabilizer import PlanStabilizer
 from common.types import Task, TaskStep
 from common.values import TASKS
@@ -131,7 +128,7 @@ task_list : list[Task] = TASKS.get(taskmode)
 evaluator = CompositeEvaluator()
 structurizer = PlanStructurizer()
 stabilizer = PlanStabilizer()
-scoretime_monitor = ScoreTimeMonitor()
+scoretime_monitor = ScoreTimeMonitor(challenge_duration_seconds=500)
 
 
 while task_list != []:
@@ -154,7 +151,8 @@ while task_list != []:
             plan = sequential([], context=context)
             plan.add_child(make_node(action))
             plan.perform()
-            scoretime_monitor.record_score(task_step, plan)
+
+            scoretime_monitor.record_score(task_step=task_step, plan=plan)
 
             if plan.status is TaskStatus.FAILED:
                 plan = stabilizer.stabilize(plan)

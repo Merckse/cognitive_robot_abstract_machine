@@ -1,43 +1,16 @@
-"""
-robot_scorer.py
----------------
-Score-aware evaluation module for robot action execution.
-Tracks points and penalties per action, integrates with Giskard monitor callbacks.
-
-Usage:
-    scorer = RobotScorer()
-    scorer.record(ActionType.PICKUP, ActionOutcome.SUCCESS, object_name="bowl")
-    scorer.record(ActionType.PLACE, ActionOutcome.FAILURE_WITH_ASSIST)
-    print(scorer.summary())
-
-    # Export event log for the dashboard
-    scorer.export_json("score_log.json")
-
-    # Giskard monitor integration example:
-    #   def on_monitor_triggered(monitor_name, state):
-    #       outcome = ActionOutcome.SUCCESS if state == "success" else ActionOutcome.FAILURE_RECOVERABLE
-    #       scorer.record_from_monitor(monitor_name, outcome)
-"""
-
 from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from typing import Optional
 
 from demos.pycram_score_aware_planning.common.types import (
-    TaskMode,
-    ActionType,
-    ActionOutcome,
     Task, ScoreEvent,
 )
 from demos.pycram_score_aware_planning.common.values import (
-    MAX_TIME_ESTIMATE,
     BASE_TIME_ESTIMATE,
-    OUTCOME_MODIFIERS,
     FLAT_PENALTIES,
     BASE_POINTS,
 )
-from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus
 
 # ---------------------------------------------------------------------------
@@ -151,51 +124,3 @@ class RobotScorer:
             task.score_per_seconds = total_score / total_time
             task.status = TaskStatus.CREATED
         return task_list
-
-
-
-    def record_from_monitor(
-        self,
-        monitor_name: str,
-        outcome: ActionOutcome,
-        object_name: Optional[str] = None,
-        note: Optional[str] = None,
-    ) -> Optional[ScoreEvent]:
-        """
-        TODO: Think about implementing monitoring for tasks; Could be useful for failure handling
-        """
-
-    # ------------------------------------------------------------------
-    # Queries
-    # ------------------------------------------------------------------
-    @property
-    def score(self) -> int:
-        return self._score
-
-    @property
-    def total_actions(self) -> int:
-        return len(self.events)
-
-    @property
-    def success_rate(self) -> float:
-        if not self.events:
-            return 0.0
-        successes = sum(
-            1
-            for e in self.events
-            if e.outcome
-            in (ActionOutcome.SUCCESS.value, ActionOutcome.SUCCESS_WITH_ASSIST.value)
-        )
-        return round(successes / len(self.events), 3)
-
-    # ------------------------------------------------------------------
-    # Internal
-    # ------------------------------------------------------------------
-    def _log(self, event: ScoreEvent) -> None:
-        sign = "+" if event.net_points >= 0 else ""
-        print(
-            f"[RobotScorer] {event.action_type:<20} "
-            f"{event.outcome:<28} "
-            f"{sign}{event.net_points:>4} pts   "
-            f"(total: {event.cumulative_score})"
-        )

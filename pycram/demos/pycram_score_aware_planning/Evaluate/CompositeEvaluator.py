@@ -20,18 +20,11 @@ class CompositeEvaluator:
         self.probability_evaluator = RobotProbability()
         # self.plan_stability_evaluator = RobotPlanStability()
 
-    def record(self,context : Context, action_type : Optional[ActionType]= None,
-               outcome : Optional[ActionOutcome] | Optional[TaskStatus]= None, object_name : Optional[str]= None,**kwargs):
-        if action_type is not None:
-            if outcome is None:
-                outcome = TaskStatus.RUNNING
-            score_event : ScoreEvent = self.score_evaluator.record(action_type=action_type,outcome=outcome,object_name=object_name)
-        self.plan_stability_evaluator.record()
-        self.probability_evaluator.record()
+
 
     def estimate(self, context : Context, task_list : list[Task]) -> list[Task]:
         # estimating score and probability, with score relying on probability
-        task_list_probability_evaluated = self.probability_evaluator.estimate(task_list=task_list)
+        task_list_probability_evaluated = self.probability_evaluator.estimate(task_list=task_list, context=context)
         task_list_score_evaluated = self.score_evaluator.estimate(task_list=task_list_probability_evaluated)
 
         # normalize list

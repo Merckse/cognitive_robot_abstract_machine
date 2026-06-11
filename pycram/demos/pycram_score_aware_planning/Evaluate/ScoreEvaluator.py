@@ -152,61 +152,7 @@ class RobotScorer:
             task.status = TaskStatus.CREATED
         return task_list
 
-    def record(
-        self,
-        action_type: ActionType,
-        outcome: ActionOutcome | TaskStatus,
-        object_name: Optional[str] = "",
-        custom_points: Optional[int] = None,
-        note: Optional[str] = None,
-        **kwargs,
-    ) -> ScoreEvent:
-        """
-        Record an action result and update the running score.
 
-        Args:
-            action_type:    The type of action performed.
-            outcome:        The outcome of the action.
-            object_name:    Optional label for the object involved.
-            custom_points:  Override base points for this action only.
-            note:           Free-text note attached to this event.
-
-        Returns:
-            The ScoreEvent that was recorded.
-        """
-        # Actual score calculation
-        base: int = (
-            custom_points
-            if custom_points is not None
-            else BASE_POINTS.get((action_type, object_name.lower()), 0)
-        )
-        modifier = OUTCOME_MODIFIERS.get(outcome, 0.0)
-        penalty = FLAT_PENALTIES.get(outcome, 0)
-
-        earned = int(base * modifier) + penalty
-        time_spent = round(time.time() - self._start_time_action, 2)
-        _start_time_action = time.time()
-
-        # cumulative score & time so far
-        self._score += earned
-        self._time += time_spent
-
-        event = ScoreEvent(
-            timestamp=time.time(),
-            action_type=action_type.value,
-            outcome=str(outcome),
-            object_name=object_name,
-            base_points=base,
-            penalty=penalty,
-            time_spent=time_spent,
-            net_points=earned,
-            cumulative_score=self._score,
-            cumulative_time=self._time,
-            note=note,
-        )
-        self.events.append(event)
-        self._log(event)
-        return event
 
     def record_from_monitor(
         self,

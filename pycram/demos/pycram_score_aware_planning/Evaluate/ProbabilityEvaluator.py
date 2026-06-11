@@ -9,7 +9,7 @@ from pycram.locations.costmaps import OccupancyCostmap
 from demos.pycram_score_aware_planning.common.types import Task, TaskMode, ExpectedProbabilityModel
 from demos.pycram_score_aware_planning.common.values import BASE_PROBABILITY, TASKS
 from demos.pycram_score_aware_planning.helper_methods import compute_surface_spaces, objects_on_surface, \
-    find_sufrace_of_object
+    find_surface_of_object
 
 from semantic_digital_twin.reasoning.predicates import compute_euclidean_planar_distance
 from semantic_digital_twin.robots.hsrb import HSRB
@@ -19,7 +19,6 @@ from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation, Body
 
 
-# TODO: implement RobotProbability
 @dataclass(kw_only=True)
 class RobotProbability:
     """
@@ -58,7 +57,7 @@ class RobotProbability:
         # TODO: implement way to retrieve surface of object, by itself
         world = target_body._world
         context = Context.from_world(world)
-        surface = find_sufrace_of_object(body=target_body, context=context)
+        surface = find_surface_of_object(body=target_body, context=context)
         nearby = []
         for obj in surface.objects:
             if obj.root != target_body and float(compute_euclidean_planar_distance(body1=obj.root, body2=target_body,ignore_dimension=Vector3.Z())) < radius:
@@ -116,6 +115,7 @@ class RobotProbability:
             lines.append(f"{rank:<6} {e.task_id:<10} {e.expected_probability:>8} ")
         print("\n".join(lines))
 
+    # noinspection D
     def estimate(self, context : Context, task_list: list[Task]) -> list[Task]:
         """
         Multiplies per-action base probabilities across each task's steps, then
@@ -124,28 +124,29 @@ class RobotProbability:
         :param task_list: list of tasks
         :return: ExpectedProbabilityModel list sorted best-first.
         """
+        world = context.world
+        robot = context.robot
+
         for task in task_list:
             # setting probability for evaluation of single task
             joint_probability = 1
             for step in task.task_steps:
                 # Base probabilities for later re-assertion.
-                step_probability: float = 0
+                step_probability: float = 1
                 joint_probability: float = 0
+                default_probability : float= 0.5
+                object_name: str = step.object_name
+                location: str = step.location
+                action_type = step.action_type
 
                 # print(task.task_steps)
                 # Retrieving values
-                object_name = step.object_name
-                action_type = step.action_type
-                location = step.location
-                world = context.world
-                robot = context.robot
+                if location not in ("", None):
+                    step_probability = BASE_PROBABILITY.get((action_type, location), default_probability)
+                elif object_name not in ("", None):
+                    # evaluating the concatination of these actions into a wholeistic task
+                    step_probability = BASE_PROBABILITY.get((action_type, object_name), default_probability)
 
-                # evaluating the concatination of these actions into a wholeistic task
-                step_probability = BASE_PROBABILITY.get((action_type, object_name),
-                                                                BASE_PROBABILITY.get((action_type, ""), 0.5))
-
-                # TODO: add p_clutter_proximity
-                if object_name not in ("", None):
                     try:
                         object_body = world.get_body_by_name(object_name)
                     except:
@@ -155,11 +156,13 @@ class RobotProbability:
 
                     step_probability = step_probability * self.p_robot_distance(target_body=object_body, robot_body=robot.bodies[0])
 
-                    # TODO: add finding close-by objects of all kinds
+                    # TODO: add finding close-by objects of all kinds - not just by on the table ornot
                     # Only can find cluttered objects that are near by, if they are on same surface
-                    if find_sufrace_of_object(body=object_body, context=context) is not None:
+                    if find_surface_of_object(body=object_body, context=context) is not None:
                         step_probability = step_probability *self.p_clutter_count(target_body=object_body)
                        # self.p_clutter_proximity() TODO: retrieve list of closest objects
+                else:
+                    step_probability = BASE_PROBABILITY.get((action_type, ""), default_probability)
 
                 # Asserting step values
                 step.probability = step_probability

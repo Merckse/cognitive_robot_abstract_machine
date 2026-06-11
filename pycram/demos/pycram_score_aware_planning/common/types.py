@@ -3,6 +3,7 @@ from enum import Enum
 from itertools import count
 from typing import Optional
 
+from pycram.robot_plans.actions.base import ActionDescription
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 
 from pycram.datastructures.enums import TaskStatus
@@ -26,7 +27,6 @@ class ActionType(str, Enum):
     PARK = "park"
     CUSTOM = "custom"
 
-
 class ActionOutcome(str, Enum):
     SUCCESS = "success"
     SUCCESS_WITH_ASSIST = "success_with_assist"
@@ -41,6 +41,7 @@ class TaskMode(str, Enum):
     GPSR = "gpsr"
     PP = "pp"
     FD = "fd"
+
 @dataclass(kw_only=True)
 class ScoreEvent:
     timestamp: float
@@ -50,17 +51,8 @@ class ScoreEvent:
     base_points: int
     penalty: int
     time_spent: float
-    net_points: int
     cumulative_score: int
     cumulative_time: float
-    note: Optional[str] = None
-
-class ScoreModel:
-    current_points: int
-    current_penalty: float
-    time_left: float
-    ScoreEvents : list[ScoreEvent]
-
 
 # The action step is equivilant to an action, just has been named TaskStep to find seperation, between the two
 @dataclass
@@ -82,6 +74,7 @@ class TaskStep:
 class Task:
     id: int
     task_steps: list[TaskStep]
+    action_list: list[ActionDescription]
     status : TaskStatus = ActionOutcome.NOT_ASSIGNED
     score: int = 0
     penatly: int = 0
@@ -89,14 +82,6 @@ class Task:
     duration: int = 0
     score_per_seconds : float = 0
     probability : float = 1
-
-# TODO: replace the data-type, by asserting the variables to the Task-datatype
-@dataclass
-class TaskEstimation:
-    task_id : int
-    task_score: int
-    task_score_per_seconds : float
-    task_probability : float
 
 @dataclass
 class SurfaceSpace:
@@ -106,12 +91,3 @@ class SurfaceSpace:
     y_min: float
     y_max: float
     z_surface: float  # top of the surface (z where objects rest)
-
-# TODO: TO BE REPLACED, yb the TASKSTEPS, containing the Probability and misk
-@dataclass(kw_only=True)
-class ExpectedProbabilityModel:
-    task_id: int
-    expected_probability: float
-    # taskstep_id : int
-    # assisted
-

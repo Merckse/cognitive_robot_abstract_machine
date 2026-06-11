@@ -20,6 +20,7 @@ from pycram.motion_executor import MotionExecutor
 from pycram.plans.plan_entity import PlanEntity
 from pycram.datastructures.execution_data import ExecutionData
 from pycram.plans.designator import Designator
+from semantic_digital_twin.spatial_computations.ik_solver import UnreachableException
 
 if TYPE_CHECKING:
     from pycram.robot_plans import ActionDescription, BaseMotion
@@ -263,15 +264,20 @@ class PlanNode(PlanEntity):
             if parent.status == TaskStatus.INTERRUPTED:
                 self.status = TaskStatus.INTERRUPTED
                 return
-
         self.status = TaskStatus.RUNNING
+
         try:
             self.result = self._perform()
-        # TODO: catch all exceptions and handle them properly
+        except UnreachableException as e:
+            self.status = TaskStatus.FAILED
+            self.reason = "unreachable"
+            logger.info(f"Failed node: {e}")
+            return
         except Exception as e:
             self.status = TaskStatus.FAILED
             self.reason = e
-            raise e
+            logger.info(f"Failed node: {e}")
+            return
         # except PlanFailure as e:
         #     print("except")
         #     self.status = TaskStatus.FAILED

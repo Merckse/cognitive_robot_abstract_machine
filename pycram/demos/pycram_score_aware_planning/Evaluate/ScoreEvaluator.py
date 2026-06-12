@@ -3,13 +3,12 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
+from common.types import ActionOutcome
 from demos.pycram_score_aware_planning.common.types import (
     Task, ScoreEvent,
 )
 from demos.pycram_score_aware_planning.common.values import (
-    BASE_TIME_ESTIMATE,
-    FLAT_PENALTIES,
-    BASE_POINTS,
+    evaluation,
 )
 from pycram.datastructures.enums import TaskStatus
 
@@ -80,35 +79,37 @@ class RobotScorer:
     """
 
     def estimate(
-        self, task_list: list[Task], finished_task_ids: Optional[list[int]] = [], probability_threshold: float = 0.2
+        self, task_list: list[Task], finished_task_ids: Optional[list[int]] = [],
     ) -> list[Task]:
         for task in task_list:
             total_score :int= 0
             total_time : int= 0
             total_score_penalized : int = 0
+            outcome : TaskStatus | ActionOutcome = TaskStatus.SUCCEEDED
+
             if task.id in finished_task_ids:
                 continue
             for step in task.task_steps:
                 base_score: int = 0
                 expected_time: int = 0
                 penalty: int = 0
-
-                if step.action_probability <= probability_threshold:
-                    penalty : int = FLAT_PENALTIES.get(outcome)
-
-                    step.action_assisted = True
-
-                base_score += BASE_POINTS.get(
-                    (step.action_type, step.object_name or ""), 1
+                step_profile = evaluation(
+                    step.action_type, step.object_name, step.location
                 )
-                expected_time += BASE_TIME_ESTIMATE.get(
-                    (step.action_type, step.object_name or ""), 1
-                )
+
+                if step.action_assisted:
+                    outcome = ActionOutcome.SUCCESS_WITH_ASSIST
+                    penalty : int = step_profile.penalty
+
+
+
+                base_score += step_profile.points
+                expected_time += step_profile.time
 
                 # calculation of total scores
                 total_score += base_score
                 total_time += expected_time
-                total_score_penalized += base_score - penalty
+                total_score_penalized += base_score + penalty
 
                 # Asserting  evaluated score and time
                 step.action_score = base_score
@@ -121,6 +122,6 @@ class RobotScorer:
             task.score = total_score
             task.duration = total_time
             task.score_penalized = total_score_penalized
-            task.score_per_seconds = total_score / total_time
+            task.score_per_seconds = total_score_penalized / total_time
             task.status = TaskStatus.CREATED
         return task_list

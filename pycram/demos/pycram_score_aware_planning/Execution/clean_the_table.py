@@ -133,7 +133,9 @@ scoretime_monitor = ScoreTimeMonitor(challenge_duration_seconds=500)
 
 while task_list != []:
     evaluated_tasks: list[Task] = evaluator.estimate(context=context, task_list=task_list)
+
     task_list: list[Task] = structurizer.structurize(task_list=evaluated_tasks)
+
     plan_x = task_list[0]
 
     task_list.pop(0)
@@ -141,7 +143,7 @@ while task_list != []:
     plan_x.action_list = generate_plan_task(task=plan_x, context=context)
 
     # Have to check before some long taking action
-    # TODO: what happens, if the score event fails and the robot has to fallback, how to re-evaluated / stailize
+    # TODO: what happens, if the score event fails and the robot has to fallback, how to re-evaluated / stabilize
     # TODO: maybe add a on the fly monitor, that basically checks a action in the task_list as done, resulting in instant feedback, where to implement that?
     with simulated_robot:
         for i in range(len(plan_x.action_list)):
@@ -156,13 +158,3 @@ while task_list != []:
 
             if plan.status is TaskStatus.FAILED:
                 plan = stabilizer.stabilize(plan)
-
-
-
-# if visible_bodies is None:
-#     visible_bodies = []
-# for visible_body in visible_bodies:
-#     if visible_body not in dispatcher.known_furniture:
-#         perceived_objects.append(visible_body)
-#
-# print(perceived_objects)

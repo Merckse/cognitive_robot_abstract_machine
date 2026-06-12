@@ -3,7 +3,7 @@ import math
 from time import sleep
 from typing import Optional
 
-from common.values import BASE_POINTS, BASE_PENALTIES, BASE_TIME_ESTIMATE, BASE_PROBABILITY
+from common.values import evaluation
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
 from pycram.datastructures.grasp import GraspDescription
@@ -395,6 +395,41 @@ def place_subplan(object_name: str, arm: Arms, target_location: str, world):
     )
     return PlaceAction(object_designator=object_body, arm=arm, target_location=pose)
 
+def assisted_place_subplan(object_name: str, arm: Arms, target_location: str, world):
+    object_body : Body= world.get_body_by_name(object_name)
+
+    surface_spaces = compute_surface_spaces(world=world)
+
+    free_spot = None
+    matched_surface = None
+    for surface_space in surface_spaces:
+        if surface_space.name == target_location:
+            matched_surface = surface_space
+            free_spot = find_free_placement_pose(surface=surface_space, world=world, object_body=object_body)
+            break
+
+    if matched_surface is None:
+        logger.warning(ValueError(f"No surface named '{target_location}' found in the world."))
+        # TODO: add human assisted place
+        return None
+    if free_spot is None:
+        logger.warning(f"No free placement spot found on '{target_location}'.")
+        # TODO: add human assisted place
+        return None
+
+
+    x, y = free_spot
+    z = matched_surface.z_surface
+    if z > 1:
+        z = 1
+
+    _, _, (qx, qy, qz, qw) = NAVIGATION_POSES[target_location]
+    pose = Pose(
+        position=Point3(x, y, z, reference_frame=world.root),
+        orientation=Quaternion(qx, qy, qz, qw, reference_frame=world.root),
+        reference_frame=world.root,
+    )
+    return PlaceAction(object_designator=object_body, arm=arm, target_location=pose)
 def generate_plan(tasks: list[Task], context: Context):
     from pycram.plans.factories import make_node
     plan = sequential(children=[], context=context)
@@ -439,7 +474,7 @@ def generate_plan_task(task: Task, context: Context):
                     action = pickup_subplan(object_name=task_steps.object_name, arm=arm, world=context.world)
                 case ActionType.PLACE:
                     action = place_subplan(object_name=last_pickup_object, arm=arm,
-                                           target_location=task_steps.object_placement, world=context.world)
+                                           target_location=task_steps.location, world=context.world)
                 case ActionType.PARK:
                     action = ParkArmsAction(Arms.LEFT)
                 case ActionType.DETECT:
@@ -454,7 +489,7 @@ def generate_plan_task(task: Task, context: Context):
                     last_pickup_object = task_steps.object_name
                     action = pickup_subplan(object_name=task_steps.object_name, arm=arm, world=context.world)
                 case ActionType.PLACE:
-                    action = place_subplan(object_name=last_pickup_object, arm=arm, target_location=task_steps.object_placement, world=context.world)
+                    action = place_subplan(object_name=last_pickup_object, arm=arm, target_location=task_steps.location, world=context.world)
                 case ActionType.PARK:
                     action = ParkArmsAction(Arms.LEFT)
                 case ActionType.DETECT:
@@ -487,28 +522,11 @@ NAVIGATION_POSES: dict[str, tuple[float, float, tuple[float, float, float, float
     "desk":          (1.3, 1.2, _quat( math.pi)),        # east of desk,   facing west
     "shelf_1":       (3.3,  4.7,  _quat( 0.0)),          # west of cupboard, facing east
     "shelf_2":       (3.3,  4.7,  _quat( 0.0)),          # same approach as shelf_1
-    "counterTop":    (1.859, -0.852, _quat(-math.pi / 2)), # north of counter, facing south
+    "counterTop": (1.859, -0.852, _quat(-math.pi / 2)),  # north of counter, facing south
+    "": (0, 0, _quat(-math.pi / 2)),  # going to 0,0 if unknown
 }
-
-def _lookup(table: dict[tuple[ActionType, str, str], float],
-            action_type: ActionType, object_name: str = "", location: str = "",
-            default: float = 0) -> float:
-
-    obj = (object_name or "").lower()
-    loc = (location or "").lower()
-    for key in ((action_type, obj, loc),
-                (action_type, obj, ""),
-                (action_type, "", loc),
-                (action_type, "", "")):
-        if key in table:
-            return table[key]
-    return default
-
 
 def get_values(action_type: ActionType, object_name: str = "", location: str = ""
                ) -> tuple[int, int, int, float]:
-    points = int(_lookup(BASE_POINTS, action_type, object_name, location, default=0))
-    penalty = int(_lookup(BASE_PENALTIES, action_type, object_name, location, default=0))
-    time_estimate = int(_lookup(BASE_TIME_ESTIMATE, action_type, object_name, location, default=0))
-    probability = _lookup(BASE_PROBABILITY, action_type, object_name, location, default=1.0)
-    return points, penalty, time_estimate, probability
+    p = evaluation(action_type, object_name, location)
+    return p.points, p.penalty, p.time, p.probability

@@ -1,6 +1,7 @@
 import datetime
 
 import json
+import logging
 import os
 import time
 
@@ -10,6 +11,8 @@ from common.types import ScoreEvent, TaskStep
 from helper_methods import get_values
 from pycram.datastructures.enums import TaskStatus
 from pycram.language import SequentialNode
+
+logger = logging.getLogger(__name__)
 
 class ScoreTimeMonitor:
     _score_events: list[ScoreEvent] = []
@@ -69,7 +72,6 @@ class ScoreTimeMonitor:
         self._log(event=event, start_time=self._start_time)
 
     def _log(self, event: ScoreEvent, start_time: datetime.datetime):
-        print(event)
         filename = "plan_" + start_time.strftime("%Y%m%d-%H%M%S") + ".log"
         log_dir = os.path.join(os.getcwd(), filename)
         entry = json.dumps(asdict(event), indent=2)
@@ -90,4 +92,4 @@ class ScoreTimeMonitor:
                 f.seek(pos)
                 f.truncate()
                 f.write(",\n" + entry + "\n]")
-        print("task has been recorded")
+        logger.info("recorded finished action")

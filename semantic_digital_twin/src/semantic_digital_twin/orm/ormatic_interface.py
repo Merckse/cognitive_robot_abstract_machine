@@ -1429,6 +1429,25 @@ class WorldModelSnapshotDAO_modifications_association(
     )
 
 
+class WorldContainsOrphanedDegreeOfFreedomDAO_actual_dofs_association(
+    Base, AssociationDataAccessObject
+):
+
+    __tablename__ = "_27594185991583260744377058616234240952324321228677592080591471"
+
+    database_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_worldcontainsorphaneddegreeoffreedomdao_id: Mapped[int] = mapped_column(
+        ForeignKey("WorldContainsOrphanedDegreeOfFreedomDAO.database_id")
+    )
+    target_degreeoffreedomdao_id: Mapped[int] = mapped_column(
+        ForeignKey("DegreeOfFreedomDAO.database_id")
+    )
+
+    target: Mapped[DegreeOfFreedomDAO] = relationship(
+        "DegreeOfFreedomDAO", foreign_keys=[target_degreeoffreedomdao_id]
+    )
+
+
 class AccelerationVariableDAO(
     Base,
     DataAccessObject[
@@ -10034,25 +10053,25 @@ class WorldEntityWithIDKwargsTrackerDAO(
 
 
 class WorldEntityWithIDNotFoundErrorDAO(
-    UsageErrorDAO,
+    WorldEntityNotFoundErrorDAO,
     DataAccessObject[semantic_digital_twin.exceptions.WorldEntityWithIDNotFoundError],
 ):
 
     __tablename__ = "WorldEntityWithIDNotFoundErrorDAO"
 
     database_id: Mapped[builtins.int] = mapped_column(
-        ForeignKey(UsageErrorDAO.database_id),
+        ForeignKey(WorldEntityNotFoundErrorDAO.database_id),
         primary_key=True,
         use_existing_column=True,
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
+    name_or_hash: Mapped[uuid.UUID] = mapped_column(
         sqlalchemy.sql.sqltypes.UUID, nullable=False, use_existing_column=True
     )
 
     __mapper_args__ = {
         "polymorphic_identity": "WorldEntityWithIDNotFoundErrorDAO",
-        "inherit_condition": database_id == UsageErrorDAO.database_id,
+        "inherit_condition": database_id == WorldEntityNotFoundErrorDAO.database_id,
     }
 
 
@@ -19220,6 +19239,105 @@ class WorldUpdateDAO(
     __mapper_args__ = {
         "polymorphic_identity": "WorldUpdateDAO",
         "inherit_condition": database_id == MessageDAO.database_id,
+    }
+
+
+class WorldValidationErrorDAO(
+    LogicalErrorDAO,
+    DataAccessObject[semantic_digital_twin.exceptions.WorldValidationError],
+):
+
+    __tablename__ = "WorldValidationErrorDAO"
+
+    database_id: Mapped[builtins.int] = mapped_column(
+        ForeignKey(LogicalErrorDAO.database_id),
+        primary_key=True,
+        use_existing_column=True,
+    )
+
+    world_id: Mapped[int] = mapped_column(
+        ForeignKey("WorldMappingDAO.database_id", use_alter=True),
+        nullable=True,
+        use_existing_column=True,
+    )
+
+    world: Mapped[WorldMappingDAO] = relationship(
+        "WorldMappingDAO", uselist=False, foreign_keys=[world_id], post_update=True
+    )
+
+    __mapper_args__ = {
+        "polymorphic_identity": "WorldValidationErrorDAO",
+        "inherit_condition": database_id == LogicalErrorDAO.database_id,
+    }
+
+
+class BrokenWorldModificationHistoryErrorDAO(
+    WorldValidationErrorDAO,
+    DataAccessObject[
+        semantic_digital_twin.exceptions.BrokenWorldModificationHistoryError
+    ],
+):
+
+    __tablename__ = "BrokenWorldModificationHistoryErrorDAO"
+
+    database_id: Mapped[builtins.int] = mapped_column(
+        ForeignKey(WorldValidationErrorDAO.database_id),
+        primary_key=True,
+        use_existing_column=True,
+    )
+
+    __mapper_args__ = {
+        "polymorphic_identity": "BrokenWorldModificationHistoryErrorDAO",
+        "inherit_condition": database_id == WorldValidationErrorDAO.database_id,
+    }
+
+
+class WorldContainsOrphanedDegreeOfFreedomDAO(
+    WorldValidationErrorDAO,
+    DataAccessObject[
+        semantic_digital_twin.exceptions.WorldContainsOrphanedDegreeOfFreedom
+    ],
+):
+
+    __tablename__ = "WorldContainsOrphanedDegreeOfFreedomDAO"
+
+    database_id: Mapped[builtins.int] = mapped_column(
+        ForeignKey(WorldValidationErrorDAO.database_id),
+        primary_key=True,
+        use_existing_column=True,
+    )
+
+    actual_dofs: Mapped[
+        builtins.set[WorldContainsOrphanedDegreeOfFreedomDAO_actual_dofs_association]
+    ] = relationship(
+        "WorldContainsOrphanedDegreeOfFreedomDAO_actual_dofs_association",
+        collection_class=builtins.set,
+        cascade="all, delete-orphan",
+        foreign_keys="[WorldContainsOrphanedDegreeOfFreedomDAO_actual_dofs_association.source_worldcontainsorphaneddegreeoffreedomdao_id]",
+    )
+
+    __mapper_args__ = {
+        "polymorphic_identity": "WorldContainsOrphanedDegreeOfFreedomDAO",
+        "inherit_condition": database_id == WorldValidationErrorDAO.database_id,
+    }
+
+
+class WorldIsNotATreeErrorDAO(
+    WorldValidationErrorDAO,
+    DataAccessObject[semantic_digital_twin.exceptions.WorldIsNotATreeError],
+):
+
+    __tablename__ = "WorldIsNotATreeErrorDAO"
+
+    database_id: Mapped[builtins.int] = mapped_column(
+        ForeignKey(WorldValidationErrorDAO.database_id),
+        primary_key=True,
+        use_existing_column=True,
+    )
+
+    __mapper_args__ = {
+        "polymorphic_identity": "WorldIsNotATreeErrorDAO",
+        "inherit_condition": database_id == WorldValidationErrorDAO.database_id,
     }
 
 

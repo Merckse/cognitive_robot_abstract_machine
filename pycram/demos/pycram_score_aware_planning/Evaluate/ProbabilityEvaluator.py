@@ -1,14 +1,16 @@
 import math
+from copy import deepcopy
 from dataclasses import dataclass, field
 
+from helper_methods import NAVIGATION_POSES
 from pycram.datastructures.dataclasses import Context
 from pycram.locations.costmaps import OccupancyCostmap
 from demos.pycram_score_aware_planning.common.types import Task
-from demos.pycram_score_aware_planning.common.values import BASE_PROBABILITY
+from demos.pycram_score_aware_planning.common.values import evaluation
 from demos.pycram_score_aware_planning.helper_methods import find_surface_of_object
 
 from semantic_digital_twin.reasoning.predicates import compute_euclidean_planar_distance
-from semantic_digital_twin.spatial_types import Vector3
+from semantic_digital_twin.spatial_types import Vector3, HomogeneousTransformationMatrix
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation, Body
 
 
@@ -24,7 +26,8 @@ class RobotProbability:
     def p_pose(self):
         pass
 
-    def p_robot_distance(self, robot_body: Body, target_body: Body, distance_optimal=0.8, distance_max=2.5) -> float:
+    # TODO: find perfect distance_max, bcs what even
+    def p_robot_distance(self, robot_body: Body, target_body: Body, distance_optimal=2.0, distance_max=5) -> float:
         """
         Calculates euclidean distance between robot and object
         :param context = context containing robot
@@ -79,7 +82,7 @@ class RobotProbability:
         pass
 
     # noinspection D
-    def estimate(self, context : Context, task_list: list[Task]) -> list[Task]:
+    def estimate(self, context : Context, task_list: list[Task], probability_threshold: float = 0.2) -> list[Task]:
         """
         Multiplies per-action base probabilities across each task's steps, then
         returns the resulting list sorted descending by expected probability.
@@ -91,13 +94,13 @@ class RobotProbability:
         robot = context.robot
 
         for task in task_list:
+            temp_robot = deepcopy(robot)
             # setting probability for evaluation of single task
             joint_probability = 1
             for step in task.task_steps:
                 # Base probabilities for later re-assertion.
                 step_probability: float = 1
-                joint_probability: float = 0
-                default_probability : float= 0.5
+                default_probability : float= 0.95 # reevaluate on known data
                 object_name: str = step.object_name
                 location: str = step.location
                 action_type = step.action_type
@@ -105,10 +108,15 @@ class RobotProbability:
                 # print(task.task_steps)
                 # Retrieving values
                 if location not in ("", None):
-                    step_probability = BASE_PROBABILITY.get((action_type, location), default_probability)
+                    step_probability = evaluation(action_type, object_name, location).probability
+                    if location in NAVIGATION_POSES:
+                        x, y, _ = NAVIGATION_POSES[location]
+                        temp_robot.root.global_pose.x = x
+                        temp_robot.root.global_pose.y = y
+
                 elif object_name not in ("", None):
                     # evaluating the concatination of these actions into a wholeistic task
-                    step_probability = BASE_PROBABILITY.get((action_type, object_name), default_probability)
+                    step_probability = evaluation(action_type, object_name, location).probability
 
                     try:
                         object_body = world.get_body_by_name(object_name)
@@ -117,22 +125,25 @@ class RobotProbability:
                         joint_probability = round(joint_probability * step_probability, 2)
                         continue
 
-                    step_probability = step_probability * self.p_robot_distance(target_body=object_body, robot_body=robot.bodies[0])
+                    step_probability = step_probability * self.p_robot_distance(target_body=object_body, robot_body=temp_robot.bodies[0])
 
                     # TODO: add finding close-by objects of all kinds - not just by on the table ornot
                     # Only can find cluttered objects that are near by, if they are on same surface
                     if find_surface_of_object(body=object_body, context=context) is not None:
-                        step_probability = step_probability *self.p_clutter_count(target_body=object_body)
+                        step_probability = step_probability * self.p_clutter_count(target_body=object_body)
                        # self.p_clutter_proximity() TODO: retrieve list of closest objects
                 else:
-                    step_probability = BASE_PROBABILITY.get((action_type, ""), default_probability)
+                    step_probability = evaluation(action_type, object_name, location).probability
+
+                if step_probability < probability_threshold:
+                    step.action_assisted = True
+                    step_probability = 1
 
                 # Asserting step values
-                step.probability = step_probability
+                step.action_probability = step_probability
                 joint_probability = round(joint_probability * step_probability, 2)
 
             # asserting values
             task.probability = joint_probability
 
-        # OccupancyCostmap() TODO: implement to see if reachable, MAYBEEEE but runtime is loooong af
         return task_list

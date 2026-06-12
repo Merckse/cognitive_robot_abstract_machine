@@ -26,8 +26,8 @@ class CompositeEvaluator:
         # normalize list
         normalized_evaluated_task_list = normalize_task_estimation(task_list_score_evaluated)
 
-        self.summary(normalized_evaluated_task_list)
-        return normalized_evaluated_task_list
+        self.summary(task_list_score_evaluated)
+        return task_list_score_evaluated
 
 
     def summary(self, task_list: list[Task]) -> None:

@@ -82,6 +82,7 @@ class RestrictionPlan:
 
     @property
     def has_residual(self) -> bool:
+        """:return: ``True`` when at least one conjunct stayed residual."""
         return bool(self.residual)
 
 
@@ -142,10 +143,10 @@ class QueryPlanner(Planner[Query, QueryPlan]):
     def _kind(self) -> SelectionKind:
         if isinstance(self.node, SetOf):
             return SelectionKind.SET_OF
-        var = self._selected
-        if isinstance(var, Entity):
+        selected = self._selected
+        if isinstance(selected, Entity):
             return SelectionKind.ENTITY_SELECTOR
-        if var is None:
+        if selected is None:
             return SelectionKind.EMPTY
         return SelectionKind.SUBJECT
 
@@ -154,9 +155,9 @@ class QueryPlanner(Planner[Query, QueryPlan]):
         return builder is not None and builder.type is The
 
     def _selected_type(self) -> str:
-        var = self._selected
-        if var is not None and getattr(var, "_type_", None):
-            return var._type_.__name__
+        selected = self._selected
+        if selected is not None and getattr(selected, "_type_", None):
+            return selected._type_.__name__
         return FallbackNouns.ENTITY.text
 
     # ── subject restriction (WHERE partition) ────────────────────────────────
@@ -164,7 +165,7 @@ class QueryPlanner(Planner[Query, QueryPlan]):
     def _subject(self) -> Optional[Variable]:
         if not isinstance(self.node, Entity):
             return None
-        return restriction_subject(self.node, self._selected, None)
+        return restriction_subject(self.node, self._selected)
 
     def _subject_restriction(self) -> Optional[RestrictionPlan]:
         condition = self._where_condition()
@@ -179,7 +180,7 @@ class QueryPlanner(Planner[Query, QueryPlan]):
         matched: List[Tuple[Type[RestrictionRule], Any]] = []
         residual: List[Any] = []
         for item in fold_range_pairs(flatten_operands(condition, AND)):
-            rule = match_restriction(item, subject, None)
+            rule = match_restriction(item, subject)
             if rule is None:
                 residual.append(item)
             else:

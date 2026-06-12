@@ -12,6 +12,7 @@ from krrood.entity_query_language.verbalization.context import VerbalizationCont
 from krrood.entity_query_language.verbalization.fragments.base import WordFragment
 from krrood.entity_query_language.verbalization.grammar.assembly.restrictions import (
     RestrictionAssembler,
+    UnplacedRestrictionError,
 )
 from krrood.entity_query_language.verbalization.grammar.phrase_rule import Ctx
 from krrood.entity_query_language.verbalization.grammar.planning.query import (
@@ -59,5 +60,5 @@ def test_unhandled_placement_raises_loudly():
             return WordFragment(text="x")
 
     plan = RestrictionPlan(matched=[(_MysteryRule, object())])
-    with pytest.raises(ValueError, match="MYSTERY"):
+    with pytest.raises(UnplacedRestrictionError, match="MYSTERY"):
         RestrictionAssembler(_ctx()).render(plan, subject=None)

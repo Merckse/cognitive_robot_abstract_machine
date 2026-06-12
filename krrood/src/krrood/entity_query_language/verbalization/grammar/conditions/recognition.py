@@ -3,10 +3,9 @@ Condition **recognizers** — the single source of truth for the structural shap
 condition (a :class:`~krrood.entity_query_language.operators.comparator.Comparator` or a
 :class:`~krrood.entity_query_language.core.mapped_variable.MappedVariable` chain) can take.
 
-Previously these tests were re-implemented independently in the restriction rules, the
-inference planner, the chain assembler, and the grammar (the bool-attr guard).  They are
-pure structural predicates — no fragments, no context — so they live here once and every
-surface-form decision consults them.
+They are pure structural predicates — no fragments, no context — so they live here
+once, and every surface-form decision (restriction rules, inference planner, chain
+assembler, grammar guards) consults them instead of re-implementing the shape test.
 """
 
 from __future__ import annotations
@@ -20,9 +19,9 @@ from krrood.entity_query_language.core.mapped_variable import Attribute, MappedV
 from krrood.entity_query_language.core.variable import Variable
 from krrood.entity_query_language.operators.aggregators import Aggregator, Extreme
 from krrood.entity_query_language.operators.comparator import Comparator
-from krrood.entity_query_language.query.quantifiers import ResultQuantifier
 from krrood.entity_query_language.query.query import Entity
 from krrood.entity_query_language.verbalization.chain_utils import (
+    chain_ends_in_boolean_attribute,
     chain_root,
     walk_chain,
 )
@@ -30,6 +29,7 @@ from krrood.entity_query_language.verbalization.subquery import (
     aggregation_source_root,
     is_collapsible_aggregation_subquery,
     selected_aggregator,
+    unwrap_result_quantifiers,
 )
 
 
@@ -44,7 +44,7 @@ def attribute_names(left) -> List[str]:
     return names
 
 
-def single_hop_attr(expression, subject_variable) -> Optional[Attribute]:
+def single_hop_attribute(expression, subject_variable) -> Optional[Attribute]:
     """The :class:`Attribute` node when *expression* is exactly ``subject_variable.<attr>``, else ``None``."""
     if subject_variable is None or not isinstance(expression, MappedVariable):
         return None
@@ -67,12 +67,12 @@ def references(expression, subject_variable) -> bool:
         return chain_root(expression) is subject_variable
 
 
-def is_bool_attr_chain(expression) -> bool:
+def is_boolean_attribute_chain(expression) -> bool:
     """``True`` when *expression* is a MappedVariable chain ending in a bool-typed Attribute."""
     if not isinstance(expression, MappedVariable):
         return False
     chain, _ = walk_chain(expression)
-    return bool(chain) and isinstance(chain[-1], Attribute) and chain[-1]._type_ is bool
+    return chain_ends_in_boolean_attribute(chain)
 
 
 @dataclass(frozen=True)
@@ -106,9 +106,7 @@ def superlative_aggregation(comparator, subject) -> Optional[SuperlativeFold]:
     if getattr(left_root, "_id_", None) != getattr(subject, "_id_", object()):
         return None
 
-    inner = comparator.right
-    while isinstance(inner, ResultQuantifier):
-        inner = inner._child_
+    inner = unwrap_result_quantifiers(comparator.right)
     if not (isinstance(inner, Entity) and is_collapsible_aggregation_subquery(inner)):
         return None
     aggregator = selected_aggregator(inner)

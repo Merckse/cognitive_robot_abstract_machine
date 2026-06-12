@@ -16,8 +16,7 @@ Programming").  Compare the fold over the *output* tree,
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-from typing_extensions import Optional, Sequence
+from typing_extensions import TYPE_CHECKING, Optional, Sequence
 
 from krrood.entity_query_language.verbalization.fragments.base import VerbFragment
 from krrood.entity_query_language.verbalization.fragments.features import Number
@@ -44,7 +43,7 @@ class UnverbalizableExpressionError(TypeError):
 
 def fold(
     node,
-    context: "VerbalizationContext",
+    context: VerbalizationContext,
     rules: Optional[Sequence[PhraseRule]] = None,
     number: Number = Number.SINGULAR,
 ) -> VerbFragment:

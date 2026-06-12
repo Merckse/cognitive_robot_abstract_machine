@@ -27,6 +27,20 @@ from krrood.entity_query_language.query.quantifiers import ResultQuantifier
 from krrood.entity_query_language.query.query import Entity
 
 
+def unwrap_result_quantifiers(expression):
+    """
+    Strip every enclosing :class:`~krrood.entity_query_language.query.quantifiers.ResultQuantifier`
+    wrapper (``An`` / ``The`` / …) and return the innermost expression.
+
+    :param expression: Any EQL expression.
+    :return: The first non-``ResultQuantifier`` descendant (or *expression* itself).
+    """
+    inner = expression
+    while isinstance(inner, ResultQuantifier):
+        inner = inner._child_
+    return inner
+
+
 def selected_aggregator(entity) -> Optional[Aggregator]:
     """
     Return the :class:`~krrood.entity_query_language.operators.aggregators.Aggregator`
@@ -69,9 +83,7 @@ def is_calculation_value(expression) -> bool:
     :param expression: Candidate operand expression.
     :rtype: bool
     """
-    inner = expression
-    while isinstance(inner, ResultQuantifier):
-        inner = inner._child_
+    inner = unwrap_result_quantifiers(expression)
     if isinstance(inner, Aggregator):
         return True
     if isinstance(inner, Entity):

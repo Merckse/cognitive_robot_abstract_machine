@@ -5,10 +5,9 @@ A Comparator/condition is said differently depending on where it sits: a standal
 *predicate* (*"x is greater than 5"*), a post-nominal *attribute modifier* on a subject
 (the bare *"<attr> op <value>"* that a *"whose …"* envelope wraps), a *range* modifier
 (*"<attr> is between lo and hi"*), or the inference *whose-attribute* body (*"<attr> is
-<value>"* agreeing in number).  Previously each of these lived in a different consumer
-(the comparator rule, the restriction rules, the inference assembler); they are
-co-located here so one component owns *how a condition is verbalized* and the consumers
-merely ask for a form.
+<value>"* agreeing in number).  All of these forms are co-located here so one component
+owns *how a condition is verbalized*, and the consumers (the comparator rule, the
+restriction rules, the inference assembler) merely ask for a form.
 
 Realisation-only (``planner = None``), holding the per-node
 :class:`~krrood.entity_query_language.verbalization.grammar.phrase_rule.Ctx`; recursion is
@@ -35,7 +34,7 @@ from krrood.entity_query_language.verbalization.grammar.conditions.operator_phra
     comparator_operator,
 )
 from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
-    single_hop_attr,
+    single_hop_attribute,
     superlative_aggregation,
 )
 from krrood.entity_query_language.verbalization.microplanning.coordination import (
@@ -70,10 +69,12 @@ class ConditionVerbalizer(Assembler[Any, None]):
     def attribute_modifier(self, comparator, subject) -> VerbFragment:
         """Bare *"<attr> <operator> <value>"* on *subject*'s single-hop attribute — the
         grouped predicate a *"whose …"* envelope wraps."""
-        attr = single_hop_attr(comparator.left, subject)
+        attribute = single_hop_attribute(comparator.left, subject)
         return PhraseFragment(
             parts=[
-                RoleFragment.for_attribute(attr._owner_class_, attr._attribute_name_),
+                RoleFragment.for_attribute(
+                    attribute._owner_class_, attribute._attribute_name_
+                ),
                 comparator_operator(comparator, self.ctx.context, compact=False),
                 self.ctx.child(comparator.right),
             ]
@@ -94,19 +95,21 @@ class ConditionVerbalizer(Assembler[Any, None]):
             ]
         )
 
-    def range_modifier(self, rangefold, subject) -> VerbFragment:
+    def range_modifier(self, range_fold, subject) -> VerbFragment:
         """*"<attr> is between lo and hi"* on *subject*'s single-hop attribute."""
-        attr = single_hop_attr(rangefold.chain_expression, subject)
-        left = RoleFragment.for_attribute(attr._owner_class_, attr._attribute_name_)
+        attribute = single_hop_attribute(range_fold.chain_expression, subject)
+        left = RoleFragment.for_attribute(
+            attribute._owner_class_, attribute._attribute_name_
+        )
         return build_between(
             left,
-            self.ctx.child(rangefold.lower_expression),
-            self.ctx.child(rangefold.upper_expression),
+            self.ctx.child(range_fold.lower_expression),
+            self.ctx.child(range_fold.upper_expression),
             compact=False,
         )
 
     def whose_attribute(
-        self, attr_name: str, number: Number, value: VerbFragment
+        self, attribute_name: str, number: Number, value: VerbFragment
     ) -> VerbFragment:
         """Full *"whose <attr> <copula> <value>"* modifier, agreeing with *number*.
 
@@ -116,12 +119,12 @@ class ConditionVerbalizer(Assembler[Any, None]):
         return PhraseFragment(
             parts=[
                 Keywords.WHOSE.as_fragment(),
-                self._attr_noun(attr_name, number),
+                self._attribute_noun(attribute_name, number),
                 Copulas.for_number(number),
                 value,
             ]
         )
 
-    def _attr_noun(self, name: str, number: Number) -> VerbFragment:
+    def _attribute_noun(self, name: str, number: Number) -> VerbFragment:
         """A role-tagged attribute noun tagged with *number* (the pass inflects it)."""
         return RoleFragment(text=name, role=SemanticRole.ATTRIBUTE, number=number)

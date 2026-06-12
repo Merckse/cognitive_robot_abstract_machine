@@ -30,9 +30,11 @@ from krrood.entity_query_language.core.base_expressions import (
     SymbolicExpression,
 )
 from krrood.entity_query_language.core.base_expressions import Selectable
-from krrood.entity_query_language.verbalization.utils import _camel_to_words
+from krrood.entity_query_language.verbalization.utils import camel_case_to_words
 from krrood.ormatic.utils import classproperty
-from krrood.patterns.code_parsing_utils import get_accessed_attribute_name_in_return_statement_of_property
+from krrood.patterns.code_parsing_utils import (
+    get_accessed_attribute_name_in_return_statement_of_property,
+)
 from krrood.symbol_graph.symbol_graph import Symbol
 
 
@@ -87,7 +89,6 @@ class Verbalizable(ABC):
             return "{person_1} loves {person_2}"
         """
         raise NotImplementedError()
-
 
 
 @dataclass(eq=False)
@@ -146,7 +147,6 @@ class Predicate(Symbol, Verbalizable, ABC):
         return bool(self.__call__())
 
 
-
 @dataclass(eq=False)
 class Triple(Predicate):
     """
@@ -174,9 +174,13 @@ class Triple(Predicate):
         """
         Verbalization of a Triple is a subject - predicate - object.
         """
-        predicate_name = _camel_to_words(cls.__name__)
-        subject_name = get_accessed_attribute_name_in_return_statement_of_property(cls.subject, cls)
-        object_name = get_accessed_attribute_name_in_return_statement_of_property(cls.object, cls)
+        predicate_name = camel_case_to_words(cls.__name__)
+        subject_name = get_accessed_attribute_name_in_return_statement_of_property(
+            cls.subject, cls
+        )
+        object_name = get_accessed_attribute_name_in_return_statement_of_property(
+            cls.object, cls
+        )
         return f"{{{subject_name}}} " + predicate_name + f" {{{object_name}}}"
 
 

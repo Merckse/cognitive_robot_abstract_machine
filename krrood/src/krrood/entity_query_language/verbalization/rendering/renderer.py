@@ -15,8 +15,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-from typing_extensions import Optional
+from typing_extensions import TYPE_CHECKING, Optional
 
 from krrood.entity_query_language.verbalization.fragments.base import (
     BlockFragment,
@@ -28,8 +27,9 @@ from krrood.entity_query_language.verbalization.rendering.formatter import (
     Formatter,
     IndentSize,
     PlainFormatter,
-    _first_docstring_line,
-    _docstring_for_source_ref,
+)
+from krrood.entity_query_language.verbalization.rendering.source_documentation import (
+    docstring_for_source_ref,
 )
 
 if TYPE_CHECKING:
@@ -52,10 +52,10 @@ class FragmentRenderer(ABC):
     * :class:`HierarchicalRenderer` — renders blocks as indented bullet lists.
     """
 
-    _formatter: Formatter = field(default_factory=PlainFormatter)
+    formatter: Formatter = field(default_factory=PlainFormatter)
     """Format-specific markup logic (plain, ANSI, HTML)."""
 
-    _link_resolver: Optional[SourceLinkResolver] = field(default=None)
+    link_resolver: Optional[SourceLinkResolver] = field(default=None)
     """Optional resolver that maps SourceRef instances to URL strings."""
 
     @abstractmethod
@@ -83,12 +83,12 @@ class FragmentRenderer(ABC):
         :return: Coloured (and optionally linked) string.
         :rtype: str
         """
-        colored = self._formatter.colorize(text, role)
-        if source_ref is not None and self._link_resolver is not None:
-            url = self._link_resolver.resolve(source_ref)
+        colored = self.formatter.colorize(text, role)
+        if source_ref is not None and self.link_resolver is not None:
+            url = self.link_resolver.resolve(source_ref)
             if url is not None:
-                tooltip = _docstring_for_source_ref(source_ref)
-                return self._formatter.wrap_link(colored, url, tooltip=tooltip)
+                tooltip = docstring_for_source_ref(source_ref)
+                return self.formatter.wrap_link(colored, url, tooltip=tooltip)
         return colored
 
 
@@ -121,9 +121,7 @@ class ParagraphRenderer(FragmentRenderer):
             if block.header is None:
                 return prose
             header_str = self.render(block.header)
-            return (
-                f"{header_str}{self._formatter.space}{prose}" if prose else header_str
-            )
+            return f"{header_str}{self.formatter.space}{prose}" if prose else header_str
 
         return fold_fragment(
             fragment,
@@ -179,14 +177,14 @@ class HierarchicalRenderer(FragmentRenderer):
                     depth = depth + 1
                 for item in items:
                     lines.append(self._render_item(item, depth))
-                return self._formatter.newline.join(lines)
+                return self.formatter.newline.join(lines)
             case _:
                 return self.formatted_indent * depth + self._inline(fragment)
 
     @property
     def formatted_indent(self) -> str:
         """The indentation string, with spaces replaced by the formatter's space character."""
-        return self.indent_size.value.replace(" ", self._formatter.space)
+        return self.indent_size.value.replace(" ", self.formatter.space)
 
     def _render_item(self, fragment: VerbFragment, depth: int) -> str:
         """Render one item, prepending the bullet at its indentation level."""
@@ -197,7 +195,7 @@ class HierarchicalRenderer(FragmentRenderer):
                 prefix = (
                     self.formatted_indent * depth
                     + self.bullet.value
-                    + self._formatter.space
+                    + self.formatter.space
                 )
                 return prefix + self._inline(fragment)
 

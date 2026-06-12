@@ -20,13 +20,15 @@ import uuid
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
-from typing_extensions import Any, FrozenSet, List, Optional, Tuple
+from typing_extensions import Any, Dict, FrozenSet, List, Optional, Tuple
 
 from krrood.entity_query_language.core.mapped_variable import Attribute
 from krrood.entity_query_language.core.variable import InstantiatedVariable, Variable
 from krrood.entity_query_language.operators.comparator import Comparator
-from krrood.entity_query_language.operators.core_logical_operators import AND
-from krrood.entity_query_language.query.quantifiers import ResultQuantifier
+from krrood.entity_query_language.operators.core_logical_operators import (
+    AND,
+    flatten_operands,
+)
 from krrood.entity_query_language.query.query import Entity
 from krrood.entity_query_language.verbalization import morphology
 from krrood.entity_query_language.verbalization.chain_utils import chain_root
@@ -34,6 +36,9 @@ from krrood.entity_query_language.verbalization.grammar.conditions.recognition i
     attribute_names,
 )
 from krrood.entity_query_language.verbalization.grammar.planning.base import Planner
+from krrood.entity_query_language.verbalization.subquery import (
+    unwrap_result_quantifiers,
+)
 from krrood.entity_query_language.verbalization.vocabulary.english import FallbackNouns
 
 
@@ -55,7 +60,7 @@ class AggregationStatus(Enum):
 class ConditionPlan:
     """One antecedent WHERE condition, with the foldability decided up front.
 
-    ``whose_attr`` is the (singular) attribute name when the condition is a single-hop
+    ``whose_attribute_name`` is the (singular) attribute name when the condition is a single-hop
     attribute equality that folds into a *"whose <attr> is …"* modifier, else ``None``
     (render the condition normally).  Deciding this here keeps the assembler free of
     analysis.
@@ -64,7 +69,7 @@ class ConditionPlan:
     expression: Any
     """The raw EQL condition expression."""
 
-    whose_attr: Optional[str]
+    whose_attribute_name: Optional[str]
     """Singular attribute name when foldable to *whose*, else ``None``."""
 
 
@@ -148,8 +153,12 @@ class InferencePlanner(Planner[Entity, RuleStructure]):
         group_key_ids = self._group_key_ids()
         antecedents, unmatched = self._plan_antecedents(group_key_ids)
         return RuleStructure(
-            primary_antecedents=[a for a in antecedents if a.conditions],
-            secondary_antecedents=[a for a in antecedents if not a.conditions],
+            primary_antecedents=[
+                antecedent for antecedent in antecedents if antecedent.conditions
+            ],
+            secondary_antecedents=[
+                antecedent for antecedent in antecedents if not antecedent.conditions
+            ],
             consequent_type=self._consequent_type(),
             consequent_bindings=self._plan_consequent(group_key_ids),
             unmatched_conditions=unmatched,
@@ -170,7 +179,9 @@ class InferencePlanner(Planner[Entity, RuleStructure]):
     def _group_key_ids(self) -> FrozenSet[uuid.UUID]:
         grouped = self.node._grouped_by_expression_
         if grouped is not None and grouped.variables_to_group_by:
-            return frozenset(v._id_ for v in grouped.variables_to_group_by)
+            return frozenset(
+                variable._id_ for variable in grouped.variables_to_group_by
+            )
         return frozenset()
 
     @staticmethod
@@ -214,29 +225,32 @@ class InferencePlanner(Planner[Entity, RuleStructure]):
     def _discover_antecedents(
         self, group_key_ids: FrozenSet[uuid.UUID]
     ) -> List[AntecedentInfo]:
-        seen_root_ids: dict = {}
+        antecedents_by_root_id: Dict[uuid.UUID, AntecedentInfo] = {}
         for child in self._inferred._child_vars_.values():
             root = self._find_root(child)
-            if root is None or root._id_ in seen_root_ids:
+            if root is None or root._id_ in antecedents_by_root_id:
                 continue
             type_name, own_conditions = self._extract_root_info(root)
-            seen_root_ids[root._id_] = AntecedentInfo(
+            antecedents_by_root_id[root._id_] = AntecedentInfo(
                 root=root,
                 type_name=type_name,
                 aggregation_status=self._aggregation_status(root._id_, group_key_ids),
                 conditions=own_conditions,
             )
-        return list(seen_root_ids.values())
+        return list(antecedents_by_root_id.values())
 
     def _outer_conditions(self) -> List[Any]:
         where = self.node._where_expression_
-        return self._flatten_and(where.condition) if where is not None else []
+        return flatten_operands(where.condition, AND) if where is not None else []
 
     def _attribute_conditions(
         self, antecedents: List[AntecedentInfo], extra_conditions: List[Any]
     ) -> List[Any]:
         """Distribute outer-WHERE conditions to owning antecedents (in place); return unmatched."""
-        id_to_antecedent = {self._antecedent_var_id(a): a for a in antecedents}
+        id_to_antecedent = {
+            self._antecedent_variable_id(antecedent): antecedent
+            for antecedent in antecedents
+        }
         unmatched: List[Any] = []
         for condition in extra_conditions:
             owner_id = self._condition_left_owner_id(condition)
@@ -246,7 +260,9 @@ class InferencePlanner(Planner[Entity, RuleStructure]):
                 unmatched.append(condition)
         return unmatched
 
-    def _antecedent_var_id(self, antecedent: AntecedentInfo) -> Optional[object]:
+    def _antecedent_variable_id(
+        self, antecedent: AntecedentInfo
+    ) -> Optional[uuid.UUID]:
         """Stable ``_id_`` of the underlying variable for an antecedent."""
         root = antecedent.root
         if isinstance(root, Entity):
@@ -254,22 +270,18 @@ class InferencePlanner(Planner[Entity, RuleStructure]):
             return getattr(root.selected_variable, "_id_", None)
         return getattr(root, "_id_", None)
 
-    def _condition_left_owner_id(self, condition) -> Optional[object]:
+    def _condition_left_owner_id(self, condition) -> Optional[uuid.UUID]:
         """``_id_`` of the root variable on the LHS of an equality condition, else ``None``."""
         if (
             not isinstance(condition, Comparator)
             or condition.operation is not operator.eq
         ):
             return None
-        current = chain_root(condition.left)
-        while isinstance(current, ResultQuantifier):
-            current = current._child_
+        current = unwrap_result_quantifiers(chain_root(condition.left))
         return getattr(current, "_id_", None)
 
     def _find_root(self, expression) -> Optional[Any]:
-        current = chain_root(expression)
-        while isinstance(current, ResultQuantifier):
-            current = current._child_
+        current = unwrap_result_quantifiers(chain_root(expression))
         if isinstance(current, (Variable, Entity)):
             return current
         return None
@@ -278,17 +290,19 @@ class InferencePlanner(Planner[Entity, RuleStructure]):
         """Return ``(type_name, own_conditions)`` for a root Variable or Entity."""
         if isinstance(root, Entity):
             root.build()
-            var = root.selected_variable
+            selected = root.selected_variable
             type_name = (
-                var._type_.__name__
-                if var and getattr(var, "_type_", None)
+                selected._type_.__name__
+                if selected and getattr(selected, "_type_", None)
                 else FallbackNouns.ENTITY.text
             )
             conditions: List[ConditionPlan] = []
             if root._where_expression_ is not None:
                 conditions = [
-                    self._planned(e)
-                    for e in self._flatten_and(root._where_expression_.condition)
+                    self._planned(conjunct)
+                    for conjunct in flatten_operands(
+                        root._where_expression_.condition, AND
+                    )
                 ]
             return type_name, conditions
         if isinstance(root, Variable):
@@ -298,25 +312,18 @@ class InferencePlanner(Planner[Entity, RuleStructure]):
                 else FallbackNouns.VARIABLE.text
             )
             return type_name, []
-        return "entity", []
-
-    def _flatten_and(self, expression) -> List[Any]:
-        """Recursively flatten a nested AND tree into a flat list of conjuncts."""
-        if isinstance(expression, AND):
-            return self._flatten_and(expression.left) + self._flatten_and(
-                expression.right
-            )
-        return [expression]
+        return FallbackNouns.ENTITY.text, []
 
     # ── condition foldability (the *whose* analysis — decided here, not in assembly) ──
 
     def _planned(self, condition) -> ConditionPlan:
         """Wrap a raw condition with its pre-decided *whose*-foldability."""
         return ConditionPlan(
-            expression=condition, whose_attr=self._whose_attr(condition)
+            expression=condition,
+            whose_attribute_name=self._whose_attribute_name(condition),
         )
 
-    def _whose_attr(self, condition) -> Optional[str]:
+    def _whose_attribute_name(self, condition) -> Optional[str]:
         """Singular attribute name when *condition* folds to *"whose <attr> is …"*, else ``None``.
 
         Foldable iff it is an attribute equality (``Attribute == value``); the modifier
@@ -329,5 +336,5 @@ class InferencePlanner(Planner[Entity, RuleStructure]):
             return None
         if not isinstance(condition.left, Attribute):
             return None
-        attr_names = attribute_names(condition.left)
-        return attr_names[-1] if attr_names else None
+        names_along_chain = attribute_names(condition.left)
+        return names_along_chain[-1] if names_along_chain else None

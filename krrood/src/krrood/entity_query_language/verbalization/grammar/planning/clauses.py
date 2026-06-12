@@ -14,7 +14,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from typing_extensions import Any, List
+import uuid
+
+from typing_extensions import Any, List, Optional, Set
 
 from krrood.entity_query_language.core.variable import InstantiatedVariable, Variable
 from krrood.entity_query_language.query.operations import GroupedBy
@@ -36,6 +38,7 @@ class GroupPlan:
 
     @property
     def has_keys(self) -> bool:
+        """:return: ``True`` when the query carries at least one group-by key."""
         return bool(self.keys)
 
 
@@ -52,30 +55,32 @@ class GroupedByPlanner(Planner[Any, GroupPlan]):
             return GroupPlan(keys=[], aggregated=[])
         keys = list(grouped.variables_to_group_by)
         return GroupPlan(
-            keys=keys, aggregated=self._aggregated(self._root_var_ids(keys))
+            keys=keys, aggregated=self._aggregated(self._root_variable_ids(keys))
         )
 
-    def _grouped_by(self):
+    def _grouped_by(self) -> Optional[GroupedBy]:
         if isinstance(self.node, GroupedBy):
             return self.node
         return getattr(self.node, "_grouped_by_expression_", None)
 
     @staticmethod
-    def _root_var_ids(exprs) -> set:
-        ids: set = set()
-        for expression in exprs:
+    def _root_variable_ids(expressions) -> Set[uuid.UUID]:
+        ids: Set[uuid.UUID] = set()
+        for expression in expressions:
             root = chain_root(expression)
             if isinstance(root, Variable):
                 ids.add(root._id_)
         return ids
 
-    def _aggregated(self, group_key_root_ids: set) -> List[Any]:
+    def _aggregated(self, group_key_root_ids: Set[uuid.UUID]) -> List[Any]:
         """Selected expressions that are aggregated (not group keys); ``[]`` off a query."""
-        var = self.node.selected_variable if isinstance(self.node, Entity) else None
-        if isinstance(var, InstantiatedVariable):
+        selected = (
+            self.node.selected_variable if isinstance(self.node, Entity) else None
+        )
+        if isinstance(selected, InstantiatedVariable):
             return [
                 child
-                for child in var._child_vars_.values()
+                for child in selected._child_vars_.values()
                 if not (
                     isinstance(chain_root(child), Variable)
                     and chain_root(child)._id_ in group_key_root_ids

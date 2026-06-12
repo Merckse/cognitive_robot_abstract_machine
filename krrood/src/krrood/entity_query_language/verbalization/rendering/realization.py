@@ -14,7 +14,7 @@ Reference: Gatt & Reiter (2009), SimpleNLG — the ordered realisation stages.
 from __future__ import annotations
 
 import uuid
-from typing import Iterable, Optional
+from typing_extensions import Iterable, Optional
 
 from krrood.entity_query_language.verbalization.fragments.base import (
     flatten_fragment_to_plain_text,
@@ -33,7 +33,8 @@ from krrood.entity_query_language.verbalization.rendering.orthography_processor 
     OrthographyProcessor,
 )
 
-_COREFERENCE = CoreferenceProcessor()
+# The stateless passes are shared module-level instances; the coreference pass is
+# stateful per walk and is therefore created fresh inside realize_tree.
 _DETERMINER = DeterminerProcessor()
 _MORPHOLOGY = MorphologyProcessor()
 _ORTHOGRAPHY = OrthographyProcessor()
@@ -47,7 +48,7 @@ def realize_tree(
     → morphology → orthography (punctuation spacing).  *already_seen* carries referents
     introduced by prior builds on a shared context (see :meth:`CoreferenceProcessor.process`).
     """
-    resolved = _COREFERENCE.process(fragment, already_seen=already_seen)
+    resolved = CoreferenceProcessor().process(fragment, already_seen=already_seen)
     inflected = _MORPHOLOGY.process(_DETERMINER.process(resolved))
     return _ORTHOGRAPHY.process(inflected)
 

@@ -78,22 +78,26 @@ class InferenceAssembler(Assembler[Entity, RuleStructure]):
 
     # ── IF clause ───────────────────────────────────────────────────────────────
 
-    def _if_items(self, s: RuleStructure) -> List[VerbFragment]:
+    def _if_items(self, structure: RuleStructure) -> List[VerbFragment]:
         """One item per antecedent — *"there's a <Type> [whose …]"* — plus any unmatched
         conditions; *"true"* when there are none."""
-        for antecedent in s.secondary_antecedents:
+        for antecedent in structure.secondary_antecedents:
             self._register_antecedent(antecedent)
 
         items: List[VerbFragment] = []
-        for antecedent in s.primary_antecedents:
+        for antecedent in structure.primary_antecedents:
             intro = self._antecedent_intro(antecedent)
             self._register_antecedent(antecedent)
-            cond_frags = self._condition_frags(antecedent.conditions, antecedent)
+            condition_fragments = self._condition_fragments(
+                antecedent.conditions, antecedent
+            )
             items.append(
-                BlockFragment(header=intro, items=cond_frags) if cond_frags else intro
+                BlockFragment(header=intro, items=condition_fragments)
+                if condition_fragments
+                else intro
             )
 
-        for condition in s.unmatched_conditions:
+        for condition in structure.unmatched_conditions:
             items.append(self.ctx.child(condition))
 
         return items or [Keywords.TRUE.as_fragment()]
@@ -126,26 +130,29 @@ class InferenceAssembler(Assembler[Entity, RuleStructure]):
         self.ctx.refer.mark_introduced(root)
         if isinstance(root, Entity):
             root.build()
-            sel = root.selected_variable
-            if sel is not None and hasattr(sel, "_id_"):
-                self.ctx.refer.mark_introduced(sel)
+            selected = root.selected_variable
+            if selected is not None and hasattr(selected, "_id_"):
+                self.ctx.refer.mark_introduced(selected)
 
-    def _condition_frags(
+    def _condition_fragments(
         self, conditions: List[ConditionPlan], antecedent: AntecedentInfo
     ) -> List[VerbFragment]:
-        """One fragment per antecedent condition (see :meth:`_condition_frag`)."""
-        return [self._condition_frag(pc, antecedent) for pc in conditions]
+        """One fragment per antecedent condition (see :meth:`_condition_fragment`)."""
+        return [
+            self._condition_fragment(condition_plan, antecedent)
+            for condition_plan in conditions
+        ]
 
-    def _condition_frag(
-        self, pc: ConditionPlan, antecedent: AntecedentInfo
+    def _condition_fragment(
+        self, condition_plan: ConditionPlan, antecedent: AntecedentInfo
     ) -> VerbFragment:
         """Render one condition: a *"whose <attr> is …"* modifier when foldable, else recurse."""
-        if pc.whose_attr is None:
-            return self.ctx.child(pc.expression)
+        if condition_plan.whose_attribute_name is None:
+            return self.ctx.child(condition_plan.expression)
         number = self._number(antecedent)
-        value = self._value(pc.expression.right, number)
+        value = self._value(condition_plan.expression.right, number)
         return ConditionVerbalizer(self.ctx).whose_attribute(
-            pc.whose_attr, number, value
+            condition_plan.whose_attribute_name, number, value
         )
 
     def _value(self, expression, number: Number) -> VerbFragment:
@@ -154,17 +161,19 @@ class InferenceAssembler(Assembler[Entity, RuleStructure]):
 
     # ── THEN clause ───────────────────────────────────────────────────────────
 
-    def _then_items(self, s: RuleStructure) -> List[VerbFragment]:
+    def _then_items(self, structure: RuleStructure) -> List[VerbFragment]:
         """*"there's a <Consequent> [whose <field> is <value> …]"* — the THEN-clause block."""
         intro: VerbFragment = ExistentialPhrase.for_number(
             Number.SINGULAR
-        ).build_phrase(s.consequent_type)
-        binding_frags = [self._binding_frag(b) for b in s.consequent_bindings]
-        if not binding_frags:
+        ).build_phrase(structure.consequent_type)
+        binding_fragments = [
+            self._binding_fragment(binding) for binding in structure.consequent_bindings
+        ]
+        if not binding_fragments:
             return [intro]
-        return [BlockFragment(header=intro, items=binding_frags)]
+        return [BlockFragment(header=intro, items=binding_fragments)]
 
-    def _binding_frag(self, binding: ConsequentBinding) -> VerbFragment:
+    def _binding_fragment(self, binding: ConsequentBinding) -> VerbFragment:
         """*"whose <field> is/are <value>"* — one consequent field binding."""
         number = Number.of(binding.is_plural_field)
         return ConditionVerbalizer(self.ctx).whose_attribute(

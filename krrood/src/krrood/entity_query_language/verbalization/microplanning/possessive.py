@@ -10,8 +10,8 @@ these are the pure surface-form builders it calls once it has decided.  Both are
 the builder lives in one place, shared by ``ChainAssembler`` (which still renders the possessive
 form directly for predicative chains) and the coreference pass.
 
-The leading genitive *"the"* is an invariant structural article (kept out of the determiner
-concord — see the Phase-1 head-NPs-only scope), so it is emitted directly here.
+The leading genitive *"the"* is an invariant structural article (the determiner concord
+applies to head noun phrases only), so it is emitted directly here.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from krrood.entity_query_language.verbalization.vocabulary.english import (
 PathPart = Tuple[str, Optional[SourceRef]]
 
 
-def _attr(name: str, source_ref: Optional[SourceRef]) -> RoleFragment:
+def _attribute_fragment(name: str, source_ref: Optional[SourceRef]) -> RoleFragment:
     """A role-tagged attribute fragment."""
     return RoleFragment(text=name, role=SemanticRole.ATTRIBUTE, source_ref=source_ref)
 
@@ -46,13 +46,13 @@ def possessive_path(parts: List[PathPart], root_fragment: VerbFragment) -> VerbF
     first_name, first_ref = reversed_parts[0]
     fragment_parts: List[VerbFragment] = [
         Articles.THE.as_fragment(),
-        _attr(first_name, first_ref),
+        _attribute_fragment(first_name, first_ref),
     ]
     for attribute_name, attribute_reference in reversed_parts[1:]:
         fragment_parts.extend(
             [
                 Prepositions.OF_THE.as_fragment(),
-                _attr(attribute_name, attribute_reference),
+                _attribute_fragment(attribute_name, attribute_reference),
             ]
         )
     fragment_parts.extend([Prepositions.OF.as_fragment(), root_fragment])
@@ -67,7 +67,7 @@ def pronominal_path(parts: List[PathPart], pronoun: VerbFragment) -> VerbFragmen
     last = len(reversed_parts) - 1
     fragment_parts: List[VerbFragment] = []
     for index, (attribute_name, attribute_reference) in enumerate(reversed_parts):
-        attribute_fragment = _attr(attribute_name, attribute_reference)
+        attribute_fragment = _attribute_fragment(attribute_name, attribute_reference)
         if index == 0 and index != last:
             fragment_parts.extend([Articles.THE.as_fragment(), attribute_fragment])
         elif index == 0:  # single attribute → "its booking_date"

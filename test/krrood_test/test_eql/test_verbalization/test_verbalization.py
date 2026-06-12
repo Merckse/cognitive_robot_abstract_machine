@@ -1578,7 +1578,7 @@ def test_inference_planner_decomposes_rule_without_rendering(
         pc for antecedent in plan.primary_antecedents for pc in antecedent.conditions
     ]
     assert planned, "expected at least one attributed antecedent condition"
-    assert any(pc.whose_attr == "child" for pc in planned)
+    assert any(plan.whose_attribute_name == "child" for plan in planned)
 
 
 def test_query_planner_decomposes_subject_restriction_without_rendering():
@@ -2161,7 +2161,7 @@ def test_verbalize_expression_equivalence_to_pipeline():
         result = VerbalizationPipeline(renderer).verbalize(q)
         assert isinstance(result, str) and len(result) > 0, (
             f"Empty result for {type(renderer).__name__} / "
-            f"{type(renderer._formatter).__name__}"
+            f"{type(renderer.formatter).__name__}"
         )
         assert "Robot" in result
 

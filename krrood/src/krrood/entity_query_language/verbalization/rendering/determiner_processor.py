@@ -33,6 +33,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from typing_extensions import Optional
+
 from krrood.entity_query_language.verbalization.fragments.base import (
     flatten_fragment_to_plain_text,
     map_fragment,
@@ -60,20 +62,22 @@ class DeterminerProcessor:
         """``map_fragment`` leaf hook — a ``NounPhrase`` is a leaf to be lowered, else identity."""
         return self._lower_noun_phrase(leaf) if isinstance(leaf, NounPhrase) else leaf
 
-    def _lower_noun_phrase(self, np: NounPhrase) -> VerbFragment:
-        head = self._tag_number(self.process(np.head), np.number)
-        determiner = self._determiner(np.definiteness, np.number, head)
+    def _lower_noun_phrase(self, noun_phrase: NounPhrase) -> VerbFragment:
+        head = self._tag_number(self.process(noun_phrase.head), noun_phrase.number)
+        determiner = self._determiner(
+            noun_phrase.definiteness, noun_phrase.number, head
+        )
         head_group_parts = [*([determiner] if determiner is not None else []), head]
         head_group = (
             head_group_parts[0]
             if len(head_group_parts) == 1
             else PhraseFragment(parts=head_group_parts)
         )
-        if not np.modifiers:
+        if not noun_phrase.modifiers:
             return head_group
-        modifiers = [self.process(m) for m in np.modifiers]
+        modifiers = [self.process(modifier) for modifier in noun_phrase.modifiers]
         return PhraseFragment(
-            parts=[head_group, *modifiers], separator=np.modifier_separator
+            parts=[head_group, *modifiers], separator=noun_phrase.modifier_separator
         )
 
     @staticmethod
@@ -84,7 +88,9 @@ class DeterminerProcessor:
         return head
 
     @staticmethod
-    def _determiner(definiteness: Definiteness, number: Number, head: VerbFragment):
+    def _determiner(
+        definiteness: Definiteness, number: Number, head: VerbFragment
+    ) -> Optional[VerbFragment]:
         """The determiner fragment for *(definiteness, number)*, or ``None`` (bare)."""
         if definiteness is Definiteness.UNIQUE:
             return Articles.THE_UNIQUE.as_fragment()

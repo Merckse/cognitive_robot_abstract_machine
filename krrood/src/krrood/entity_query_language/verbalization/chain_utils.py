@@ -9,7 +9,7 @@ are safe because those are lower in the dependency graph.
 
 from __future__ import annotations
 
-import datetime as _dt
+import datetime
 from dataclasses import dataclass
 
 from typing_extensions import List, Optional, Tuple
@@ -62,12 +62,12 @@ def is_temporal(expression) -> bool:
     :rtype: bool
     """
     if isinstance(expression, Literal):
-        return isinstance(expression._value_, _dt.datetime)
+        return isinstance(expression._value_, datetime.datetime)
     if isinstance(expression, Variable):
-        return getattr(expression, "_type_", None) is _dt.datetime
+        return getattr(expression, "_type_", None) is datetime.datetime
     if isinstance(expression, MappedVariable):
         chain, _ = walk_chain(expression)
-        return bool(chain) and getattr(chain[-1], "_type_", None) is _dt.datetime
+        return bool(chain) and getattr(chain[-1], "_type_", None) is datetime.datetime
     return False
 
 
@@ -88,6 +88,15 @@ def chain_root(expression) -> object:
         if isinstance(expression, MappedVariable)
         else expression
     )
+
+
+def chain_ends_in_boolean_attribute(chain: list) -> bool:
+    """
+    :return: ``True`` when the walked *chain* (from :func:`walk_chain`) ends in a
+        ``bool``-typed :class:`~krrood.entity_query_language.core.mapped_variable.Attribute`
+        (the predicative *"<navigation> is <attribute>"* form).
+    """
+    return bool(chain) and isinstance(chain[-1], Attribute) and chain[-1]._type_ is bool
 
 
 def build_path_parts(chain: list) -> list[tuple[str, Optional[SourceRef]]]:
@@ -138,9 +147,9 @@ class ChainAnalysis:
     """A MappedVariable chain analysed **once**.
 
     The chain rendering needs the walked chain, its root, the display path-parts, and whether
-    it ends in a boolean attribute — previously each was recomputed (``walk_chain`` /
-    ``build_path_parts`` / ``is_bool_attr_chain``) at separate call sites on the same
-    expression.  :meth:`of` computes them together so the assembler can branch off one value.
+    it ends in a boolean attribute.  :meth:`of` computes them together (``walk_chain`` /
+    ``build_path_parts`` / ``chain_ends_in_boolean_attribute``) so the assembler branches off
+    one value instead of re-walking the same expression at each step.
     """
 
     chain: List
@@ -152,21 +161,16 @@ class ChainAnalysis:
     parts: List[Tuple[str, Optional[SourceRef]]]
     """The display path-parts (from :func:`build_path_parts`)."""
 
-    is_bool_terminal: bool
+    is_boolean_terminal: bool
     """``True`` when the chain ends in a ``bool``-typed :class:`Attribute` (predicative form)."""
 
     @classmethod
-    def of(cls, expression) -> "ChainAnalysis":
+    def of(cls, expression) -> ChainAnalysis:
         """Analyse *expression* (a MappedVariable chain, or any root expression)."""
         chain, root = walk_chain(expression)
-        is_bool_terminal = (
-            bool(chain)
-            and isinstance(chain[-1], Attribute)
-            and chain[-1]._type_ is bool
-        )
         return cls(
             chain=chain,
             root=root,
             parts=build_path_parts(chain),
-            is_bool_terminal=is_bool_terminal,
+            is_boolean_terminal=chain_ends_in_boolean_attribute(chain),
         )

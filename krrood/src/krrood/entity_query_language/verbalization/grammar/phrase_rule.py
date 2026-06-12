@@ -6,8 +6,8 @@ handed to a rule.
 This realises the **rule-to-rule** mapping of Montague grammar: each construct of
 the source algebra (an EQL :class:`~krrood.entity_query_language.core.base_expressions.SymbolicExpression`)
 has one rule describing how it composes into the target (English) algebra.  Rules
-are registered as *instances* (see
-:mod:`~krrood.entity_query_language.verbalization.grammar.registry`), so the grammar
+are registered as *instances* (the ``RULES`` list in
+:mod:`~krrood.entity_query_language.verbalization.grammar.english`), so the grammar
 is still queryable with EQL (``entity(r).where(r.construct == Comparator)``) while a
 rule's behaviour lives in an overridable :meth:`PhraseRule.build` method — the
 natural home for the planner/assembler split of the more complex constructs.
@@ -28,8 +28,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
-from typing_extensions import Any, Callable, ClassVar, Optional, Sequence
+from typing_extensions import TYPE_CHECKING, Callable, ClassVar, Optional, Sequence
 
 from krrood.entity_query_language.verbalization.fragments.base import VerbFragment
 from krrood.entity_query_language.verbalization.fragments.features import Number
@@ -63,7 +62,7 @@ class Ctx:
     optional ``number=`` to request a plural realisation of the child (consumed by that
     child's rule, not inherited further down)."""
 
-    context: "VerbalizationContext"
+    context: VerbalizationContext
     """The owning verbalization context (services accessed via the properties below)."""
 
     number: Number = Number.SINGULAR
@@ -73,17 +72,17 @@ class Ctx:
     (renders singular).  Per-edge: a rule's own ``ctx.child`` calls default back to singular."""
 
     @property
-    def refer(self) -> "ReferringExpressions":
+    def refer(self) -> ReferringExpressions:
         """Referring-expression service (articles, coreference, pronouns)."""
         return self.context.referring
 
     @property
-    def scope(self) -> "BindingScope":
+    def scope(self) -> BindingScope:
         """Binding-scope service (deferred constraints + field overrides)."""
         return self.context.binding
 
     @property
-    def config(self) -> "RenderConfig":
+    def config(self) -> RenderConfig:
         """Render-mode flags (query depth, compact predicates)."""
         return self.context.config
 

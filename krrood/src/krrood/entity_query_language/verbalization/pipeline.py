@@ -21,8 +21,8 @@ import logging
 import tempfile
 import webbrowser
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
-from typing_extensions import Optional
+from pathlib import Path
+from typing_extensions import TYPE_CHECKING, Optional
 
 from krrood.entity_query_language.verbalization.context import VerbalizationContext
 from krrood.entity_query_language.verbalization.fragments.base import VerbFragment
@@ -30,7 +30,7 @@ from krrood.entity_query_language.verbalization.rendering.formatter import (
     ANSIFormatter,
     HTMLFormatter,
     PlainFormatter,
-    _detect_osc8_support,
+    detect_osc8_support,
 )
 from krrood.entity_query_language.verbalization.rendering.renderer import (
     FragmentRenderer,
@@ -141,7 +141,7 @@ class VerbalizationPipeline:
 
     def _is_html_renderer(self) -> bool:
         """Return ``True`` when this pipeline's renderer uses :class:`HTMLFormatter`."""
-        return isinstance(getattr(self.renderer, "_formatter", None), HTMLFormatter)
+        return isinstance(self.renderer.formatter, HTMLFormatter)
 
     def verbalize_fragment(self, fragment: VerbFragment) -> str:
         """
@@ -200,10 +200,10 @@ class VerbalizationPipeline:
             suffix=".html",
             delete=False,
             encoding="utf-8",
-        ) as f:
-            f.write(full_page)
-            tmp_path = f.name
-        webbrowser.open(f"file://{tmp_path}")
+        ) as html_file:
+            html_file.write(full_page)
+            html_path = Path(html_file.name)
+        webbrowser.open(html_path.as_uri())
 
     # ── Factories ──────────────────────────────────────────────────────────────
 
@@ -243,7 +243,7 @@ class VerbalizationPipeline:
         :rtype: VerbalizationPipeline
         """
         formatter = ANSIFormatter()
-        if link_resolver is not None and not _detect_osc8_support():
+        if link_resolver is not None and not detect_osc8_support():
             _log.warning(
                 "The current terminal does not appear to support OSC 8 hyperlinks "
                 "(VTE_VERSION / TERM_PROGRAM / TERM not recognised). "

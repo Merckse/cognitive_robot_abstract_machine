@@ -66,17 +66,17 @@ class SpecificityRule(ABC):
     """Tiebreak when several alternatives apply (higher wins); mirrors ``PhraseRule.tiebreak``."""
 
     @classmethod
-    def alternatives(cls) -> "List[Type[SpecificityRule]]":
+    def alternatives(cls) -> List[Type[SpecificityRule]]:
         """The alternative subclasses of this family (closed: direct subclasses)."""
         return list(cls.__subclasses__())
 
     @classmethod
-    def most_applicable(cls, *args: Any) -> "Optional[Type[SpecificityRule]]":
+    def most_applicable(cls, *args: Any) -> Optional[Type[SpecificityRule]]:
         """
         The most-specific alternative whose ``applies(*args)`` holds, or ``None``.
 
         *args* are forwarded verbatim to each alternative's ``applies`` classmethod, so
-        the subfamily fixes that signature (e.g. ``(item, subject, context)``).
+        the subfamily fixes that signature (e.g. ``(item, subject)``).
         """
         applicable = [alt for alt in cls.alternatives() if alt.applies(*args)]
         return most_specific(applicable, key=lambda alt: alt.priority)

@@ -54,16 +54,17 @@ from krrood.entity_query_language.verbalization.grammar.planning.query import (
     SelectionKind,
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import (
+    COMMA_SEPARATOR,
     FallbackNouns,
     Keywords,
     Punctuation,
 )
 
 
-def _subject_id(var):
-    """The referent id for a subject variable (``None`` when *var* is not a single Variable,
-    e.g. a ``SetOf`` — which suppresses pronominalisation)."""
-    return var._id_ if isinstance(var, Variable) else None
+def _subject_id(variable):
+    """The referent id for a subject variable (``None`` when *variable* is not a single
+    Variable, e.g. a ``SetOf`` — which suppresses pronominalisation)."""
+    return variable._id_ if isinstance(variable, Variable) else None
 
 
 class QueryAssembler(Assembler[Query, QueryPlan]):
@@ -117,14 +118,14 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
         variable_fragments = [
             self.ctx.child(variable) for variable in node._selected_variables_
         ]
-        vars_phrase = PhraseFragment(
-            parts=variable_fragments, separator=Punctuation.COMMA.text + " "
+        variables_phrase = PhraseFragment(
+            parts=variable_fragments, separator=COMMA_SEPARATOR
         )
         # The parens glue to their content via the orthography pass — no separator="".
         selection = PhraseFragment(
             parts=[
                 Punctuation.OPEN_PAREN.as_fragment(),
-                vars_phrase,
+                variables_phrase,
                 Punctuation.CLOSE_PAREN.as_fragment(),
             ]
         )
@@ -141,25 +142,25 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
     def _assemble_subject(self, node, plan: QueryPlan) -> VerbFragment:
         """*"Find a Robot whose battery is high, such that … [clauses]"* — the plain-variable
         selection with its WHERE woven in."""
-        var = node.selected_variable
-        selected = self._build_selection(node, var, plan)
+        variable = node.selected_variable
+        selected = self._build_selection(node, variable, plan)
         selected, where_item = self._apply_subject_restrictions(plan, selected)
         body = self._query_body(node, plan, selected, where_item=where_item)
         # Mark the subject region so the coreference pass pronominalises chains rooted at it.
-        return SubjectScope(subject_id=_subject_id(var), child=body)
+        return SubjectScope(subject_id=_subject_id(variable), child=body)
 
-    def _build_selection(self, node, var, plan: QueryPlan) -> VerbFragment:
+    def _build_selection(self, node, variable, plan: QueryPlan) -> VerbFragment:
         """*"the unique Robot"* (``eql.the``) or *"a Robot"* — the selection's referring NP."""
         if plan.is_the:
             # "the unique <type>" first mention; the coreference pass reduces a repeat to
             # "the <type>" (UNIQUE downgrades to DEFINITE) — so it is a referring NP.
             return NounPhrase(
-                head=RoleFragment.for_variable(plan.selected_type, var),
+                head=RoleFragment.for_variable(plan.selected_type, variable),
                 definiteness=Definiteness.UNIQUE,
-                referent_id=_subject_id(var),
+                referent_id=_subject_id(variable),
             )
-        # ctx.child(var) → VariableRule referring NP (referent_id = var); the entity shares it.
-        return self.ctx.child(var)
+        # ctx.child(variable) → VariableRule referring NP; the entity shares its referent.
+        return self.ctx.child(variable)
 
     def _apply_subject_restrictions(
         self, plan: QueryPlan, selected: VerbFragment
@@ -169,13 +170,15 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
         restriction = plan.subject_restriction
         if restriction is None:
             return selected, None
-        r = RestrictionAssembler(self.ctx).render(restriction, plan.subject)
-        modifiers = [*r.superlatives] + ([r.whose] if r.whose is not None else [])
+        rendered = RestrictionAssembler(self.ctx).render(restriction, plan.subject)
+        modifiers = [*rendered.superlatives] + (
+            [rendered.whose] if rendered.whose is not None else []
+        )
         if modifiers:
             selected = PhraseFragment(parts=[selected, *modifiers])
         where_item = (
-            PhraseFragment(parts=[Keywords.SUCH_THAT.as_fragment(), r.residual])
-            if r.residual is not None
+            PhraseFragment(parts=[Keywords.SUCH_THAT.as_fragment(), rendered.residual])
+            if rendered.residual is not None
             else None
         )
         return selected, where_item
@@ -190,30 +193,34 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
         Wrapped in a ``SubjectScope`` so chains in the restrictions pronominalise to *"its …"*.
         """
         plan = self.plan(entity)
-        var = entity.selected_variable
+        variable = entity.selected_variable
         definiteness = Definiteness.UNIQUE if plan.is_the else Definiteness.INDEFINITE
 
         modifiers: List[VerbFragment] = []
         if plan.subject_restriction is not None:
-            r = RestrictionAssembler(self.ctx).render(
+            rendered = RestrictionAssembler(self.ctx).render(
                 plan.subject_restriction, plan.subject
             )
-            modifiers.extend(r.superlatives)
-            if r.whose is not None:
-                modifiers.append(r.whose)
-            if r.residual is not None:
+            modifiers.extend(rendered.superlatives)
+            if rendered.whose is not None:
+                modifiers.append(rendered.whose)
+            if rendered.residual is not None:
                 modifiers.append(
-                    PhraseFragment(parts=[Keywords.WHERE.as_fragment(), r.residual])
+                    PhraseFragment(
+                        parts=[Keywords.WHERE.as_fragment(), rendered.residual]
+                    )
                 )
 
         noun = NounPhrase(
-            head=RoleFragment.for_variable(plan.selected_type, var),
+            head=RoleFragment.for_variable(plan.selected_type, variable),
             definiteness=definiteness,
-            referent_id=_subject_id(var),
+            referent_id=_subject_id(variable),
             modifiers=modifiers,
         )
         return (
-            SubjectScope(subject_id=_subject_id(var), child=noun) if modifiers else noun
+            SubjectScope(subject_id=_subject_id(variable), child=noun)
+            if modifiers
+            else noun
         )
 
     # ── query-body clauses ─────────────────────────────────────────────────────
@@ -267,8 +274,8 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
         registered.  Used by the chain assembler for Entity-rooted chains.
         """
         entity.build()
-        var = entity.selected_variable
-        variable_type = getattr(var, "_type_", None)
+        variable = entity.selected_variable
+        variable_type = getattr(variable, "_type_", None)
         type_name = (
             variable_type.__name__ if variable_type else FallbackNouns.ENTITY.text
         )
@@ -279,6 +286,6 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
 
         # A referring NP (referent_id below) — a repeat reduces to "the <type>" in the pass.
         return NounPhrase(
-            head=RoleFragment.for_variable(type_name, var),
-            referent_id=_subject_id(var),
+            head=RoleFragment.for_variable(type_name, variable),
+            referent_id=_subject_id(variable),
         )

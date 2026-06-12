@@ -19,7 +19,6 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from enum import Enum, auto
-from typing import TYPE_CHECKING
 from typing_extensions import ClassVar, Optional, Type
 
 from krrood.entity_query_language.core.variable import Variable
@@ -28,7 +27,7 @@ from krrood.entity_query_language.operators.comparator import Comparator
 from krrood.entity_query_language.verbalization.fragments.base import VerbFragment
 from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
     references,
-    single_hop_attr,
+    single_hop_attribute,
     superlative_aggregation,
 )
 from krrood.entity_query_language.verbalization.grammar.conditions.verbalizer import (
@@ -40,10 +39,6 @@ from krrood.entity_query_language.verbalization.microplanning.coordination impor
     RangeFold,
 )
 from krrood.entity_query_language.verbalization.subquery import aggregation_source_root
-
-if TYPE_CHECKING:
-    from krrood.entity_query_language.verbalization.context import VerbalizationContext
-
 
 # ── restriction rules (folded conjunct → fragment + its placement) ───────────
 
@@ -78,7 +73,7 @@ class RestrictionRule(SpecificityRule):
 
     @classmethod
     @abstractmethod
-    def applies(cls, item, subject_variable, context: "VerbalizationContext") -> bool:
+    def applies(cls, item, subject_variable) -> bool:
         """Return ``True`` when *item* is a restriction on *subject_variable* this rule renders."""
 
     @classmethod
@@ -93,10 +88,11 @@ class RangeRestrictionRule(RestrictionRule):
     placement = Placement.WHOSE_GROUP
 
     @classmethod
-    def applies(cls, item, subject_variable, context: "VerbalizationContext") -> bool:
+    def applies(cls, item, subject_variable) -> bool:
         return (
             isinstance(item, RangeFold)
-            and single_hop_attr(item.chain_expression, subject_variable) is not None
+            and single_hop_attribute(item.chain_expression, subject_variable)
+            is not None
         )
 
     @classmethod
@@ -113,10 +109,10 @@ class AttributePredicateRestrictionRule(RestrictionRule):
     placement = Placement.WHOSE_GROUP
 
     @classmethod
-    def applies(cls, item, subject_variable, context: "VerbalizationContext") -> bool:
+    def applies(cls, item, subject_variable) -> bool:
         if not isinstance(item, Comparator):
             return False
-        attr = single_hop_attr(item.left, subject_variable)
+        attr = single_hop_attribute(item.left, subject_variable)
         if attr is None or attr._type_ is bool:
             return False
         return not references(item.right, subject_variable)
@@ -138,7 +134,7 @@ class SuperlativeRestrictionRule(RestrictionRule):
     priority = 1
 
     @classmethod
-    def applies(cls, item, subject_variable, context: "VerbalizationContext") -> bool:
+    def applies(cls, item, subject_variable) -> bool:
         return superlative_aggregation(item, subject_variable) is not None
 
     @classmethod
@@ -146,14 +142,12 @@ class SuperlativeRestrictionRule(RestrictionRule):
         return ConditionVerbalizer(ctx).superlative_modifier(item, subject_variable)
 
 
-def match_restriction(
-    item, subject_variable, context: "VerbalizationContext"
-) -> Optional[Type[RestrictionRule]]:
+def match_restriction(item, subject_variable) -> Optional[Type[RestrictionRule]]:
     """The most-specific applicable :class:`RestrictionRule` for *item*, or ``None`` (residual).
 
     Pure analysis — no fragment is built; the planner uses this to partition conjuncts.
     """
-    return RestrictionRule.most_applicable(item, subject_variable, context)
+    return RestrictionRule.most_applicable(item, subject_variable)
 
 
 # ── restriction-subject rules (which variable does the WHERE restrict?) ──────
@@ -170,14 +164,12 @@ class RestrictionSubjectRule(SpecificityRule):
 
     @classmethod
     @abstractmethod
-    def applies(
-        cls, expression, selected_variable, context: "VerbalizationContext"
-    ) -> bool:
+    def applies(cls, expression, selected_variable) -> bool:
         """Return ``True`` when this rule can name the restriction subject of *expression*."""
 
     @classmethod
     @abstractmethod
-    def subject(cls, expression, selected_variable, context: "VerbalizationContext"):
+    def subject(cls, expression, selected_variable):
         """Return the :class:`Variable` the ``WHERE`` restricts."""
 
 
@@ -185,13 +177,11 @@ class SelectedVariableSubjectRule(RestrictionSubjectRule):
     """The selection is a plain :class:`Variable` → it is its own subject."""
 
     @classmethod
-    def applies(
-        cls, expression, selected_variable, context: "VerbalizationContext"
-    ) -> bool:
+    def applies(cls, expression, selected_variable) -> bool:
         return isinstance(selected_variable, Variable)
 
     @classmethod
-    def subject(cls, expression, selected_variable, context: "VerbalizationContext"):
+    def subject(cls, expression, selected_variable):
         return selected_variable
 
 
@@ -203,28 +193,18 @@ class AggregationSourceSubjectRule(RestrictionSubjectRule):
     """
 
     @classmethod
-    def applies(
-        cls, expression, selected_variable, context: "VerbalizationContext"
-    ) -> bool:
+    def applies(cls, expression, selected_variable) -> bool:
         return (
             isinstance(selected_variable, Aggregator)
             and aggregation_source_root(expression) is not None
         )
 
     @classmethod
-    def subject(cls, expression, selected_variable, context: VerbalizationContext):
+    def subject(cls, expression, selected_variable):
         return aggregation_source_root(expression)
 
 
-def restriction_subject(
-    expression, selected_variable, context: VerbalizationContext
-) -> Optional[Variable]:
+def restriction_subject(expression, selected_variable) -> Optional[Variable]:
     """The variable a selection's ``WHERE`` restricts (most-specific rule wins), or ``None``."""
-    chosen = RestrictionSubjectRule.most_applicable(
-        expression, selected_variable, context
-    )
-    return (
-        chosen.subject(expression, selected_variable, context)
-        if chosen is not None
-        else None
-    )
+    chosen = RestrictionSubjectRule.most_applicable(expression, selected_variable)
+    return chosen.subject(expression, selected_variable) if chosen is not None else None

@@ -28,11 +28,18 @@ References:
 
 from __future__ import annotations
 
-import operator as _operator
+import operator
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import TYPE_CHECKING
-from typing_extensions import List, Optional, Union
+from typing_extensions import (
+    TYPE_CHECKING,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 from krrood.entity_query_language.core.mapped_variable import Attribute, MappedVariable
 from krrood.entity_query_language.core.variable import Variable
@@ -50,6 +57,9 @@ from krrood.entity_query_language.verbalization.vocabulary.english import (
 
 if TYPE_CHECKING:
     from krrood.entity_query_language.core.base_expressions import SymbolicExpression
+
+#: Hashable identity of a pure attribute chain: ``(root variable id, ((name, owner), …))``.
+ChainKey = Tuple
 
 
 @dataclass
@@ -73,7 +83,7 @@ class _Bound(Enum):
     UPPER = auto()
 
 
-def _chain_key(expression) -> Optional[tuple]:
+def _chain_key(expression) -> Optional[ChainKey]:
     """Hashable identity of a pure attribute chain: ``(root_id, ((name, owner), …))`` or ``None``."""
     if not isinstance(expression, MappedVariable):
         return None
@@ -88,16 +98,16 @@ def _chain_key(expression) -> Optional[tuple]:
     return (root._id_, tuple(parts))
 
 
-def _classify(conjunct) -> Optional[tuple]:
+def _classify(conjunct) -> Optional[Tuple[ChainKey, _Bound]]:
     """Return ``(chain_key, _Bound)`` when *conjunct* is a bound comparison, else ``None``."""
     if not isinstance(conjunct, Comparator):
         return None
     key = _chain_key(conjunct.left)
     if key is None:
         return None
-    if conjunct.operation in (_operator.gt, _operator.ge):
+    if conjunct.operation in (operator.gt, operator.ge):
         return key, _Bound.LOWER
-    if conjunct.operation in (_operator.lt, _operator.le):
+    if conjunct.operation in (operator.lt, operator.le):
         return key, _Bound.UPPER
     return None
 
@@ -122,7 +132,7 @@ def fold_range_pairs(conjuncts: List) -> List[Union[SymbolicExpression, RangeFol
     slots: List[Union[SymbolicExpression, RangeFold]] = list(conjuncts)
     dropped = [False] * len(conjuncts)
     # chain_key -> indices of bounds awaiting a complement (always one direction at a time).
-    awaiting: dict = {}
+    awaiting: Dict[ChainKey, List[int]] = {}
     for i, info in enumerate(infos):
         if info is None:
             continue
@@ -150,6 +160,34 @@ def fold_range_pairs(conjuncts: List) -> List[Union[SymbolicExpression, RangeFol
 def has_pair(conjuncts: List) -> bool:
     """Return ``True`` when :func:`fold_range_pairs` would produce at least one :class:`RangeFold`."""
     return any(isinstance(item, RangeFold) for item in fold_range_pairs(conjuncts))
+
+
+def fragment_for_folded_conjunct(
+    item: Union[SymbolicExpression, RangeFold],
+    child: Callable[[SymbolicExpression], VerbFragment],
+    *,
+    compact: bool,
+) -> VerbFragment:
+    """
+    Render one item of a :func:`fold_range_pairs` result: a :class:`RangeFold` becomes a
+    *between* phrase (:func:`build_between`); any other conjunct is rendered via *child*.
+
+    The single home of the fold-or-recurse decision, shared by the range conjunction rule
+    and the residual-restriction renderer.
+
+    :param item: A folded conjunct (a :class:`RangeFold` or a raw expression).
+    :param child: The fold continuation rendering a raw expression.
+    :param compact: Drop the copula in the *between* phrase (HAVING / post-nominal contexts).
+    :return: The fragment for *item*.
+    """
+    if isinstance(item, RangeFold):
+        return build_between(
+            child(item.chain_expression),
+            child(item.lower_expression),
+            child(item.upper_expression),
+            compact=compact,
+        )
+    return child(item)
 
 
 def build_between(

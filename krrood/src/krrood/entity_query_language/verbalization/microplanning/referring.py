@@ -23,7 +23,6 @@ from __future__ import annotations
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 from typing_extensions import Dict, List, Set
 
 from krrood.entity_query_language.core.variable import Variable, Literal
@@ -34,11 +33,8 @@ from krrood.entity_query_language.verbalization.subquery import (
     selected_aggregator,
 )
 
-if TYPE_CHECKING:
-    from krrood.entity_query_language.core.base_expressions import SymbolicExpression
 
-
-def _aggregation_source_ids(expression) -> set:
+def _aggregation_source_ids(expression) -> Set[uuid.UUID]:
     """
     Return the ``_id_`` of every variable that serves as the source *population*
     of an aggregation sub-query (e.g. the ``BankTransaction`` behind
@@ -54,7 +50,7 @@ def _aggregation_source_ids(expression) -> set:
     :return: Set of variable ids to exclude from numbering.
     :rtype: set
     """
-    ids: set = set()
+    ids: Set[uuid.UUID] = set()
     for node in expression._all_expressions_:
         if isinstance(node, Entity) and selected_aggregator(node) is not None:
             root = aggregation_source_root(node)
@@ -78,7 +74,7 @@ def _build_disambiguation_map(expression) -> Dict[uuid.UUID, str]:
     suppressed = _aggregation_source_ids(expression)
 
     type_to_ids: Dict[str, List[uuid.UUID]] = defaultdict(list)
-    seen_ids: set = set()
+    seen_ids: Set[uuid.UUID] = set()
 
     for node in expression._all_expressions_:
         if isinstance(node, Variable) and not isinstance(node, Literal):
@@ -98,8 +94,8 @@ def _build_disambiguation_map(expression) -> Dict[uuid.UUID, str]:
         if len(ids) == 1:
             result[ids[0]] = type_name
         else:
-            for n, vid in enumerate(ids, 1):
-                result[vid] = f"{type_name} {n}"
+            for ordinal, variable_id in enumerate(ids, 1):
+                result[variable_id] = f"{type_name} {ordinal}"
     return result
 
 
@@ -108,15 +104,15 @@ class ReferringExpressions:
     """
     Pre-computed referring-expression state for a verbalization pass.
 
-    Since coreference resolution moved into the document-order
-    :class:`~krrood.entity_query_language.verbalization.rendering.coreference_processor.CoreferenceProcessor`,
-    this holds only *pre-computed* / *cross-build* state: the disambiguation labels
+    Coreference resolution itself is the document-order
+    :class:`~krrood.entity_query_language.verbalization.rendering.coreference_processor.CoreferenceProcessor`
+    pass; this service holds only *pre-computed* / *cross-build* state: the disambiguation labels
     (:attr:`disambiguation_map`, numbering colliding types) and the set of referents already
     introduced (:attr:`seen`) — the latter solely so a second verbalization sharing this context
     is seeded as already-mentioned (the within-build first/subsequent decision is the pass's).
     """
 
-    seen: "Set[uuid.UUID]" = field(default_factory=set)
+    seen: Set[uuid.UUID] = field(default_factory=set)
     """Referent ``_id_`` s introduced so far — used only to seed the coreference pass across
     builds sharing this context (see :meth:`EQLVerbalizer.build`), so verbalizing the same
     expression twice on one context reads *"a Robot"* then *"the Robot"*.  The within-build
@@ -136,30 +132,30 @@ class ReferringExpressions:
         """Record *expression* as introduced (so a later build sharing this context seeds it)."""
         self.seen.add(expression._id_)
 
-    def numbered_label(self, var) -> tuple[str, bool]:
-        """The display ``(label, is_numbered)`` for *var* and record it as introduced.
+    def numbered_label(self, variable) -> tuple[str, bool]:
+        """The display ``(label, is_numbered)`` for *variable* and record it as introduced.
 
         The label is the pre-computed disambiguation label (*"Robot 2"* for a colliding type),
         else the plain type name; *is_numbered* is whether they differ (a numbered collision).
         The single source of the disambiguation lookup — shared by :meth:`noun_for_parts` and the
         plural noun-phrase builders.  Records the mention in :attr:`seen` for cross-build seeding.
 
-        :param var: A :class:`~krrood.entity_query_language.core.variable.Variable` instance.
+        :param variable: A :class:`~krrood.entity_query_language.core.variable.Variable` instance.
         :return: Tuple of ``(display_label, is_numbered)``.
         :rtype: tuple
         """
         type_name = (
-            var._type_.__name__
-            if getattr(var, "_type_", None)
-            else var.__class__.__name__
+            variable._type_.__name__
+            if getattr(variable, "_type_", None)
+            else variable.__class__.__name__
         )
-        label = self.disambiguation_map.get(var._id_, type_name)
-        self.seen.add(var._id_)
+        label = self.disambiguation_map.get(variable._id_, type_name)
+        self.seen.add(variable._id_)
         return label, label != type_name
 
-    def noun_for_parts(self, var) -> tuple[Definiteness, str]:
+    def noun_for_parts(self, variable) -> tuple[Definiteness, str]:
         """
-        Return the **first-mention** ``(Definiteness, label)`` for *var* — a numbered variable
+        Return the **first-mention** ``(Definiteness, label)`` for *variable* — a numbered variable
         (*"Robot 2"*) is ``BARE``, any other is ``INDEFINITE`` (*"a Robot"*).
 
         The *subsequent*-mention downgrade to definite is no longer decided here: the caller
@@ -168,9 +164,9 @@ class ReferringExpressions:
         :class:`~krrood.entity_query_language.verbalization.rendering.coreference_processor.CoreferenceProcessor`
         downgrades repeats in document order (the discourse decision, in one place).
 
-        :param var: A :class:`~krrood.entity_query_language.core.variable.Variable` instance.
+        :param variable: A :class:`~krrood.entity_query_language.core.variable.Variable` instance.
         :return: Tuple of ``(first-mention Definiteness, display_label)``.
         :rtype: tuple
         """
-        label, is_numbered = self.numbered_label(var)
+        label, is_numbered = self.numbered_label(variable)
         return (Definiteness.BARE if is_numbered else Definiteness.INDEFINITE), label

@@ -17,6 +17,8 @@ Reference: Gatt & Reiter (2009), SimpleNLG — surface realisation.
 
 from __future__ import annotations
 
+import uuid
+
 from typing_extensions import Dict, List, Tuple
 
 from krrood.entity_query_language.core.variable import InstantiatedVariable
@@ -60,32 +62,38 @@ class InstantiatedAssembler(Assembler[InstantiatedVariable, InstantiatedPlan]):
         mention to *"the <type>"* in document order, so no build-time seen check here.
         """
         self.ctx.scope.push_constraint_frame()
-        binding_frags, overrides = self._bindings(plan, node._type_)
+        binding_fragments, overrides = self._bindings(plan, node._type_)
         self.ctx.scope.binding_overrides.update(overrides)
         deferred = self.ctx.scope.pop_constraint_frame()
-        constraint_frags = [self.ctx.child(expression) for expression in deferred]
+        constraint_fragments = [self.ctx.child(expression) for expression in deferred]
 
-        return self._phrase(node, plan.type_name, binding_frags, constraint_frags)
+        return self._phrase(
+            node, plan.type_name, binding_fragments, constraint_fragments
+        )
 
     # ── bindings ───────────────────────────────────────────────────────────────
 
     def _bindings(
-        self, plan: InstantiatedPlan, type_cls
-    ) -> Tuple[List[VerbFragment], Dict]:
+        self, plan: InstantiatedPlan, instantiated_type
+    ) -> Tuple[List[VerbFragment], Dict[uuid.UUID, VerbFragment]]:
         """Build every binding fragment and collect overrides (registered together after)."""
-        binding_frags: List[VerbFragment] = []
-        overrides: Dict = {}
+        binding_fragments: List[VerbFragment] = []
+        overrides: Dict[uuid.UUID, VerbFragment] = {}
         for binding in plan.bindings:
-            field_ref = self._field_ref(binding.field_name, plan.type_name, type_cls)
-            binding_frags.append(
+            field_reference = self._field_reference(
+                binding.field_name, plan.type_name, instantiated_type
+            )
+            binding_fragments.append(
                 PhraseFragment(
-                    parts=[field_ref, self._copula(binding), self._value(binding)]
+                    parts=[field_reference, self._copula(binding), self._value(binding)]
                 )
             )
-            overrides[binding.value._id_] = field_ref
-        return binding_frags, overrides
+            overrides[binding.value._id_] = field_reference
+        return binding_fragments, overrides
 
-    def _field_ref(self, field_name: str, type_name: str, type_cls) -> VerbFragment:
+    def _field_reference(
+        self, field_name: str, type_name: str, instantiated_type
+    ) -> VerbFragment:
         """*"the <field> of the <Type>"* — a single-hop possessive, built by the shared
         :func:`~krrood.entity_query_language.verbalization.microplanning.possessive.possessive_path`
         so the genitive structure lives in exactly one place."""
@@ -96,8 +104,8 @@ class InstantiatedAssembler(Assembler[InstantiatedVariable, InstantiatedPlan]):
                     text=type_name,
                     role=SemanticRole.VARIABLE,
                     source_ref=(
-                        SourceRef.for_type(type_cls)
-                        if isinstance(type_cls, type)
+                        SourceRef.for_type(instantiated_type)
+                        if isinstance(instantiated_type, type)
                         else None
                     ),
                 ),
@@ -119,14 +127,14 @@ class InstantiatedAssembler(Assembler[InstantiatedVariable, InstantiatedPlan]):
         self,
         node,
         type_name: str,
-        binding_frags: List[VerbFragment],
-        constraint_frags: List[VerbFragment],
+        binding_fragments: List[VerbFragment],
+        constraint_fragments: List[VerbFragment],
     ) -> VerbFragment:
         """*"a <type>, where <bindings>, such that <constraints>"* — the referring NP with
         its appositive clauses as droppable modifiers."""
         modifiers: List[VerbFragment] = []
-        if binding_frags:
-            joined = oxford_and(binding_frags, Conjunctions.AND.as_fragment())
+        if binding_fragments:
+            joined = oxford_and(binding_fragments, Conjunctions.AND.as_fragment())
             modifiers.append(
                 PhraseFragment(
                     parts=[
@@ -136,14 +144,16 @@ class InstantiatedAssembler(Assembler[InstantiatedVariable, InstantiatedPlan]):
                     ]
                 )
             )
-        if constraint_frags:
-            joined_c = oxford_and(constraint_frags, Conjunctions.AND.as_fragment())
+        if constraint_fragments:
+            joined_constraints = oxford_and(
+                constraint_fragments, Conjunctions.AND.as_fragment()
+            )
             modifiers.append(
                 PhraseFragment(
                     parts=[
                         Punctuation.COMMA.as_fragment(),
                         Keywords.SUCH_THAT.as_fragment(),
-                        joined_c,
+                        joined_constraints,
                     ]
                 )
             )

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from enum import Enum
 
-from typing_extensions import Type
+from typing_extensions import Optional
 
 from krrood.entity_query_language.core.mapped_variable import MappedVariable
 from krrood.entity_query_language.core.variable import Variable, Literal

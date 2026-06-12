@@ -14,9 +14,9 @@ from typing import List
 from krrood.entity_query_language.factories import variable
 from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
     attribute_names,
-    is_bool_attr_chain,
+    is_boolean_attribute_chain,
     references,
-    single_hop_attr,
+    single_hop_attribute,
 )
 from krrood.entity_query_language.verbalization.pipeline import verbalize_expression
 
@@ -34,21 +34,21 @@ class _Robot:
 
 def test_single_hop_attr_recognizes_subject_attribute():
     r = variable(_Robot, [])
-    attr = single_hop_attr(r.battery, r)
+    attr = single_hop_attribute(r.battery, r)
     assert attr is not None and attr._attribute_name_ == "battery"
 
 
 def test_single_hop_attr_rejects_multi_hop_and_other_subject():
     r = variable(_Robot, [])
     other = variable(_Robot, [])
-    assert single_hop_attr(r.tasks[0].completed, r) is None  # multi-hop
-    assert single_hop_attr(r.battery, other) is None  # different subject
+    assert single_hop_attribute(r.tasks[0].completed, r) is None  # multi-hop
+    assert single_hop_attribute(r.battery, other) is None  # different subject
 
 
-def test_is_bool_attr_chain_only_for_bool_terminal():
+def test_is_boolean_attribute_chain_only_for_boolean_terminal():
     r = variable(_Robot, [])
-    assert is_bool_attr_chain(r.tasks[0].completed) is True
-    assert is_bool_attr_chain(r.battery) is False
+    assert is_boolean_attribute_chain(r.tasks[0].completed) is True
+    assert is_boolean_attribute_chain(r.battery) is False
 
 
 def test_attribute_names_walks_the_chain():

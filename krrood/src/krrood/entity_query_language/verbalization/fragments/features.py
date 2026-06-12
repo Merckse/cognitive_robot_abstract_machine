@@ -23,7 +23,7 @@ class Number(Enum):
     PLURAL = "plural"
 
     @classmethod
-    def of(cls, is_plural: bool) -> "Number":
+    def of(cls, is_plural: bool) -> Number:
         """``PLURAL`` when *is_plural* else ``SINGULAR`` (bridges boolean plan features)."""
         return cls.PLURAL if is_plural else cls.SINGULAR
 

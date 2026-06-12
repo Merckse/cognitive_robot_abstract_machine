@@ -8,7 +8,8 @@ Restriction **assembler** — render a
 Realisation-only, but deliberately **not** an :class:`Assembler` subclass: a restriction yields
 *several* pieces (:class:`RestrictionFragments`), not a single fragment — the caller drops each
 into its own slot (inline after the selection, as a noun modifier, or inside an aggregation
-scope).  Extracted from ``QueryAssembler`` so the three callers share one renderer.
+scope).  Shared by ``QueryAssembler`` and ``AggregationValueAssembler`` so the
+restriction rendering lives in one place.
 
 Reference: Reiter & Dale (2000) — content structuring (the WHERE partition is the *plan*).
 """
@@ -31,13 +32,22 @@ from krrood.entity_query_language.verbalization.grammar.planning.query import (
 )
 from krrood.entity_query_language.verbalization.grammar.restriction import Placement
 from krrood.entity_query_language.verbalization.microplanning.coordination import (
-    build_between,
-    RangeFold,
+    fragment_for_folded_conjunct,
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import (
     Conjunctions,
     Keywords,
 )
+
+
+class UnplacedRestrictionError(ValueError):
+    """A :class:`~krrood.entity_query_language.verbalization.grammar.restriction.RestrictionRule`
+    declared a :class:`~krrood.entity_query_language.verbalization.grammar.restriction.Placement`
+    that no :class:`RestrictionFragments` slot surfaces.
+
+    Raised loudly instead of dropping the fragment: add a field on
+    :class:`RestrictionFragments` and surface it in the consumers
+    (``QueryAssembler`` / ``AggregationValueAssembler``)."""
 
 
 @dataclass(frozen=True)
@@ -72,10 +82,9 @@ class RestrictionAssembler:
         grouped = by_placement.pop(Placement.WHOSE_GROUP, [])
         # Loud, not silent: a rule declaring a placement no slot surfaces is a bug, not a drop.
         if by_placement:
-            raise ValueError(
+            raise UnplacedRestrictionError(
                 "Restriction placement(s) with no RestrictionFragments slot: "
-                f"{[p.name for p in by_placement]} — add a field here and surface it in "
-                "the consumers (QueryAssembler / AggregationValueAssembler)."
+                f"{[placement.name for placement in by_placement]}."
             )
 
         whose = (
@@ -97,19 +106,12 @@ class RestrictionAssembler:
 
     def _residual(self, items) -> VerbFragment:
         """The residual conjuncts (raw expressions / folded ranges) joined into one condition."""
-        parts: list = []
-        for item in items:
-            if isinstance(item, RangeFold):
-                parts.append(
-                    build_between(
-                        self.ctx.child(item.chain_expression),
-                        self.ctx.child(item.lower_expression),
-                        self.ctx.child(item.upper_expression),
-                        compact=self.ctx.config.compact_predicates,
-                    )
-                )
-            else:
-                parts.append(self.ctx.child(item))
+        parts: List[VerbFragment] = [
+            fragment_for_folded_conjunct(
+                item, self.ctx.child, compact=self.ctx.config.compact_predicates
+            )
+            for item in items
+        ]
         if len(parts) == 1:
             return parts[0]
         return oxford_and(parts, Conjunctions.AND.as_fragment())

@@ -9,8 +9,7 @@ is assembled by
 from __future__ import annotations
 
 import operator
-from typing import TYPE_CHECKING
-from typing_extensions import Optional
+from typing_extensions import TYPE_CHECKING, Optional
 
 from krrood.entity_query_language.verbalization.chain_utils import is_temporal
 from krrood.entity_query_language.verbalization.fragments.base import (
@@ -56,13 +55,13 @@ def comparator_operator(
     """
     if compact is None:
         compact = context.config.compact_predicates
-    op = comparator.operation
+    operation = comparator.operation
 
-    is_calc = op in (operator.eq, operator.ne) and (
+    is_calculation = operation in (operator.eq, operator.ne) and (
         is_calculation_value(comparator.left) or is_calculation_value(comparator.right)
     )
-    if is_calc:
-        calc_negated = (op is operator.ne) ^ negated
+    if is_calculation:
+        calc_negated = (operation is operator.ne) ^ negated
         return Operators.CALC_EQ.select(
             negated=calc_negated, compact=compact
         ).as_fragment()
@@ -70,7 +69,7 @@ def comparator_operator(
     temporal = is_temporal(comparator.left) or is_temporal(comparator.right)
     try:
         return (
-            Operators.from_callable(op)
+            Operators.from_callable(operation)
             .select(negated=negated, compact=compact, temporal=temporal)
             .as_fragment()
         )

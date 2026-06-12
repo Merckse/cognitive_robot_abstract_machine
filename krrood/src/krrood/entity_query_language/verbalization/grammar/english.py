@@ -53,7 +53,7 @@ from krrood.entity_query_language.verbalization.fragments.features import (
 )
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
 from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
-    is_bool_attr_chain,
+    is_boolean_attribute_chain,
 )
 from krrood.entity_query_language.verbalization.grammar.conditions.verbalizer import (
     ConditionVerbalizer,
@@ -63,10 +63,9 @@ from krrood.entity_query_language.verbalization.grammar.phrase_rule import (
     PhraseRule,
 )
 from krrood.entity_query_language.verbalization.microplanning.coordination import (
-    build_between,
     fold_range_pairs,
+    fragment_for_folded_conjunct,
     has_pair,
-    RangeFold,
 )
 from krrood.entity_query_language.verbalization.rendering.realization import (
     realize_subtree,
@@ -75,6 +74,7 @@ from krrood.entity_query_language.verbalization.grammar.assembly.chains import (
     ChainAssembler,
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import (
+    COMMA_SEPARATOR,
     Conjunctions,
     FallbackNouns,
     Keywords,
@@ -85,8 +85,6 @@ from krrood.entity_query_language.verbalization.vocabulary.english import (
 from krrood.entity_query_language.verbalization.vocabulary.words import ChildForm
 from krrood.ormatic.utils import classes_of_module
 
-# Constructs + relocated helpers for the complex query / inference families
-# (Phase A transcription; the helpers move into grammar/ in Phase B).
 from krrood.entity_query_language.core.base_expressions import Filter
 from krrood.entity_query_language.query.operations import GroupedBy, OrderedBy
 from krrood.entity_query_language.query.quantifiers import ResultQuantifier
@@ -217,19 +215,12 @@ class RangeConjunctionRule(PhraseRule):
         return has_pair(flatten_operands(node, AND))
 
     def build(self, node, ctx: Ctx):
-        parts: List[VerbFragment] = []
-        for item in fold_range_pairs(flatten_operands(node, AND)):
-            if isinstance(item, RangeFold):
-                parts.append(
-                    build_between(
-                        ctx.child(item.chain_expression),
-                        ctx.child(item.lower_expression),
-                        ctx.child(item.upper_expression),
-                        compact=ctx.config.compact_predicates,
-                    )
-                )
-            else:
-                parts.append(ctx.child(item))
+        parts: List[VerbFragment] = [
+            fragment_for_folded_conjunct(
+                item, ctx.child, compact=ctx.config.compact_predicates
+            )
+            for item in fold_range_pairs(flatten_operands(node, AND))
+        ]
         if len(parts) == 1:
             return parts[0]
         return oxford_and(parts, Conjunctions.AND.as_fragment())
@@ -247,7 +238,7 @@ class OrRule(PhraseRule):
             return parts[0]
         # "either a, b, or c": the head items are comma-joined, then a trailing comma that the
         # orthography pass hugs to the last head item — no separator="" bookkeeping here.
-        head = PhraseFragment(parts=parts[:-1], separator=Punctuation.COMMA.text + " ")
+        head = PhraseFragment(parts=parts[:-1], separator=COMMA_SEPARATOR)
         return PhraseFragment(
             parts=[
                 Logicals.EITHER.as_fragment(),
@@ -298,7 +289,7 @@ class NotBoolAttrRule(PhraseRule):
     name = "not-bool-attr"
 
     def when(self, node, ctx: Ctx):
-        return is_bool_attr_chain(node._child_)
+        return is_boolean_attribute_chain(node._child_)
 
     def build(self, node, ctx: Ctx):
         return ChainAssembler(ctx).chain(node._child_, negated=True)
@@ -398,7 +389,7 @@ class ExistsRule(PhraseRule):
 
 
 # ── query / entity family ───────────────────────────────────────────────────
-# Phase B: each rule wires the query planner (what to say) + assembler (realise it).
+# Each rule wires the query planner (what to say) + assembler (realise it).
 
 
 class TopLevelEntityRule(PhraseRule):

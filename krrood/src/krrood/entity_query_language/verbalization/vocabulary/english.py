@@ -18,11 +18,14 @@ Operators uses OperatorPhrase values and exposes .select() + .from_callable().
 
 from __future__ import annotations
 
-import operator as _operator
+import operator
+import uuid
 from dataclasses import dataclass
 from enum import Enum
 
-from krrood.entity_query_language.operators.comparator import not_contains as _nc
+from typing_extensions import Callable, Dict, Optional
+
+from krrood.entity_query_language.operators.comparator import not_contains
 
 from krrood.entity_query_language.verbalization import morphology
 
@@ -62,7 +65,9 @@ class SingularExistential(PlainWord):
     ``inflect`` library.
     """
 
-    def build_phrase(self, type_name: str, referent_id=None) -> VerbFragment:
+    def build_phrase(
+        self, type_name: str, referent_id: Optional[uuid.UUID] = None
+    ) -> VerbFragment:
         """
         Build *"there's a/an <type_name>"* as a
         :class:`~krrood.entity_query_language.verbalization.fragments.base.PhraseFragment`.
@@ -259,6 +264,11 @@ class Punctuation(VocabEnum):
     CLOSE_PAREN = PunctuationWord(")", glue=Glue.LEFT)
 
 
+#: The inline list separator (``", "``) seeded from :attr:`Punctuation.COMMA` — the
+#: ``separator`` of a comma-joined :class:`~krrood.entity_query_language.verbalization.fragments.base.PhraseFragment`.
+COMMA_SEPARATOR: str = Punctuation.COMMA.text + " "
+
+
 class Pronouns(VocabEnum):
     """Coreference pronouns standing in for a previously introduced variable."""
 
@@ -320,11 +330,13 @@ class ExistentialPhrase(VocabEnum):
     THERE_ARE = PluralExistential("there are")
 
     @classmethod
-    def for_number(cls, number: Number) -> "ExistentialPhrase":
+    def for_number(cls, number: Number) -> ExistentialPhrase:
         """The existential frame agreeing with *number*: ``THERE_ARE`` / ``THERE_IS_A``."""
         return cls.THERE_ARE if number is Number.PLURAL else cls.THERE_IS_A
 
-    def build_phrase(self, type_name: str, referent_id=None) -> VerbFragment:
+    def build_phrase(
+        self, type_name: str, referent_id: Optional[uuid.UUID] = None
+    ) -> VerbFragment:
         """
         Delegate to the underlying :class:`SingularExistential` or :class:`PluralExistential`.
 
@@ -506,13 +518,13 @@ class Operators(Enum):
 
 #: Map Python ``operator`` callables to :class:`Operators` members.
 #: Built once at module load time — avoids rebuilding on every call.
-_OPERATOR_CALLABLE_MAP: dict = {
-    _operator.eq: Operators.EQ,
-    _operator.ne: Operators.NE,
-    _operator.lt: Operators.LT,
-    _operator.le: Operators.LE,
-    _operator.gt: Operators.GT,
-    _operator.ge: Operators.GE,
-    _operator.contains: Operators.CONTAINS,
-    _nc: Operators.NOT_CONTAINS,
+_OPERATOR_CALLABLE_MAP: Dict[Callable, Operators] = {
+    operator.eq: Operators.EQ,
+    operator.ne: Operators.NE,
+    operator.lt: Operators.LT,
+    operator.le: Operators.LE,
+    operator.gt: Operators.GT,
+    operator.ge: Operators.GE,
+    operator.contains: Operators.CONTAINS,
+    not_contains: Operators.NOT_CONTAINS,
 }

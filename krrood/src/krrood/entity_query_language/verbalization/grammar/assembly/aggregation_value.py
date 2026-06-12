@@ -2,7 +2,7 @@
 Aggregation value-subquery **assembler** — realise an aggregation used as a *value*
 (*"the maximum amount"*, or *"the sum of amounts among BankTransactions whose …"*).
 
-This is one of the query family's standalone surface forms, extracted from ``QueryAssembler``:
+This is one of the query family's standalone surface forms:
 it is keyed on the plan's :attr:`QueryPlan.aggregation_data` and composes the aggregate noun
 with an optional *"among <plural source> [whose/such that] [having]"* scope.  It reuses the
 shared :class:`RestrictionAssembler` (source filter) and :class:`HavingAssembler`.
@@ -62,7 +62,7 @@ class AggregationValueAssembler(Assembler[Query, QueryPlan]):
 
         aggregation_kind = AGGREGATION_KIND[type(aggregation_data.aggregator)]
         plural_leaf = aggregation_kind.value.child_form == ChildForm.PLURAL
-        leaf_frag = RoleFragment.for_attribute(
+        leaf_fragment = RoleFragment.for_attribute(
             aggregation_data.leaf._owner_class_,
             aggregation_data.leaf._attribute_name_,
             number=Number.of(plural_leaf),
@@ -71,7 +71,7 @@ class AggregationValueAssembler(Assembler[Query, QueryPlan]):
         aggregate = NounPhrase(
             head=aggregation_kind.as_fragment(),
             definiteness=Definiteness.DEFINITE,
-            modifiers=[leaf_frag],
+            modifiers=[leaf_fragment],
         )
 
         if not aggregation_data.is_constrained:
@@ -86,7 +86,7 @@ class AggregationValueAssembler(Assembler[Query, QueryPlan]):
         ambiguous singular re-mention *"the <Type>"* (which would collide with an outer
         same-type subject)."""
         source = plan.aggregation_data.source
-        source_frag = (
+        source_fragment = (
             self.ctx.child(source, number=Number.PLURAL)
             if source is not None
             else FallbackNouns.ENTITY.plural_fragment()
@@ -94,18 +94,18 @@ class AggregationValueAssembler(Assembler[Query, QueryPlan]):
         parts: List[VerbFragment] = [
             aggregate,
             Prepositions.AMONG.as_fragment(),
-            source_frag,
+            source_fragment,
         ]
 
         if plan.subject_restriction is not None:
-            r = RestrictionAssembler(self.ctx).render(
+            rendered = RestrictionAssembler(self.ctx).render(
                 plan.subject_restriction, plan.subject
             )
-            parts.extend(r.superlatives)
-            if r.whose is not None:
-                parts.append(r.whose)
-            if r.residual is not None:
-                parts += [Keywords.SUCH_THAT.as_fragment(), r.residual]
+            parts.extend(rendered.superlatives)
+            if rendered.whose is not None:
+                parts.append(rendered.whose)
+            if rendered.residual is not None:
+                parts += [Keywords.SUCH_THAT.as_fragment(), rendered.residual]
 
         having = HavingAssembler(self.ctx).clause(node)
         if having is not None:

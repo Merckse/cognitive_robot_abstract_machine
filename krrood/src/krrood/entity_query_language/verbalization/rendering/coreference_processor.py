@@ -21,8 +21,8 @@ Gatt & Reiter (2009), SimpleNLG — ordered realisation stages.
 
 from __future__ import annotations
 
-from dataclasses import replace
-from typing import Iterable, List, Optional, Tuple
+from dataclasses import dataclass, field, replace
+from typing_extensions import Iterable, List, Optional, Set, Tuple
 import uuid
 
 from krrood.entity_query_language.verbalization.fragments.base import (
@@ -43,8 +43,21 @@ from krrood.entity_query_language.verbalization.microplanning.possessive import 
 from krrood.entity_query_language.verbalization.vocabulary.english import Pronouns
 
 
+@dataclass
 class CoreferenceProcessor:
-    """Resolve every referring :class:`NounPhrase` in document order (first / repeat / pronoun)."""
+    """Resolve every referring :class:`NounPhrase` in document order (first / repeat / pronoun).
+
+    Stateful per pass (the walk threads :attr:`_seen` and :attr:`_subject_stack`); create a
+    fresh instance per :meth:`process` caller rather than sharing one across passes.
+    """
+
+    _seen: Set[uuid.UUID] = field(init=False, default_factory=set)
+    """Referent ids already mentioned at the current point of the walk."""
+
+    _subject_stack: List[Tuple[Optional[uuid.UUID], Number]] = field(
+        init=False, default_factory=list
+    )
+    """Stack of ``(subject_id, subject_number)`` frames — the number selects *"its"*/*"their"*."""
 
     def process(
         self,
@@ -58,9 +71,8 @@ class CoreferenceProcessor:
             (so the same expression verbalized twice against one context reads *"a Robot"* then
             *"the Robot"*).  These are treated as already-mentioned before the walk begins.
         """
-        self._seen: set[uuid.UUID] = set(already_seen or ())
-        # Stack of (subject_id, subject_number) frames — the number selects "its"/"their".
-        self._subject_stack: List[Tuple[Optional[uuid.UUID], Number]] = []
+        self._seen = set(already_seen or ())
+        self._subject_stack = []
         return self._walk(fragment)
 
     def _walk(self, fragment: VerbFragment) -> VerbFragment:
@@ -89,32 +101,40 @@ class CoreferenceProcessor:
                 rebuilt = map_structural_children(fragment, self._walk)
                 return rebuilt if rebuilt is not None else fragment
 
-    def _possessive_chain(self, pc: PossessiveChain) -> VerbFragment:
+    def _possessive_chain(self, possessive_chain: PossessiveChain) -> VerbFragment:
         """Render a chain as *"its/their …"* when its root is the current subject (the pronoun
         agreeing with the subject's number — *"their"* for a plural population), else as the
         possessive *"the … of <root>"* (resolving the root NP for first/subsequent mention).
         """
-        if self._pronominalises(pc):
+        if self._pronominalises(possessive_chain):
             _, subject_number = self._subject_stack[-1]
             pronoun = (
                 Pronouns.THEIR if subject_number is Number.PLURAL else Pronouns.ITS
             )
-            return pronominal_path(pc.parts, pronoun.as_fragment())
-        return possessive_path(pc.parts, self._walk(pc.root_fragment))
+            return pronominal_path(possessive_chain.parts, pronoun.as_fragment())
+        return possessive_path(
+            possessive_chain.parts, self._walk(possessive_chain.root_fragment)
+        )
 
-    def _pronominalises(self, pc: PossessiveChain) -> bool:
+    def _pronominalises(self, possessive_chain: PossessiveChain) -> bool:
         """The chain root is the current, already-introduced, non-numbered subject."""
-        if pc.root_referent_id is None or pc.root_referent_id not in self._seen:
+        if (
+            possessive_chain.root_referent_id is None
+            or possessive_chain.root_referent_id not in self._seen
+        ):
             return False
-        if not self._subject_stack or self._subject_stack[-1][0] != pc.root_referent_id:
+        if (
+            not self._subject_stack
+            or self._subject_stack[-1][0] != possessive_chain.root_referent_id
+        ):
             return False
         # A numbered root ("Robot 2") renders BARE and is never pronominalised.
         return not (
-            isinstance(pc.root_fragment, NounPhrase)
-            and pc.root_fragment.definiteness is Definiteness.BARE
+            isinstance(possessive_chain.root_fragment, NounPhrase)
+            and possessive_chain.root_fragment.definiteness is Definiteness.BARE
         )
 
-    def _noun_phrase(self, np: NounPhrase) -> VerbFragment:
+    def _noun_phrase(self, noun_phrase: NounPhrase) -> VerbFragment:
         """Resolve a referring NP (first / repeat) in document order; recurse otherwise.
 
         Every mention (singular or plural) marks its referent introduced.  Only a **repeat
@@ -124,28 +144,28 @@ class CoreferenceProcessor:
         ``BARE`` numbered label (*"Robot 2"*) never downgrades.  A non-referring NP is just
         rebuilt around its (recursed) children.
         """
-        if np.referent_id is None:
-            return self._rebuilt(np)
-        repeat = np.referent_id in self._seen
-        self._seen.add(np.referent_id)
+        if noun_phrase.referent_id is None:
+            return self._rebuilt(noun_phrase)
+        repeat = noun_phrase.referent_id in self._seen
+        self._seen.add(noun_phrase.referent_id)
         downgrade = (
             repeat
-            and np.number is Number.SINGULAR
-            and np.definiteness is not Definiteness.BARE
+            and noun_phrase.number is Number.SINGULAR
+            and noun_phrase.definiteness is not Definiteness.BARE
         )
         if downgrade:
             return NounPhrase(
-                head=self._walk(np.head),
-                number=np.number,
+                head=self._walk(noun_phrase.head),
+                number=noun_phrase.number,
                 definiteness=Definiteness.DEFINITE,
-                referent_id=np.referent_id,
+                referent_id=noun_phrase.referent_id,
             )
-        return self._rebuilt(np)
+        return self._rebuilt(noun_phrase)
 
-    def _rebuilt(self, np: NounPhrase) -> NounPhrase:
-        """Rebuild *np* with its head and modifiers recursed (document order preserved)."""
+    def _rebuilt(self, noun_phrase: NounPhrase) -> NounPhrase:
+        """Rebuild *noun_phrase* with its head and modifiers recursed (document order preserved)."""
         return replace(
-            np,
-            head=self._walk(np.head),
-            modifiers=[self._walk(m) for m in np.modifiers],
+            noun_phrase,
+            head=self._walk(noun_phrase.head),
+            modifiers=[self._walk(modifier) for modifier in noun_phrase.modifiers],
         )

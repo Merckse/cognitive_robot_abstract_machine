@@ -14,16 +14,12 @@ Also defines :class:`BulletStyle` and :class:`IndentSize` enums used by
 
 from __future__ import annotations
 
-import ast
 import html
-import inspect
 import logging
 import os
-import textwrap
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from functools import lru_cache
 from typing_extensions import ClassVar, Optional
 
 from krrood.entity_query_language.verbalization.fragments.roles import (
@@ -32,86 +28,6 @@ from krrood.entity_query_language.verbalization.fragments.roles import (
 )
 
 _TOOLTIP_ATTR = "title"
-
-
-def _first_docstring_line(obj: object) -> Optional[str]:
-    """Return the first non-empty line of *obj*'s docstring as plain text, or ``None``."""
-    if obj is None:
-        return None
-    doc = inspect.getdoc(obj)
-    if not doc:
-        return None
-    for line in doc.splitlines():
-        stripped = line.strip()
-        if stripped:
-            return stripped
-    return None
-
-
-def _annotated_target_name(node: ast.AST) -> Optional[str]:
-    """Return the target name if *node* is an annotated assignment with a simple name target."""
-    if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-        return node.target.id
-    return None
-
-
-def _string_expr_first_line(node: ast.AST) -> Optional[str]:
-    """Return the first stripped line if *node* is a bare string expression (PEP 257 attribute doc)."""
-    if (
-        isinstance(node, ast.Expr)
-        and isinstance(node.value, ast.Constant)
-        and isinstance(node.value.value, str)
-    ):
-        for line in node.value.value.splitlines():
-            stripped = line.strip()
-            if stripped:
-                return stripped
-    return None
-
-
-@lru_cache(maxsize=None)
-def _attribute_docstrings(cls: type) -> dict[str, str]:
-    """Map field name to its first PEP 257 attribute docstring line for *cls*'s own body.
-
-    Parses the class source with :mod:`ast` and detects the pattern where an
-    annotated assignment is immediately followed by a bare string expression.
-    Returns an empty mapping when source is unavailable (e.g. C-extension classes).
-    Cached per class since AST parsing is comparatively costly.
-    """
-    try:
-        source = textwrap.dedent(inspect.getsource(cls))
-    except (OSError, TypeError):
-        return {}
-    try:
-        class_def = ast.parse(source).body[0]
-    except (SyntaxError, IndexError):
-        return {}
-    body = getattr(class_def, "body", [])
-    docs: dict[str, str] = {}
-    for current, following in zip(body, body[1:]):
-        name = _annotated_target_name(current)
-        if name is not None:
-            line = _string_expr_first_line(following)
-            if line is not None:
-                docs[name] = line
-    return docs
-
-
-def _docstring_for_source_ref(source_ref: object) -> Optional[str]:
-    """Return the first docstring line for the class or field a :class:`SourceRef` points at.
-
-    For class-level refs (``source_ref.attribute is None``), delegates to
-    :func:`_first_docstring_line` on the class.  For attribute refs, walks the MRO
-    looking for a PEP 257 attribute docstring extracted via :func:`_attribute_docstrings`.
-    """
-    if source_ref.attribute is None:
-        return _first_docstring_line(source_ref.owner_type)
-    for klass in source_ref.owner_type.__mro__:
-        line = _attribute_docstrings(klass).get(source_ref.attribute)
-        if line is not None:
-            return line
-    return None
-
 
 _log = logging.getLogger(__name__)
 
@@ -148,7 +64,7 @@ class IndentSize(Enum):
     TAB = "\t"
 
 
-def _detect_osc8_support() -> bool:
+def detect_osc8_support() -> bool:
     """Return ``True`` when the current terminal is known to support OSC 8 hyperlinks."""
     if os.environ.get("VTE_VERSION"):  # GNOME Terminal, Tilix, …
         return True
@@ -266,7 +182,7 @@ class ANSIFormatter(Formatter):
         "cornflowerblue": (100, 149, 237),
     }
 
-    _hyperlinks_enabled: bool = field(default_factory=_detect_osc8_support, init=False)
+    _hyperlinks_enabled: bool = field(default_factory=detect_osc8_support, init=False)
 
     def colorize(self, text: str, role: SemanticRole) -> str:
         color = ROLE_COLORS.get(role)

@@ -31,6 +31,7 @@ from krrood.entity_query_language.verbalization.grammar.planning.clauses import 
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import (
     Articles,
+    COMMA_SEPARATOR,
     Conjunctions,
     Copulas,
     Keywords,
@@ -50,12 +51,12 @@ class GroupedByAssembler(Assembler[Any, GroupPlan]):
         if not plan.has_keys:
             return Keywords.GROUPED.as_fragment()
         groups_phrase = self._keys_phrase(plan.keys)
-        aggregated_frags = [
+        aggregated_fragments = [
             self.ctx.child(expr, number=Number.PLURAL) for expr in plan.aggregated
         ]
-        if aggregated_frags and not isinstance(node, SetOf):
+        if aggregated_fragments and not isinstance(node, SetOf):
             aggregated_phrase = oxford_and(
-                aggregated_frags, Conjunctions.AND.as_fragment()
+                aggregated_fragments, Conjunctions.AND.as_fragment()
             )
             return PhraseFragment(
                 parts=[
@@ -78,7 +79,7 @@ class GroupedByAssembler(Assembler[Any, GroupPlan]):
         """*"<key1>, <key2>, …"* — the comma-joined group keys."""
         return PhraseFragment(
             parts=[self.ctx.child(variable) for variable in variables],
-            separator=Punctuation.COMMA.text + " ",
+            separator=COMMA_SEPARATOR,
         )
 
 
@@ -121,8 +122,8 @@ class HavingAssembler(Assembler[Any, None]):
         """*"having <condition>"* — the condition rendered with compact (copula-less)
         comparators."""
         with self.ctx.config.compact_predicates_scope():
-            having_frag = self.ctx.child(node._having_expression_.condition)
-        return PhraseFragment(parts=[Keywords.HAVING.as_fragment(), having_frag])
+            having_fragment = self.ctx.child(node._having_expression_.condition)
+        return PhraseFragment(parts=[Keywords.HAVING.as_fragment(), having_fragment])
 
     def clause(self, query) -> Optional[VerbFragment]:
         """The in-query HAVING clause, or ``None`` when there is no HAVING."""

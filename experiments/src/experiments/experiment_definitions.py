@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import statistics
 from dataclasses import dataclass
 from typing import List
+
 
 from krrood.class_diagrams.attribute_introspector import (
     DataclassOnlyIntrospector,
@@ -19,13 +22,20 @@ class MeanAndStandardDeviation:
     """
 
     mean: float
+    """
+    The mean of the measurements.
+    """
+
     standard_deviation: float
+    """
+    The standard deviation of the measurements.
+    """
 
     def __str__(self) -> str:
         return f"{round(self.mean, 2)} ± {round(self.standard_deviation, 2)}"
 
     @classmethod
-    def from_measurements(cls, measurements: List[float]) -> "MeanAndStandardDeviation":
+    def from_measurements(cls, measurements: List[float]) -> MeanAndStandardDeviation:
         std = 0.0 if len(measurements) < 2 else statistics.stdev(measurements)
         return cls(
             mean=round(statistics.mean(measurements), 2),
@@ -76,6 +86,9 @@ class ExperimentsTable:
     """
 
     experiments: list[ExperimentResult]
+    """
+    The list of experiments to be presented in the table.
+    """
 
     def __post_init__(self):
         if not self.experiments:

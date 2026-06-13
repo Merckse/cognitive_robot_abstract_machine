@@ -64,8 +64,10 @@ class PhraseRule(ABC):
 
     This realises the rule-to-rule mapping of Montague grammar: each construct of the source
     algebra (an EQL expression) has one rule describing how it composes into the target
-    (English) algebra. Rules are flat (all direct subclasses); specificity comes from
-    ``construct``, never from the rule-class hierarchy.
+    (English) algebra. Specificity comes primarily from ``construct``; rules are otherwise flat,
+    except that a rule which is a *special case* of another (its guard implies the other's) may
+    subclass it, and ``select`` then prefers the more-derived class. Rules whose guards merely
+    overlap have no such is-a relationship and must instead keep their guards mutually exclusive.
 
     References:
 
@@ -79,9 +81,6 @@ class PhraseRule(ABC):
     """The EQL node class this rule handles (the ``isinstance`` gate)."""
     name: ClassVar[str] = ""
     """Stable identifier for querying or tracing the grammar."""
-    tiebreak: ClassVar[int] = 0
-    """Explicit ordering when two rules with the same ``construct`` are both guarded and
-    overlap; higher wins."""
     enters_query_scope: ClassVar[bool] = False
     """``True`` on a rule whose construct is itself a query body, so an entity found anywhere
     within it renders as a nested noun phrase."""
@@ -130,8 +129,15 @@ def select(
     node: SymbolicExpression, rules: Sequence[PhraseRule], context: RuleContext
 ) -> Optional[PhraseRule]:
     """
-    Specificity key, highest wins: ``(construct MRO depth, guarded over unguarded, explicit
-    tiebreak)``.
+    Specificity key, highest wins: ``(construct MRO depth, guarded over unguarded, rule-class MRO
+    depth)``.
+
+    The last component lets a rule that is a *special case* of another express that by subclassing
+    it: when both guards hold, the more-derived rule class wins (e.g. an inference-rule entity is a
+    refinement of a top-level entity). This only models *subsumption* — a guard that implies
+    another's. Rules whose guards merely *overlap* (neither implies the other) have no is-a
+    relationship to express; their guards must be mutually exclusive, since equal-specificity ties
+    resolve by registration order, which is not a contract.
 
     :param node: The EQL expression being dispatched.
     :param rules: The grammar.
@@ -149,6 +155,6 @@ def select(
         key=lambda rule: (
             _mro_depth(rule.construct),
             _is_guarded(rule),
-            rule.tiebreak,
+            _mro_depth(type(rule)),
         ),
     )

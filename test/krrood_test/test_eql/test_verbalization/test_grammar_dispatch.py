@@ -49,17 +49,16 @@ def _rule_context():
     return RuleContext(child=lambda node: node, services=MicroplanningServices())
 
 
-def _custom(construct, name, build_fn, *, guard=None, tiebreak=0):
-    """Build a flat PhraseRule subclass instance for testing."""
+def _custom(construct, name, build_fn, *, guard=None, base=PhraseRule):
+    """Build a PhraseRule subclass instance for testing (subclass *base* to test specificity)."""
     namespace = {
         "construct": construct,
         "name": name,
-        "tiebreak": tiebreak,
         "build": lambda self, node, context: build_fn(node, context),
     }
     if guard is not None:
         namespace["when"] = lambda self, node, context: guard(node)
-    return type(f"R_{name}", (PhraseRule,), namespace)()
+    return type(f"R_{name}", (base,), namespace)()
 
 
 def _rule(construct, name, **kw):
@@ -82,12 +81,12 @@ def test_select_guarded_beats_unguarded_same_construct():
     assert select(Mid(), rules, _rule_context()).name == "guarded"
 
 
-def test_select_tiebreak_breaks_same_construct_both_guarded():
-    rules = [
-        _rule(Mid, "low", guard=lambda n: True, tiebreak=0),
-        _rule(Mid, "high", guard=lambda n: True, tiebreak=5),
-    ]
-    assert select(Mid(), rules, _rule_context()).name == "high"
+def test_select_prefers_more_derived_rule_class_same_construct_both_guarded():
+    # A rule that subclasses another (a special case of it) wins when both guards hold.
+    base = _rule(Mid, "base", guard=lambda n: True)
+    derived = _rule(Mid, "derived", guard=lambda n: True, base=type(base))
+    rules = [base, derived]
+    assert select(Mid(), rules, _rule_context()).name == "derived"
 
 
 def test_select_guard_can_exclude():

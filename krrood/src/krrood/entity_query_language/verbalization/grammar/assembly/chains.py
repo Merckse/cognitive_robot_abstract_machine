@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-from typing_extensions import Optional
-
 from krrood.entity_query_language.core.base_expressions import SymbolicExpression
 from krrood.entity_query_language.core.mapped_variable import (
-    Attribute,
     Index,
     MappedVariable,
 )
@@ -48,13 +45,17 @@ from krrood.entity_query_language.verbalization.vocabulary.english import (
 
 
 class ChainAssembler(Assembler[MappedVariable, ChainPlan]):
-    """Realise a ``MappedVariable`` chain (possessive / predicative / pronominal forms).
+    """Render a ``MappedVariable`` chain into one of its surface forms.
 
     The :class:`ChainPlanner` decides the chain's content — its root, display path-parts, and
-    whether it ends in a boolean attribute — and this assembler renders that plan: a boolean
-    terminal → predicative *"<navigation> is [not] <attribute>"*; anything else → the possessive
-    path *"the attribute of the Root"*, optionally pronominalised to *"its …"* when the root is the
-    current coreference subject.
+    whether it ends in a boolean attribute. *Which* surface form to use is no longer decided here:
+    that choice lives in the grammar as guarded ``MappedVariable`` rules (plural-attribute /
+    boolean-predicative / possessive). This assembler is the shared rendering toolkit those rules
+    call: each form is a public method, and :meth:`realize` is the unguarded possessive default.
+
+    The forms are the possessive path *"the attribute of the Root"* (optionally pronominalised to
+    *"its …"* when the root is the current coreference subject), the predicative *"<navigation> is
+    [not] <attribute>"* for a boolean terminal, and the bare plural *"attributes of Roots"*.
 
     Reference: Gatt & Reiter (2009), SimpleNLG — surface realisation.
     """
@@ -65,44 +66,21 @@ class ChainAssembler(Assembler[MappedVariable, ChainPlan]):
         """
         :param node: The chain to render.
         :param plan: The chain plan computed for *node*.
-        :return: The default (non-negated) chain rendering.
+        :return: The possessive rendering — the unguarded default form.
         """
-        return self._render(plan, negated=False)
+        return self.possessive(plan)
 
-    # ── entry forms ──────────────────────────────────────────────────────────
+    # ── surface forms ──────────────────────────────────────────────────────────
 
-    def chain(self, expression: MappedVariable, *, negated: bool = False) -> Fragment:
+    def possessive(self, plan: ChainPlan) -> Fragment:
         """
-        Plan *expression* and render it, threading the caller-supplied negation (which comes from a
-        surrounding ``Not``, not from the chain itself).
-
-        :param expression: The chain to render.
-        :param negated: Whether to negate a boolean-terminal predicative.
-        :return: A boolean terminal → predicative *"<navigation> is [not] <attribute>"*; else the
-            possessive path *"the attribute of the Root"*.
-        """
-        return self._render(self.plan(expression), negated=negated)
-
-    def _render(self, plan: ChainPlan, negated: bool) -> Fragment:
-        """
-        When a plural is requested and this is a single attribute on a variable, build the bare
-        plural *"attrs of Roots"*; otherwise render singular.
-
         :param plan: The analysed chain.
-        :param negated: Whether to negate a boolean-terminal predicative.
-        :return: A boolean terminal → predicative *"<navigation> is [not] <attribute>"*; else the
-            possessive path *"the attribute of the Root"*.
+        :return: The possessive path *"the attribute of the Root"*; for a variable root, deferred to
+            the coreference pass as a :class:`PossessiveChain` (it knows whether the root is the
+            current discourse subject, for *"its …"*).
         """
-        if self.context.number is Number.PLURAL:
-            plural = self._plural_attribute(plan)
-            if plural is not None:
-                return plural
-        if plan.is_boolean_terminal:
-            return self._boolean_predicative(plan, negated)
         root_fragment = self._chain_root(plan.root)
         if isinstance(plan.root, Variable):
-            # Defer the pronominal-vs-possessive choice to the coreference pass: it knows
-            # whether the root is the current discourse subject.
             return PossessiveChain(
                 parts=plan.parts,
                 root_fragment=root_fragment,
@@ -110,19 +88,13 @@ class ChainAssembler(Assembler[MappedVariable, ChainPlan]):
             )
         return possessive_path(plan.parts, root_fragment)
 
-    def _plural_attribute(self, plan: ChainPlan) -> Optional[Fragment]:
+    def plural_attribute(self, plan: ChainPlan) -> Fragment:
         """
-        :param plan: The analysed chain.
-        :return: *"attributes of Roots"* when the chain is a single attribute on a variable, else
-            ``None``.
+        :param plan: The analysed chain (a single attribute on a variable — see
+            :attr:`ChainPlan.is_single_variable_attribute`).
+        :return: The bare plural *"attributes of Roots"*.
         """
         root = plan.root
-        if not (
-            isinstance(root, Variable)
-            and len(plan.chain) == 1
-            and isinstance(plan.chain[0], Attribute)
-        ):
-            return None
         numbered = self.context.refer.numbered_label(root)
         attribute = plan.chain[0]
         root_noun_phrase = NounPhrase(
@@ -152,11 +124,12 @@ class ChainAssembler(Assembler[MappedVariable, ChainPlan]):
             return QueryAssembler(self.context).inline_noun(inner)
         return self.context.child(root)
 
-    def _boolean_predicative(self, plan: ChainPlan, negated: bool) -> Fragment:
+    def boolean_predicative(self, plan: ChainPlan, negated: bool = False) -> Fragment:
         """
         Chains ending in an integer index get ordinal navigation.
 
-        :param plan: The analysed chain.
+        :param plan: The analysed chain (a boolean terminal — see
+            :attr:`ChainPlan.is_boolean_terminal`).
         :param negated: Whether to negate the predicative.
         :return: The predicative *"<navigation> is [not] <attribute>"*.
         """

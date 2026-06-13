@@ -58,6 +58,9 @@ from krrood.entity_query_language.verbalization.rendering.realization import (
 from krrood.entity_query_language.verbalization.grammar.assembly.chains import (
     ChainAssembler,
 )
+from krrood.entity_query_language.verbalization.grammar.planning.chains import (
+    ChainPlanner,
+)
 from krrood.entity_query_language.verbalization.vocabulary.english import (
     Conjunctions,
     FallbackNouns,
@@ -278,20 +281,58 @@ class NotBooleanAttributeRule(PhraseRule):
         return is_boolean_attribute_chain(node._child_)
 
     def build(self, node: Not, context: RuleContext) -> Fragment:
-        return ChainAssembler(context).chain(node._child_, negated=True)
+        plan = ChainPlanner(node._child_).plan()
+        return ChainAssembler(context).boolean_predicative(plan, negated=True)
 
 
 # ── chains (MappedVariable) ──────────────────────────────────────────────────
+#
+# One guarded rule per surface form, dispatched by ``select``: the guarded forms
+# (plural-attribute, boolean-predicative) outrank the unguarded possessive fallback, and the
+# ``tiebreak`` order reproduces the former precedence (plural before boolean). Adding a new chain
+# form is a new guarded rule here — no existing rule changes.
 
 
-class MappedVariableRule(PhraseRule):
-    """Any attribute / index / call chain → possessive or predicative phrase."""
+class PluralChainAttributeRule(PhraseRule):
+    """Plural single-attribute chain → bare plural *"attributes of Roots"*."""
 
     construct = MappedVariable
-    name = "mapped-variable"
+    name = "chain-plural-attribute"
+    tiebreak = 2
+
+    def when(self, node: MappedVariable, context: RuleContext) -> bool:
+        return (
+            context.number is Number.PLURAL
+            and ChainPlanner(node).plan().is_single_variable_attribute
+        )
 
     def build(self, node: MappedVariable, context: RuleContext) -> Fragment:
-        return ChainAssembler(context).chain(node)
+        return ChainAssembler(context).plural_attribute(ChainPlanner(node).plan())
+
+
+class BooleanAttributeChainRule(PhraseRule):
+    """Boolean-terminal chain → predicative *"<navigation> is <attribute>"*."""
+
+    construct = MappedVariable
+    name = "chain-boolean-attribute"
+    tiebreak = 1
+
+    def when(self, node: MappedVariable, context: RuleContext) -> bool:
+        return is_boolean_attribute_chain(node)
+
+    def build(self, node: MappedVariable, context: RuleContext) -> Fragment:
+        return ChainAssembler(context).boolean_predicative(ChainPlanner(node).plan())
+
+
+class PossessiveChainRule(PhraseRule):
+    """Any attribute / index / call chain → possessive path *"the attribute of the Root"*
+    (the unguarded fallback form)."""
+
+    construct = MappedVariable
+    name = "chain-possessive"
+
+    def build(self, node: MappedVariable, context: RuleContext) -> Fragment:
+        return ChainAssembler(context).possessive(ChainPlanner(node).plan())
 
 
 class FlatVariableRule(PhraseRule):

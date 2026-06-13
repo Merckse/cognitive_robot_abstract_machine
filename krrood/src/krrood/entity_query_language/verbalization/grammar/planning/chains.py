@@ -5,7 +5,11 @@ from dataclasses import dataclass
 from typing_extensions import List
 
 from krrood.entity_query_language.core.base_expressions import SymbolicExpression
-from krrood.entity_query_language.core.mapped_variable import MappedVariable
+from krrood.entity_query_language.core.mapped_variable import (
+    Attribute,
+    MappedVariable,
+)
+from krrood.entity_query_language.core.variable import Variable
 from krrood.entity_query_language.verbalization.chain_utils import (
     PathStep,
     build_path_parts,
@@ -33,6 +37,16 @@ class ChainPlan:
 
     is_boolean_terminal: bool
     """``True`` when the chain ends in a ``bool``-typed attribute (predicative form)."""
+
+    @property
+    def is_single_variable_attribute(self) -> bool:
+        """:return: ``True`` when the chain is a single attribute on a variable (the bare-plural
+        *"attributes of Roots"* form)."""
+        return (
+            isinstance(self.root, Variable)
+            and len(self.chain) == 1
+            and isinstance(self.chain[0], Attribute)
+        )
 
 
 @dataclass

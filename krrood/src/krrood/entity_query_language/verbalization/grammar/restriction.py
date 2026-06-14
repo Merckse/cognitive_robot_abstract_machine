@@ -115,6 +115,8 @@ class AttributePredicateRestrictionRule(RestrictionRule):
         attribute = single_hop_attribute(item.left, subject_variable)
         if attribute is None or attribute._type_ is bool:
             return False
+        if superlative_aggregation(item, subject_variable) is not None:
+            return False  # a superlative comparator is SuperlativeRestrictionRule's
         return not references(item.right, subject_variable)
 
     @classmethod
@@ -131,7 +133,6 @@ class SuperlativeRestrictionRule(RestrictionRule):
     """
 
     placement = Placement.SELECTION_MODIFIER
-    priority = 1
 
     @classmethod
     def applies(

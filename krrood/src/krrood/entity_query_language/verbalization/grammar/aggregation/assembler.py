@@ -7,7 +7,6 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     NounPhrase,
     PhraseFragment,
     RoleFragment,
-    SubjectScope,
     Fragment,
 )
 from krrood.entity_query_language.verbalization.fragments.features import (
@@ -116,9 +115,6 @@ class AggregationValueAssembler(Assembler[Query, QueryPlan]):
         if having is not None:
             parts.append(having)
 
-        scope_phrase = PhraseFragment(parts=parts)
-        if source is None:
-            return scope_phrase
-        # Identity only — the pass reads the *"their"* number off the (plural) population noun
-        # phrase rendered inside the scope.
-        return SubjectScope(subject_id=source._id_, child=scope_phrase)
+        # No scope marker: the engine stamps this phrase with its aggregation-query node, and the
+        # coreference pass reads the focus (the population) for that query from the discourse view.
+        return PhraseFragment(parts=parts)

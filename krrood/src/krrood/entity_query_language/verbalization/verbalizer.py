@@ -9,6 +9,7 @@ from krrood.entity_query_language.verbalization.context import MicroplanningServ
 from krrood.entity_query_language.verbalization.engine import fold
 from krrood.entity_query_language.verbalization.fragments.base import Fragment
 from krrood.entity_query_language.verbalization.grammar.framework.registry import RULES
+from krrood.entity_query_language.verbalization.rendering.discourse import DiscourseModel
 from krrood.entity_query_language.verbalization.rendering.realization import (
     realize_tree,
 )
@@ -42,4 +43,9 @@ class EQLVerbalizer:
         # fold, which records this build's own mentions in the same set.
         already_seen = set(services.referring.seen)
         fragment = fold(expression, services, RULES)
-        return realize_tree(fragment, already_seen=already_seen)
+        # The discourse focus per query scope, projected once from the shared plan read model; the
+        # coreference pass consults it instead of rule-emitted subject markers.
+        discourse = DiscourseModel.from_expression(expression, services.microplan)
+        return realize_tree(
+            fragment, already_seen=already_seen, discourse=discourse
+        )

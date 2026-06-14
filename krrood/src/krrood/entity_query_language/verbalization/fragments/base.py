@@ -30,6 +30,13 @@ class Fragment:
     composition (``PhraseFragment``), and block structure (``BlockFragment``).
     """
 
+    source: Optional[SymbolicExpression] = field(
+        default=None, kw_only=True, compare=False, repr=False
+    )
+    """Provenance: the EQL node this fragment was built from, stamped by the fold. A lossless
+    side-channel a later pass can follow back to the read model (e.g. coreference reads the focus
+    of a query-sourced fragment). Never participates in equality or rendering."""
+
 
 @dataclass
 class HasText:
@@ -173,25 +180,6 @@ class NounPhrase(HasNumber, Fragment):
 
 
 @dataclass
-class SubjectScope(Fragment):
-    """
-    Marks the region in which ``subject_id`` is the pronoun-eligible discourse subject.
-
-    Identity only: the rule states *which* referent is the subject (a structural fact — it is the
-    variable whose clause this is). The grammatical number that selects the pronoun (*"its"* vs
-    *"their"*) is **not** supplied here — the coreference pass reads it off the subject's own noun
-    phrase when it walks it, so rules carry no morphology.
-    """
-
-    subject_id: Optional[uuid.UUID]
-    """The subject's referent id, or ``None`` for a scope with no single subject (which
-    suppresses pronominalisation)."""
-
-    child: Fragment
-    """The wrapped fragment the scope applies to."""
-
-
-@dataclass
 class PossessiveChain(Fragment):
     """
     A navigation chain whose pronominal-vs-possessive surface form is decided by coreference
@@ -272,10 +260,6 @@ def fold_fragment(
             return phrase(folded, separator)
         case BlockFragment():
             return block(fragment)
-        case SubjectScope(child=child):
-            return fold_fragment(
-                child, word=word, role=role, phrase=phrase, block=block
-            )
         case _:
             raise UnloweredFragmentError(fragment=fragment)
 
@@ -287,9 +271,9 @@ def map_structural_children(
     fragment: Fragment, recurse: Callable[[Fragment], Fragment]
 ) -> Optional[Fragment]:
     """
-    Rebuild a structural container (``PhraseFragment``, ``BlockFragment``, ``SubjectScope`` —
-    the nodes that merely hold children) by applying *recurse* to each child, or return
-    ``None`` for anything else (a leaf, or a node the caller treats specially).
+    Rebuild a structural container (``PhraseFragment``, ``BlockFragment`` — the nodes that merely
+    hold children) by applying *recurse* to each child, or return ``None`` for anything else (a
+    leaf, or a node the caller treats specially).
 
     :param fragment: Node to rebuild.
     :param recurse: Transform applied to each child.
@@ -305,8 +289,6 @@ def map_structural_children(
                 header=None if header is None else recurse(header),
                 items=[recurse(i) for i in items],
             )
-        case SubjectScope(subject_id=subject_id, child=child):
-            return SubjectScope(subject_id=subject_id, child=recurse(child))
         case _:
             return None
 

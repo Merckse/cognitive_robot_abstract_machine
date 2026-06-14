@@ -12,7 +12,6 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     NounPhrase,
     PhraseFragment,
     RoleFragment,
-    SubjectScope,
     Fragment,
 )
 from krrood.entity_query_language.verbalization.fragments.features import (
@@ -146,9 +145,9 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
         variable = node.selected_variable
         selected = self._build_selection(node, variable, plan)
         selected, where_item = self._apply_subject_restrictions(plan, selected)
-        body = self._query_body(node, plan, selected, where_item=where_item)
-        # Mark the subject region so the coreference pass pronominalises chains rooted at it.
-        return SubjectScope(subject_id=_subject_id(variable), child=body)
+        # No scope marker: the engine stamps this body with its query node, and the coreference
+        # pass reads the focus for that query from the discourse view.
+        return self._query_body(node, plan, selected, where_item=where_item)
 
     def _build_selection(
         self, node: Query, variable: SymbolicExpression, plan: QueryPlan

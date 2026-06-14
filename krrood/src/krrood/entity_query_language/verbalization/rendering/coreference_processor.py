@@ -8,7 +8,6 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     map_structural_children,
     NounPhrase,
     PossessiveChain,
-    SubjectScope,
     Fragment,
 )
 from krrood.entity_query_language.verbalization.fragments.features import (
@@ -18,6 +17,10 @@ from krrood.entity_query_language.verbalization.fragments.features import (
 from krrood.entity_query_language.verbalization.microplanning.possessive import (
     possessive_path,
     pronominal_path,
+)
+from krrood.entity_query_language.verbalization.rendering.discourse import (
+    DiscourseView,
+    EMPTY_DISCOURSE,
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import Pronouns
 
@@ -47,11 +50,19 @@ class CoreferenceProcessor:
     the current subject, and downgrades every repeat mention to a definite reference (dropping the
     first-mention modifiers, keeping the head label) or a pronoun.
 
+    The discourse subject is **not** marked by the rules: each fragment carries the EQL node it was
+    built from (its ``source``), and this pass asks the :class:`DiscourseView` who the focus of a
+    query-sourced fragment is. So a scope opens wherever a query node's fragment appears, and the
+    rules emit only structure + identity.
+
     Stateful per pass: the walk threads ``_seen`` and ``_subject_stack``.
 
     Reference: Reiter & Dale (2000) — referring-expression generation as a microplanning subtask;
     Gatt & Reiter (2009), SimpleNLG — ordered realisation stages.
     """
+
+    discourse: DiscourseView = EMPTY_DISCOURSE
+    """The focus-per-scope view, consulted to open a scope at a query-sourced fragment."""
 
     _seen: Set[uuid.UUID] = field(init=False, default_factory=set)
     """Referent ids already mentioned at the current point of the walk."""
@@ -69,22 +80,30 @@ class CoreferenceProcessor:
         :param already_seen: Referents introduced by *prior* builds sharing the same context
             (so the same expression verbalized twice against one context reads *"a Robot"* then
             *"the Robot"*).  These are treated as already-mentioned before the walk begins.
-        :return: A new tree with referring noun phrases resolved and ``SubjectScope`` markers
-            stripped.
+        :return: A new tree with referring noun phrases resolved.
         """
         self._seen = set(already_seen or ())
         self._subject_stack = []
         return self._walk(fragment)
 
     def _walk(self, fragment: Fragment) -> Fragment:
-        """Document-order rebuild, threading the accumulating discourse state."""
+        """Document-order rebuild, threading the accumulating discourse state.
+
+        A fragment built from a query node opens a discourse scope whose focus the
+        :class:`DiscourseView` supplies (``None`` suppresses pronominalisation, e.g. a set-of)."""
+        if self.discourse.is_scope(fragment.source):
+            self._subject_stack.append(
+                SubjectFrame(self.discourse.focus_of(fragment.source))
+            )
+            try:
+                return self._dispatch(fragment)
+            finally:
+                self._subject_stack.pop()
+        return self._dispatch(fragment)
+
+    def _dispatch(self, fragment: Fragment) -> Fragment:
+        """Resolve *fragment* by kind (the scope, if any, is already on the stack)."""
         match fragment:
-            case SubjectScope(subject_id=subject_id, child=child):
-                self._subject_stack.append(SubjectFrame(subject_id))
-                try:
-                    return self._walk(child)
-                finally:
-                    self._subject_stack.pop()
             case NounPhrase():
                 return self._noun_phrase(fragment)
             case PossessiveChain():

@@ -10,6 +10,10 @@ from krrood.entity_query_language.verbalization.fragments.base import (
 from krrood.entity_query_language.verbalization.rendering.coreference_processor import (
     CoreferenceProcessor,
 )
+from krrood.entity_query_language.verbalization.rendering.discourse import (
+    DiscourseView,
+    EMPTY_DISCOURSE,
+)
 from krrood.entity_query_language.verbalization.rendering.determiner_processor import (
     DeterminerProcessor,
 )
@@ -30,6 +34,7 @@ _ORTHOGRAPHY = OrthographyProcessor()
 def realize_tree(
     fragment: Fragment,
     already_seen: Optional[Iterable[uuid.UUID]] = None,
+    discourse: DiscourseView = EMPTY_DISCOURSE,
 ) -> Fragment:
     """
     Run the ordered realisation passes over *fragment* — the one place the lowering passes and
@@ -41,9 +46,13 @@ def realize_tree(
 
     :param fragment: Root of the fragment tree.
     :param already_seen: Referents introduced by prior builds on a shared context.
+    :param discourse: The focus-per-scope view the coreference pass consults (empty for a local
+        sub-tree, which has no query scope of its own).
     :return: The fully realised fragment tree.
     """
-    resolved = CoreferenceProcessor().process(fragment, already_seen=already_seen)
+    resolved = CoreferenceProcessor(discourse=discourse).process(
+        fragment, already_seen=already_seen
+    )
     inflected = _MORPHOLOGY.process(_DETERMINER.process(resolved))
     return _ORTHOGRAPHY.process(inflected)
 

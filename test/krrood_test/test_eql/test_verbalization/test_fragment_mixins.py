@@ -6,8 +6,7 @@ redeclared on each.
 These pin the two properties that justify the mixins: (1) the ``text`` / ``number`` fields are
 contributed by the mixins (one definition, reused), and (2) the migration preserves the existing
 construction contract — ``text`` stays positional, ``number`` is keyword-only — so no call site
-changes.  ``SubjectScope`` deliberately does *not* use ``HasNumber`` (its ``subject_number`` is a
-different concept), which is asserted too.
+changes.
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     HasText,
     NounPhrase,
     RoleFragment,
-    SubjectScope,
     WordFragment,
 )
 from krrood.entity_query_language.verbalization.fragments.features import Number
@@ -84,14 +82,3 @@ def test_number_passed_by_keyword():
     assert (
         NounPhrase(head=WordFragment("x"), number=Number.PLURAL).number is Number.PLURAL
     )
-
-
-def test_subject_scope_carries_no_number():
-    """``SubjectScope`` is identity-only: it carries no grammatical number — neither the shared
-    ``HasNumber`` ``number`` nor its own ``subject_number``. The coreference pass derives the
-    subject's number from its noun phrase when it walks it, so rules supply none.
-    """
-    assert HasNumber not in SubjectScope.__mro__
-    field_names = {f.name for f in dc.fields(SubjectScope)}
-    assert "subject_number" not in field_names
-    assert "number" not in field_names

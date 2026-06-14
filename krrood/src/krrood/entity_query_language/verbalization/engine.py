@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from typing_extensions import TYPE_CHECKING, Optional, Sequence
 
 from krrood.entity_query_language.core.base_expressions import SymbolicExpression
@@ -68,5 +70,19 @@ def fold(
         # so a nested Entity renders as a noun phrase. Declared on the rule (not pushed by hand
         # in assemblers) so the policy lives in one place. ``when`` already ran outside.
         with services.configuration.query_depth_scope():
-            return rule.build(node, context)
-    return rule.build(node, context)
+            return _with_source(rule.build(node, context), node)
+    return _with_source(rule.build(node, context), node)
+
+
+def _with_source(fragment: Fragment, node: SymbolicExpression) -> Fragment:
+    """
+    Stamp *node* as the fragment's provenance, so later passes can follow it back to the read
+    model. The innermost producer wins: a transparent wrapper (``An(Entity)``) returns its child's
+    fragment, which already carries the child's (the ``Entity``'s) source, and is left untouched.
+
+    :param fragment: The fragment a rule produced for *node*.
+    :param node: The EQL node dispatched.
+    :return: *fragment* with ``source`` set when it was not already (a fresh copy; never mutates a
+        possibly-shared instance).
+    """
+    return fragment if fragment.source is not None else replace(fragment, source=node)

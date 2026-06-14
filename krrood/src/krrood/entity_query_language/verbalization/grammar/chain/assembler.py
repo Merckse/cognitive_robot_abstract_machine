@@ -28,10 +28,10 @@ from krrood.entity_query_language.verbalization.fragments.features import (
     Number,
 )
 from krrood.entity_query_language.verbalization.grammar.framework.assembler import Assembler
-from krrood.entity_query_language.verbalization.grammar.assembly.query import (
+from krrood.entity_query_language.verbalization.grammar.query.assembler import (
     QueryAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.planning.chains import (
+from krrood.entity_query_language.verbalization.grammar.chain.planner import (
     ChainPlan,
     ChainPlanner,
 )

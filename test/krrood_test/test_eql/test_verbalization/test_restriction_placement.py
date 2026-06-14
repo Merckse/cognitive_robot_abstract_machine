@@ -10,18 +10,18 @@ import pytest
 
 from krrood.entity_query_language.verbalization.context import MicroplanningServices
 from krrood.entity_query_language.verbalization.fragments.base import WordFragment
-from krrood.entity_query_language.verbalization.grammar.assembly.restrictions import (
+from krrood.entity_query_language.verbalization.grammar.conditions.restriction_assembler import (
     RestrictionAssembler,
 )
 from krrood.entity_query_language.verbalization.exceptions import (
     UnplacedRestrictionError,
 )
 from krrood.entity_query_language.verbalization.grammar.framework.phrase_rule import RuleContext
-from krrood.entity_query_language.verbalization.grammar.planning.query import (
+from krrood.entity_query_language.verbalization.grammar.query.planner import (
     MatchedRestriction,
     RestrictionPlan,
 )
-from krrood.entity_query_language.verbalization.grammar.restriction import (
+from krrood.entity_query_language.verbalization.grammar.conditions.restriction import (
     AttributePredicateRestrictionRule,
     Placement,
     RangeRestrictionRule,

@@ -18,7 +18,7 @@ from krrood.exceptions import DataclassException
 if TYPE_CHECKING:
     from krrood.entity_query_language.core.base_expressions import SymbolicExpression
     from krrood.entity_query_language.verbalization.fragments.base import Fragment
-    from krrood.entity_query_language.verbalization.grammar.restriction import Placement
+    from krrood.entity_query_language.verbalization.grammar.conditions.restriction import Placement
 
 
 @dataclass

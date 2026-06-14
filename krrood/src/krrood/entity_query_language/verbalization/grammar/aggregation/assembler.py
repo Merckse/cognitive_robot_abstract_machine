@@ -14,17 +14,17 @@ from krrood.entity_query_language.verbalization.fragments.features import (
     Definiteness,
     Number,
 )
-from krrood.entity_query_language.verbalization.grammar.aggregation_kinds import (
+from krrood.entity_query_language.verbalization.grammar.aggregation.kinds import (
     AGGREGATION_KIND,
 )
 from krrood.entity_query_language.verbalization.grammar.framework.assembler import Assembler
-from krrood.entity_query_language.verbalization.grammar.assembly.clauses import (
+from krrood.entity_query_language.verbalization.grammar.clauses.assembler import (
     HavingAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.assembly.restrictions import (
+from krrood.entity_query_language.verbalization.grammar.conditions.restriction_assembler import (
     RestrictionAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.planning.query import (
+from krrood.entity_query_language.verbalization.grammar.query.planner import (
     QueryPlan,
     QueryPlanner,
 )

@@ -22,17 +22,22 @@ import krrood.entity_query_language.factories as eql
 from krrood.entity_query_language.operators.core_logical_operators import Not
 from krrood.entity_query_language.operators.logical_quantifiers import Exists, ForAll
 from krrood.entity_query_language.verbalization import example_domain
-from krrood.entity_query_language.verbalization.grammar import english, restriction
-from krrood.entity_query_language.verbalization.grammar.assembly import (
-    aggregation_value,
-    chains,
-    clauses as assembly_clauses,
-    query as assembly_query,
+from krrood.entity_query_language.verbalization.grammar import english
+from krrood.entity_query_language.verbalization.grammar.conditions import restriction
+from krrood.entity_query_language.verbalization.grammar.chain import (
+    assembler as chain_assembler,
+    planner as chain_planner,
 )
-from krrood.entity_query_language.verbalization.grammar.planning import (
-    chains as planning_chains,
-    clauses as planning_clauses,
-    query as planning_query,
+from krrood.entity_query_language.verbalization.grammar.query import (
+    assembler as query_assembler,
+    planner as query_planner,
+)
+from krrood.entity_query_language.verbalization.grammar.clauses import (
+    assembler as clauses_assembler,
+    planner as clauses_planner,
+)
+from krrood.entity_query_language.verbalization.grammar.aggregation import (
+    assembler as aggregation_assembler,
 )
 from krrood.entity_query_language.verbalization.pipeline import verbalize_expression
 
@@ -42,13 +47,13 @@ from krrood.entity_query_language.verbalization.pipeline import verbalize_expres
 _MODULES = [
     english,
     restriction,
-    chains,
-    assembly_query,
-    assembly_clauses,
-    aggregation_value,
-    planning_chains,
-    planning_clauses,
-    planning_query,
+    chain_assembler,
+    query_assembler,
+    clauses_assembler,
+    aggregation_assembler,
+    chain_planner,
+    clauses_planner,
+    query_planner,
 ]
 
 # A shared namespace for all examples. It includes the EQL factories, so an example can write

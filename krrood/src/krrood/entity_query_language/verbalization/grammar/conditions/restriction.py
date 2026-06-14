@@ -14,8 +14,8 @@ from krrood.entity_query_language.verbalization.grammar.conditions.recognition i
     single_hop_attribute,
     superlative_aggregation,
 )
-from krrood.entity_query_language.verbalization.grammar.conditions.verbalizer import (
-    ConditionVerbalizer,
+from krrood.entity_query_language.verbalization.grammar.conditions.assembler import (
+    ConditionAssembler,
 )
 from krrood.entity_query_language.verbalization.grammar.framework.phrase_rule import RuleContext
 from krrood.entity_query_language.verbalization.grammar.framework.specificity import SpecificityRule
@@ -102,7 +102,7 @@ class RangeRestrictionRule(RestrictionRule):
     def render(
         cls, item: RangeFold, subject_variable: Variable, context: RuleContext
     ) -> Fragment:
-        return ConditionVerbalizer(context).range_modifier(item, subject_variable)
+        return ConditionAssembler(context).range_modifier(item, subject_variable)
 
 
 class AttributePredicateRestrictionRule(RestrictionRule):
@@ -134,7 +134,7 @@ class AttributePredicateRestrictionRule(RestrictionRule):
     def render(
         cls, item: Comparator, subject_variable: Variable, context: RuleContext
     ) -> Fragment:
-        return ConditionVerbalizer(context).attribute_modifier(item, subject_variable)
+        return ConditionAssembler(context).attribute_modifier(item, subject_variable)
 
 
 class SuperlativeRestrictionRule(RestrictionRule):
@@ -164,7 +164,7 @@ class SuperlativeRestrictionRule(RestrictionRule):
     def render(
         cls, item: Comparator, subject_variable: Variable, context: RuleContext
     ) -> Fragment:
-        return ConditionVerbalizer(context).superlative_modifier(item, subject_variable)
+        return ConditionAssembler(context).superlative_modifier(item, subject_variable)
 
 
 def match_restriction(

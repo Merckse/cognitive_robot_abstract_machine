@@ -40,8 +40,8 @@ from krrood.entity_query_language.verbalization.fragments.roles import SemanticR
 from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
     is_boolean_attribute_chain,
 )
-from krrood.entity_query_language.verbalization.grammar.conditions.verbalizer import (
-    ConditionVerbalizer,
+from krrood.entity_query_language.verbalization.grammar.conditions.assembler import (
+    ConditionAssembler,
 )
 from krrood.entity_query_language.verbalization.grammar.framework.phrase_rule import (
     RuleContext,
@@ -55,10 +55,10 @@ from krrood.entity_query_language.verbalization.microplanning.coordination impor
 from krrood.entity_query_language.verbalization.rendering.realization import (
     realize_subtree,
 )
-from krrood.entity_query_language.verbalization.grammar.assembly.chains import (
+from krrood.entity_query_language.verbalization.grammar.chain.assembler import (
     ChainAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.planning.chains import (
+from krrood.entity_query_language.verbalization.grammar.chain.planner import (
     ChainPlanner,
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import (
@@ -76,26 +76,26 @@ from krrood.entity_query_language.core.base_expressions import Filter
 from krrood.entity_query_language.query.operations import GroupedBy, OrderedBy
 from krrood.entity_query_language.query.quantifiers import ResultQuantifier
 from krrood.entity_query_language.query.query import Entity, SetOf
-from krrood.entity_query_language.verbalization.grammar.aggregation_kinds import (
+from krrood.entity_query_language.verbalization.grammar.aggregation.kinds import (
     AGGREGATION_KIND,
 )
-from krrood.entity_query_language.verbalization.grammar.assembly.inference import (
+from krrood.entity_query_language.verbalization.grammar.inference.assembler import (
     InferenceAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.assembly.clauses import (
+from krrood.entity_query_language.verbalization.grammar.clauses.assembler import (
     GroupedByAssembler,
     OrderedByAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.assembly.query import (
+from krrood.entity_query_language.verbalization.grammar.query.assembler import (
     QueryAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.planning.inference import (
+from krrood.entity_query_language.verbalization.grammar.inference.planner import (
     InferencePlanner,
 )
-from krrood.entity_query_language.verbalization.grammar.assembly.instantiated import (
+from krrood.entity_query_language.verbalization.grammar.instantiated.assembler import (
     InstantiatedAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.planning.instantiated import (
+from krrood.entity_query_language.verbalization.grammar.instantiated.planner import (
     InstantiatedPlanner,
 )
 
@@ -113,7 +113,7 @@ class ComparatorRule(PhraseRule):
     name = "comparator"
 
     def build(self, node: Comparator, context: RuleContext) -> Fragment:
-        return ConditionVerbalizer(context).predicate(node)
+        return ConditionAssembler(context).predicate(node)
 
 
 # ── variables ──────────────────────────────────────────────────────────────────
@@ -299,7 +299,7 @@ class NotComparatorRule(PhraseRule):
         return isinstance(node._child_, Comparator)
 
     def build(self, node: Not, context: RuleContext) -> Fragment:
-        return ConditionVerbalizer(context).predicate(node._child_, negated=True)
+        return ConditionAssembler(context).predicate(node._child_, negated=True)
 
 
 class NotBooleanAttributeRule(PhraseRule):

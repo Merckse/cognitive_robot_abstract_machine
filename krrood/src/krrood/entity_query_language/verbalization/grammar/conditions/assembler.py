@@ -8,7 +8,7 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     Fragment,
 )
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
-from krrood.entity_query_language.verbalization.grammar.aggregation_kinds import (
+from krrood.entity_query_language.verbalization.grammar.aggregation.kinds import (
     AGGREGATION_KIND,
 )
 from krrood.entity_query_language.verbalization.grammar.framework.assembler import Assembler
@@ -32,7 +32,7 @@ from krrood.entity_query_language.verbalization.vocabulary.english import (
 from krrood.entity_query_language.verbalization.vocabulary.words import Number
 
 
-class ConditionVerbalizer(Assembler[Comparator, None]):
+class ConditionAssembler(Assembler[Comparator, None]):
     """
     Render a condition in a requested surface form (predicate / modifier / …) — the single owner
     of every surface form a condition can take.

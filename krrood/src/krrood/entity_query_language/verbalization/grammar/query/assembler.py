@@ -19,19 +19,19 @@ from krrood.entity_query_language.verbalization.fragments.features import (
     Definiteness,
     Separator,
 )
-from krrood.entity_query_language.verbalization.grammar.assembly.aggregation_value import (
+from krrood.entity_query_language.verbalization.grammar.aggregation.assembler import (
     AggregationValueAssembler,
 )
 from krrood.entity_query_language.verbalization.grammar.framework.assembler import Assembler
-from krrood.entity_query_language.verbalization.grammar.assembly.clauses import (
+from krrood.entity_query_language.verbalization.grammar.clauses.assembler import (
     GroupedByAssembler,
     HavingAssembler,
     OrderedByAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.assembly.restrictions import (
+from krrood.entity_query_language.verbalization.grammar.conditions.restriction_assembler import (
     RestrictionAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.planning.query import (
+from krrood.entity_query_language.verbalization.grammar.query.planner import (
     QueryPlan,
     QueryPlanner,
     SelectionKind,

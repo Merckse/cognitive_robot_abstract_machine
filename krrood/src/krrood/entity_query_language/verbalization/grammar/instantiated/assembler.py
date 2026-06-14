@@ -19,7 +19,7 @@ from krrood.entity_query_language.verbalization.fragments.source_reference impor
     SourceReference,
 )
 from krrood.entity_query_language.verbalization.grammar.framework.assembler import Assembler
-from krrood.entity_query_language.verbalization.grammar.planning.instantiated import (
+from krrood.entity_query_language.verbalization.grammar.instantiated.planner import (
     BindingPlan,
     InstantiatedPlan,
     InstantiatedPlanner,

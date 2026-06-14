@@ -13,10 +13,10 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     Fragment,
 )
 from krrood.entity_query_language.verbalization.grammar.framework.phrase_rule import RuleContext
-from krrood.entity_query_language.verbalization.grammar.planning.query import (
+from krrood.entity_query_language.verbalization.grammar.query.planner import (
     RestrictionPlan,
 )
-from krrood.entity_query_language.verbalization.grammar.restriction import Placement
+from krrood.entity_query_language.verbalization.grammar.conditions.restriction import Placement
 from krrood.entity_query_language.verbalization.exceptions import (
     UnplacedRestrictionError,
 )

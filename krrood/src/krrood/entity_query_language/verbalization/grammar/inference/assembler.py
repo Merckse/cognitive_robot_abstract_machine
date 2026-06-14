@@ -17,10 +17,10 @@ from krrood.entity_query_language.verbalization.fragments.base import (
     Fragment,
 )
 from krrood.entity_query_language.verbalization.grammar.framework.assembler import Assembler
-from krrood.entity_query_language.verbalization.grammar.conditions.verbalizer import (
-    ConditionVerbalizer,
+from krrood.entity_query_language.verbalization.grammar.conditions.assembler import (
+    ConditionAssembler,
 )
-from krrood.entity_query_language.verbalization.grammar.planning.inference import (
+from krrood.entity_query_language.verbalization.grammar.inference.planner import (
     AggregationStatus,
     AntecedentInformation,
     ConsequentBinding,
@@ -147,7 +147,7 @@ class InferenceAssembler(Assembler[Entity, RuleStructure]):
             return self.context.child(condition_plan.expression)
         number = self._number(antecedent)
         value = self._value(condition_plan.expression.right, number)
-        return ConditionVerbalizer(self.context).whose_attribute(
+        return ConditionAssembler(self.context).whose_attribute(
             condition_plan.whose_attribute_name, number, value
         )
 
@@ -172,7 +172,7 @@ class InferenceAssembler(Assembler[Entity, RuleStructure]):
     def _binding_fragment(self, binding: ConsequentBinding) -> Fragment:
         """:return: *"whose <field> is/are <value>"* — one consequent field binding."""
         number = Number.of(binding.is_plural_field)
-        return ConditionVerbalizer(self.context).whose_attribute(
+        return ConditionAssembler(self.context).whose_attribute(
             binding.field_name, number, self._binding_value(binding)
         )
 

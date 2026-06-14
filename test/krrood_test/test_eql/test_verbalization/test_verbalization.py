@@ -1540,7 +1540,7 @@ def test_inference_planner_decomposes_rule_without_rendering(
     handles_and_containers_world,
 ):
     """The InferencePlanner produces the RuleStructure as pure data — no fragments rendered."""
-    from krrood.entity_query_language.verbalization.grammar.planning.inference import (
+    from krrood.entity_query_language.verbalization.grammar.inference.planner import (
         AggregationStatus,
         InferencePlanner,
     )
@@ -1583,11 +1583,11 @@ def test_inference_planner_decomposes_rule_without_rendering(
 
 def test_query_planner_decomposes_subject_restriction_without_rendering():
     """The QueryPlanner partitions the WHERE into grouped/residual as pure data — no fragments."""
-    from krrood.entity_query_language.verbalization.grammar.planning.query import (
+    from krrood.entity_query_language.verbalization.grammar.query.planner import (
         QueryPlanner,
         SelectionKind,
     )
-    from krrood.entity_query_language.verbalization.grammar.restriction import (
+    from krrood.entity_query_language.verbalization.grammar.conditions.restriction import (
         AttributePredicateRestrictionRule,
         Placement,
     )
@@ -1616,7 +1616,7 @@ def test_instantiated_planner_decomposes_bindings_without_rendering(
     handles_and_containers_world,
 ):
     """The InstantiatedPlanner records type + per-field number as pure data — no fragments."""
-    from krrood.entity_query_language.verbalization.grammar.planning.instantiated import (
+    from krrood.entity_query_language.verbalization.grammar.instantiated.planner import (
         InstantiatedPlanner,
     )
 
@@ -1633,7 +1633,7 @@ def test_grouped_by_planner_extracts_keys_without_rendering(
     handles_and_containers_world,
 ):
     """The GroupedByPlanner reads the GROUP BY keys as pure data — no fragments rendered."""
-    from krrood.entity_query_language.verbalization.grammar.planning.clauses import (
+    from krrood.entity_query_language.verbalization.grammar.clauses.planner import (
         GroupedByPlanner,
     )
 

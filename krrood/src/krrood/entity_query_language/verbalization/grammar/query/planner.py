@@ -16,7 +16,7 @@ from krrood.entity_query_language.operators.core_logical_operators import (
 from krrood.entity_query_language.query.quantifiers import The
 from krrood.entity_query_language.query.query import Entity, Query, SetOf
 from krrood.entity_query_language.verbalization.grammar.framework.planner import Planner
-from krrood.entity_query_language.verbalization.grammar.restriction import (
+from krrood.entity_query_language.verbalization.grammar.conditions.restriction import (
     RestrictionRule,
     match_restriction,
     restriction_subject,

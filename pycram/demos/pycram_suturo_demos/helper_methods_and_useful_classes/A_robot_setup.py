@@ -95,7 +95,7 @@ def default_xyz_rpy() -> WorldSetup_xyz_rpy:
     return WorldSetup_xyz_rpy(
         milk=(
             1.0,
-            6,
+            0.5,
             0.78,
             0.0,
             0.0,

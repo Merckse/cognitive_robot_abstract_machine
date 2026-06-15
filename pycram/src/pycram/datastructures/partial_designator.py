@@ -6,7 +6,7 @@ from inspect import signature
 from typing_extensions import List, Tuple, Any, Dict, TypeVar, Iterator, Iterable, Type
 
 from pycram.plan import PlanNode
-from pycram.utils import is_iterable, lazy_product
+from pycram.utils import lazy_product
 
 T = TypeVar("T")
 
@@ -104,8 +104,14 @@ class PartialDesignator(Iterable[T]):
 
         :yields: A list with a possible permutation of the given arguments
         """
+        # Only genuine containers are expanded into candidate values to permute
+        # over. Many single values are themselves iterable (str, and spatial /
+        # symbolic types such as Point3, Pose, PoseStamped, numpy arrays); using
+        # is_iterable() here would iterate a Point3 into its scalar components
+        # and silently keep the first one. Restrict expansion to explicit
+        # collection types instead.
         iter_list = [
-            x if is_iterable(x) and not type(x) == str else [x]
+            x if isinstance(x, (list, tuple, set)) else [x]
             for x in self.kwargs.values()
         ]
         for combination in lazy_product(

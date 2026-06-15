@@ -411,7 +411,7 @@ class BoxGraspMagic(GraspMagic):
             obj_bbox,
             grasp_axis,
             obj_to_robot,
-            additional_offset=-0.05,
+            additional_offset=-0.025,
             forced_sign=forced_sign,
         )
         logger.debug(f"grasp_point: {grasp_point.to_np()}")

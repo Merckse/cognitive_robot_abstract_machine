@@ -196,24 +196,16 @@ class GiskardPlaceAction(ActionDescription):
     If True, the orientation of the object will be ignored.
     """
 
-    def __post_init__(self):
-        super().__post_init__()
-
     def execute(self) -> None:
         arm = ViewManager.get_arm_view(self.arm, self.robot_view)
         manipulator = arm.manipulator
 
-        if isinstance(self.target_location, Point3):
-            self.point3_to_ros(self.target_location)
-
         if isinstance(self.target_location, Pose):
-            self.target_location = self.pose_to_ros(self.target_location)
-
-        if self.ignore_orientation:
+            goal = self.target_location = self.pose_to_ros(self.target_location)
+        elif self.ignore_orientation:
             goal = self.target_location.pose.to_spatial_type().to_position()
         else:
             goal = self.target_location.pose.to_spatial_type()
-        goal.reference_frame = self.target_location.frame_id
 
         SequentialPlan(
             self.context,
@@ -245,6 +237,7 @@ class GiskardPlaceAction(ActionDescription):
         return pose_stamped
 
     def point3_to_ros(self, point: Point3) -> PoseStamped:
+        print("[place] point3_to_ros got:", type(point), repr(point))
         pose_stamped = geometry_msgs.msg.PoseStamped()
         pose_stamped.pose.position.x = float(point.x)
         pose_stamped.pose.position.y = float(point.y)

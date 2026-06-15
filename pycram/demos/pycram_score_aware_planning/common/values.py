@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from demos.pycram_score_aware_planning.common.types import ActionType, ActionOutcome, TaskMode, TaskStep, Task
 from pycram.datastructures.enums import TaskStatus
+from semantic_digital_twin.semantic_annotations.semantic_annotations import Plate, Knife, Fork, Spoon, Bowl, Milk, Cereal
+from semantic_digital_twin.world_description.world_entity import SemanticAnnotation
 
 # ---------------------------------------------------------------------------
 # Action scoring table
@@ -35,26 +37,26 @@ class ActionEvaluation:
     probability: float   # base success probability
 
 
-ACTIONS: dict[tuple[ActionType, str, str], ActionEvaluation] = {
+ACTIONS: dict[tuple[ActionType, SemanticAnnotation, str], ActionEvaluation] = {
     (ActionType.PARK, ANY, ANY):
         ActionEvaluation(points=0, penalty=0, time=0, probability=1.0),
 
     # ------------------ PICKUP (base: 50pts / -20 / 30s / 0.5)
-    (ActionType.PICKUP, "plate", ANY):
+    (ActionType.PICKUP, Plate, ANY):
         ActionEvaluation(points=50 + 100, penalty=-20 - 30, time=50, probability=0.01),
     # CUTLERY — hard to grasp/locate
-    (ActionType.PICKUP, "knife", ANY):
+    (ActionType.PICKUP, Knife, ANY):
         ActionEvaluation(points=50 + 50, penalty=-20 - 10, time=100, probability=0.01),
-    (ActionType.PICKUP, "fork", ANY):
+    (ActionType.PICKUP, Fork, ANY):
         ActionEvaluation(points=50 + 50, penalty=-20 - 10, time=100, probability=0.01),
-    (ActionType.PICKUP, "spoon", ANY):
+    (ActionType.PICKUP, Spoon, ANY):
         ActionEvaluation(points=50 + 50, penalty=-20 - 10, time=100, probability=0.01),
     # Common objects
-    (ActionType.PICKUP, "bowl", ANY):
+    (ActionType.PICKUP, Bowl, ANY):
         ActionEvaluation(points=50 - 20, penalty=-20 + 10, time=30, probability=0.75),
-    (ActionType.PICKUP, "milk", ANY):
+    (ActionType.PICKUP, Milk, ANY):
         ActionEvaluation(points=50 - 20, penalty=-20 + 10, time=15, probability=0.95),
-    (ActionType.PICKUP, "cereal", ANY):
+    (ActionType.PICKUP, Cereal, ANY):
         ActionEvaluation(points=15, penalty=-10, time=15, probability=0.95),
     # any other object
     (ActionType.PICKUP, ANY, ANY):
@@ -67,20 +69,20 @@ ACTIONS: dict[tuple[ActionType, str, str], ActionEvaluation] = {
     (ActionType.PLACE, "PLACEHOLDER", ANY):
         ActionEvaluation(points=40 + 20, penalty=-15 - 5, time=40, probability=0.6),
     # CUTLERY (base is 40 — fixed copy-paste from PICKUP that read 50)
-    (ActionType.PLACE, "knife", ANY):
+    (ActionType.PLACE, Knife, ANY):
         ActionEvaluation(points=40 + 50, penalty=-15 - 15, time=40, probability=0.6),
-    (ActionType.PLACE, "fork", ANY):
+    (ActionType.PLACE, Fork, ANY):
         ActionEvaluation(points=40 + 50, penalty=-15 - 15, time=40, probability=0.6),
-    (ActionType.PLACE, "spoon", ANY):
+    (ActionType.PLACE, Spoon, ANY):
         ActionEvaluation(points=40 + 50, penalty=-15 - 15, time=40, probability=0.6),
     # Common objects
-    (ActionType.PLACE, "bowl", ANY):
+    (ActionType.PLACE, Bowl, ANY):
         ActionEvaluation(points=40 - 20, penalty=-15 + 5, time=40 - 20, probability=0.8),
-    (ActionType.PLACE, "milk", ANY):
+    (ActionType.PLACE, Milk, ANY):
         ActionEvaluation(points=40 - 20, penalty=-15 + 5, time=40 - 20, probability=0.99),
-    (ActionType.PLACE, "cereal", ANY):
+    (ActionType.PLACE, Cereal, ANY):
         ActionEvaluation(points=15, penalty=-10, time=15, probability=0.99),
-    (ActionType.PLACE, "plate", ANY):
+    (ActionType.PLACE, Plate, ANY):
         ActionEvaluation(points=40, penalty=-15, time=40, probability=0.01),
     # any other object
     (ActionType.PLACE, ANY, ANY):
@@ -117,9 +119,9 @@ ACTIONS: dict[tuple[ActionType, str, str], ActionEvaluation] = {
         ActionEvaluation(points=15, penalty=-10, time=15, probability=0.95),
 
     # ------------------ Pour (~200s; probability 0 — not yet implemented)
-    (ActionType.POUR, "cereal", ANY):
+    (ActionType.POUR, Cereal, ANY):
         ActionEvaluation(points=0, penalty=0, time=200, probability=0.0),
-    (ActionType.POUR, "milk", ANY):
+    (ActionType.POUR, Milk, ANY):
         ActionEvaluation(points=0, penalty=0, time=200, probability=0.0),
     (ActionType.POUR, ANY, ANY):
         ActionEvaluation(points=0, penalty=0, time=10, probability=0.0),
@@ -134,16 +136,16 @@ ACTIONS: dict[tuple[ActionType, str, str], ActionEvaluation] = {
 }
 
 # Fallback
-EVALUATION = ActionEvaluation(points=0, penalty=0, time=0, probability=1.0)
+action_evaluation = ActionEvaluation(points=0, penalty=0, time=0, probability=1.0)
 
 
-def evaluation(action_type: ActionType, object_name: str = "", location: str = "") -> ActionEvaluation:
-    for o in (object_name, ANY):
-        for l in (location, ANY):
-            hit = ACTIONS.get((action_type, o, l))
+def evaluation(action_type: ActionType, semantic_annotation: SemanticAnnotation = None, location: str = "") -> ActionEvaluation:
+    for sem_anno in (semantic_annotation, ANY):
+        for loc in (location, ANY):
+            hit = ACTIONS.get((action_type, sem_anno, loc))
             if hit is not None:
                 return hit
-    return EVALUATION
+    return action_evaluation
 
 # Penalties applied on top of (or instead of) base points
 OUTCOME_MODIFIERS: dict[ActionOutcome|TaskStatus, float] = {
@@ -165,44 +167,44 @@ MAX_TIME_ESTIMATE: dict[TaskMode, int] = {
 
 # All possible tasks for PP
 TASKSTEP_PP: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.NAVIGATE, location="cooking_table"),
-                                                   TaskStep(ActionType.PICKUP, object_name="bowl"),
+                                                   TaskStep(ActionType.PICKUP, object_annotations=Bowl),
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.NAVIGATE, location="counterTop"),
-                                                   TaskStep(ActionType.PLACE, object_name="bowl", location="counterTop"),
+                                                   TaskStep(ActionType.PLACE, object_annotations=Bowl, location="counterTop"),
                                                    TaskStep(ActionType.PARK)]),
 
                            Task(id= 1, task_steps=[TaskStep(ActionType.NAVIGATE, location="desk"),
-                                                   TaskStep(ActionType.PICKUP, object_name="plate"),
+                                                   TaskStep(ActionType.PICKUP, object_annotations=Plate),
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.NAVIGATE, location="table"),
-                                                   TaskStep(ActionType.PLACE, object_name="plate", location="table"),
+                                                   TaskStep(ActionType.PLACE, object_annotations=Plate, location="table"),
                                                    TaskStep(ActionType.PARK)]),
 
                            Task(id= 2, task_steps=[TaskStep(ActionType.NAVIGATE, location="counterTop"),
-                                                   TaskStep(ActionType.PICKUP, object_name="milk"),
+                                                   TaskStep(ActionType.PICKUP, object_annotations=Milk),
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.NAVIGATE, location="shelf_1"),
-                                                   TaskStep(ActionType.PLACE, object_name="milk", location="shelf_1"),
+                                                   TaskStep(ActionType.PLACE, object_annotations=Milk, location="shelf_1"),
                                                    TaskStep(ActionType.PARK)]),
 
                            Task(id= 3, task_steps=[TaskStep(ActionType.NAVIGATE, location="shelf_1"),
-                                                   TaskStep(ActionType.PICKUP, object_name="cereal"),
+                                                   TaskStep(ActionType.PICKUP, object_annotations=Cereal),
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.NAVIGATE, location="shelf_2"),
-                                                   TaskStep(ActionType.PLACE, object_name="cereal", location="shelf_2"),
+                                                   TaskStep(ActionType.PLACE, object_annotations=Cereal, location="shelf_2"),
                                                    TaskStep(ActionType.PARK)]), ]
 
 # All possible tasks for GPSR
-TASKSTEP_GPSR: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"), TaskStep(ActionType.PLACE, object_name="bowl")]),
-                             Task(id= 1, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="plate"), TaskStep(ActionType.PLACE, object_name="plate")]),
-                             Task(id= 2, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="milk"), TaskStep(ActionType.PLACE, object_name="milk")]),
-                             Task(id= 3, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"), TaskStep(ActionType.PLACE, object_name="cereal")]), ]
+TASKSTEP_GPSR: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Bowl), TaskStep(ActionType.PLACE, object_annotations=Bowl)]),
+                             Task(id= 1, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Plate), TaskStep(ActionType.PLACE, object_annotations=Plate)]),
+                             Task(id= 2, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Milk), TaskStep(ActionType.PLACE, object_annotations=Milk)]),
+                             Task(id= 3, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Cereal), TaskStep(ActionType.PLACE, object_annotations=Cereal)]), ]
 
 # All possible tasks for FD
-TASKSTEP_FD: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="bowl"), TaskStep(ActionType.PLACE, object_name="bowl")]),
-                           Task(id= 1, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="plate"), TaskStep(ActionType.PLACE, object_name="plate")]),
-                           Task(id= 2, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="milk"), TaskStep(ActionType.PLACE, object_name="milk")]),
-                           Task(id= 3, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_name="cereal"), TaskStep(ActionType.PLACE, object_name="cereal")]), ]
+TASKSTEP_FD: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Bowl), TaskStep(ActionType.PLACE, object_annotations=Bowl)]),
+                           Task(id= 1, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Plate), TaskStep(ActionType.PLACE, object_annotations=Plate)]),
+                           Task(id= 2, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Milk), TaskStep(ActionType.PLACE, object_annotations=Milk)]),
+                           Task(id= 3, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Cereal), TaskStep(ActionType.PLACE, object_annotations=Cereal)]), ]
 
 TASKS : dict[TaskMode, list[Task]] = {
     TaskMode.PP: TASKSTEP_PP,

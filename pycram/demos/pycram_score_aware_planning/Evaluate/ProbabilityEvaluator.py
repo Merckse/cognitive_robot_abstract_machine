@@ -11,6 +11,7 @@ from demos.pycram_score_aware_planning.helper_methods import find_surface_of_obj
 
 from semantic_digital_twin.reasoning.predicates import compute_euclidean_planar_distance
 from semantic_digital_twin.spatial_types import Vector3, HomogeneousTransformationMatrix
+from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation, Body
 
 
@@ -42,6 +43,21 @@ class RobotProbability:
             return 1.0
         return 1.0 / (1.0 + math.exp(5 * (distance - distance_max)))
 
+
+    def p_robot_distance(self, robot_body: Body, target_body: Pose, distance_optimal=2.0, distance_max=5) -> float:
+        """
+        A method used for calculating, that a action from the robot to a specific ose works. In this case especially for the pickup.
+        :param robot_body = robot body
+        :param target_pose = object pose for distance
+        :param distance_optimal = optimal distance
+        :param distance_max = max distance
+        """
+        # TODO: implement robots arm length to consider in optimality AND its dofs: Infos either from pose_validator, robot_predicates
+        distance = float(compute_euclidean_planar_distance(body1=robot_body, body2=target_body, ignore_dimension=Vector3.Z()))
+        # Full probability up to distance_optimal, sigmoid decay after distance_max
+        if distance <= distance_optimal:
+            return 1.0
+        return 1.0 / (1.0 + math.exp(5 * (distance - distance_max)))
 
     def p_clutter_count(self, target_body: Body, radius=0.4) -> float:
         """
@@ -101,25 +117,25 @@ class RobotProbability:
                 # Base probabilities for later re-assertion.
                 step_probability: float = 1
                 default_probability : float= 0.95 # reevaluate on known data
-                object_name: str = step.object_name
+                object_annotation: SemanticAnnotation = step.object_annotations
                 location: str = step.location
                 action_type = step.action_type
 
                 # print(task.task_steps)
                 # Retrieving values
                 if location not in ("", None):
-                    step_probability = evaluation(action_type, object_name, location).probability
+                    step_probability = evaluation(action_type, object_annotation, location).probability
                     if location in NAVIGATION_POSES:
                         x, y, _ = NAVIGATION_POSES[location]
                         temp_robot.root.global_pose.x = x
                         temp_robot.root.global_pose.y = y
 
-                elif object_name not in ("", None):
+                elif object_annotation not in ("", None):
                     # evaluating the concatination of these actions into a wholeistic task
-                    step_probability = evaluation(action_type, object_name, location).probability
+                    step_probability = evaluation(action_type, object_annotation, location).probability
 
                     try:
-                        object_body = world.get_body_by_name(object_name)
+                        object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
                     except:
                         step.probability = step_probability
                         joint_probability = round(joint_probability * step_probability, 2)
@@ -133,7 +149,7 @@ class RobotProbability:
                         step_probability = step_probability * self.p_clutter_count(target_body=object_body)
                        # self.p_clutter_proximity() TODO: retrieve list of closest objects
                 else:
-                    step_probability = evaluation(action_type, object_name, location).probability
+                    step_probability = evaluation(action_type, object_annotation, location).probability
 
                 if step_probability < probability_threshold:
                     step.action_assisted = True

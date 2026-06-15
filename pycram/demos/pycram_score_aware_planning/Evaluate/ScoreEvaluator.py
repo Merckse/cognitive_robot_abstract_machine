@@ -94,7 +94,7 @@ class RobotScorer:
                 expected_time: int = 0
                 penalty: int = 0
                 step_profile = evaluation(
-                    step.action_type, step.object_name, step.location
+                    step.action_type, step.object_annotations, step.location
                 )
 
                 if step.action_assisted:
@@ -115,7 +115,7 @@ class RobotScorer:
                 step.action_score = base_score
                 step.action_penatly = penalty
                 step.action_time = expected_time
-                step.task_score_penalized = base_score-penalty
+                step.task_score_penalized = base_score+penalty
 
 
             # asserting all needed values on the task

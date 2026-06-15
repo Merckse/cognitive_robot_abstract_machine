@@ -197,10 +197,10 @@ class Aperture(HasRootRegion):
             name, world, parent_T_self, scale=body_scale
         )
 
-    def _mount_strategy(self, host):
-        # An aperture cuts its shape out of the host's geometry, then mounts as a child.
-        self._remove_aperture_geometry_from_parent(host)
-        super()._mount_strategy(host)
+    def _mount_strategy(self, main_has_root_body_annotation: HasRootBody) -> None:
+        # An aperture cuts its shape out of the whole's geometry, then mounts as a child.
+        self._remove_aperture_geometry_from_parent(main_has_root_body_annotation)
+        super()._mount_strategy(main_has_root_body_annotation)
 
     def _remove_aperture_geometry_from_parent(self, parent: HasRootBody):
         """
@@ -232,22 +232,30 @@ class MechanicalJoint(HasRootBody):
     A mechanical joint is a physical entity that connects two bodies and allows one to move along or around a fixed axis
     """
 
-    def _mount_strategy(self, host):
+    def _mount_strategy(self, main_has_root_body_annotation: HasRootBody) -> None:
         """
-        Splices the joint between the host and the host's current parent, preserving the host's
-        ancestry:  host_parent -(active)-> joint -(fixed)-> host. The joint keeps its active
-        connection (now anchored at the host's parent); the host hangs rigidly off the joint.
+        Splices the joint between the whole (``main_has_root_body_annotation``) and the whole's
+        current parent, preserving the whole's ancestry:
+        whole_parent -(active)-> joint -(fixed)-> whole. The joint keeps its active connection
+        (now anchored at the whole's parent); the whole hangs rigidly off the joint.
         """
-        if host.root.parent_kinematic_structure_entity == self.root:
+        if (
+            main_has_root_body_annotation.root.parent_kinematic_structure_entity
+            == self.root
+        ):
             return
         # used instead of World.compute_child_kinematic_structure_entities because its memoized
         if list(self._world.kinematic_structure.successors(self.root.index)):
-            raise MechanicalJointAlreadyMounted(self, host)
+            raise MechanicalJointAlreadyMounted(self, main_has_root_body_annotation)
 
         self._world.move_branch(
-            self.root, host.root.parent_kinematic_structure_entity, True
+            self.root,
+            main_has_root_body_annotation.root.parent_kinematic_structure_entity,
+            True,
         )
-        host._world.move_branch(host.root, self.root, True)
+        main_has_root_body_annotation._world.move_branch(
+            main_has_root_body_annotation.root, self.root, True
+        )
 
 
 @dataclass(eq=False)

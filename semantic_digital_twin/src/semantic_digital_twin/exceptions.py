@@ -1,6 +1,6 @@
 from __future__ import annotations, absolute_import
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, Field
 from typing import Dict, Set
 from uuid import UUID
 
@@ -309,7 +309,8 @@ class MismatchingWorld(UsageError):
 @dataclass
 class CannotBeAPartOf(UsageError):
     """
-    Raised when ``add`` is called with a part that no composition field of the annotation accepts.
+    Raised when ``add`` is called with a part that no part-whole relationship field of the
+    annotation accepts.
     """
 
     annotation: SemanticAnnotation
@@ -325,15 +326,15 @@ class CannotBeAPartOf(UsageError):
     def __post_init__(self):
         self.message = (
             f"{type(self.part).__name__} cannot be added as a part of "
-            f"{type(self.annotation).__name__}: no composition field accepts it."
+            f"{type(self.annotation).__name__}: no part-whole relationship field accepts it."
         )
 
 
 @dataclass
 class AmbiguousPart(UsageError):
     """
-    Raised when ``add`` is called with a part whose type matches more than one composition field of
-    the annotation, so the target slot is ambiguous.
+    Raised when ``add`` is called with a part whose type matches more than one part-whole
+    relationship field of the annotation, so the target field is ambiguous.
     """
 
     annotation: SemanticAnnotation
@@ -346,23 +347,23 @@ class AmbiguousPart(UsageError):
     The part that could not be unambiguously added.
     """
 
-    fields: List[str]
+    fields: List[Field]
     """
-    The names of the composition fields whose element type accepts the part.
+    The names of the part-whole relationship fields whose element type accepts the part.
     """
 
     def __post_init__(self):
         self.message = (
             f"{type(self.part).__name__} cannot be unambiguously added as a part of "
-            f"{type(self.annotation).__name__}: it matches multiple composition fields "
-            f"({', '.join(self.fields)})."
+            f"{type(self.annotation).__name__}: it matches multiple part-whole relationship fields "
+            f"({', '.join([field_.name for field_ in self.fields])})."
         )
 
 
 @dataclass
 class MechanicalJointAlreadyMounted(UsageError):
     """
-    Raised when a mechanical joint that already connects a child is mounted onto a different host.
+    Raised when a mechanical joint that already connects a child is mounted onto a different whole.
     If you think a single Mechanical Joint should be able to have multiple children, contact @LucaKro.
     """
 
@@ -371,15 +372,15 @@ class MechanicalJointAlreadyMounted(UsageError):
     The mechanical joint being mounted.
     """
 
-    host: SemanticAnnotation
+    main_has_root_body_annotation: SemanticAnnotation
     """
-    The host the joint was being mounted onto.
+    The annotation (the whole) the joint was being mounted onto.
     """
 
     def __post_init__(self):
         self.message = (
             f"{type(self.joint).__name__} already connects a child and cannot be mounted onto "
-            f"{type(self.host).__name__}: a mechanical joint connects exactly one child."
+            f"{type(self.main_has_root_body_annotation).__name__}: a mechanical joint connects exactly one child."
         )
 
 

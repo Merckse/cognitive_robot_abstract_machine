@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field, MISSING
+from dataclasses import dataclass, field, MISSING, Field
 from functools import lru_cache
 from typing import Tuple
 
@@ -177,16 +177,19 @@ class HasRootKinematicStructureEntity(SemanticAnnotation, ABC):
 
         return self_instance
 
-    def _mount_strategy(self, host: HasRootBody) -> None:
+    def _mount_strategy(self, main_has_root_body_annotation: HasRootBody) -> None:
         """
-        Realize the relationship between this annotation (as a part) and its ``host`` in the
-        kinematic structure. The default is to become a kinematic child of the host; parts with a
-        different strategy (e.g. mechanical joints that re-parent the host, apertures that cut it)
-        override this.
+        Realize the relationship between this annotation (as a part) and the
+        ``main_has_root_body_annotation`` (the whole) in the kinematic structure. The default is to
+        become a kinematic child of the whole; parts with a different strategy (e.g. mechanical
+        joints that re-parent the whole, apertures that cut it) override this.
 
-        :param host: The annotation this one is being added to as a part.
+        :param main_has_root_body_annotation: The annotation (the whole) this one is being added to
+            as a part.
         """
-        host._world.move_branch(self.root, host.root, True)
+        main_has_root_body_annotation._world.move_branch(
+            self.root, main_has_root_body_annotation.root, True
+        )
 
     @property
     def global_transform(self) -> HomogeneousTransformationMatrix:
@@ -315,96 +318,105 @@ class HasRootRegion(HasRootKinematicStructureEntity, ABC):
         )
 
 
-def composition_field(*, default=MISSING, default_factory=MISSING, **kwargs):
+def part_whole_relationship_field(
+    *, default=MISSING, default_factory=MISSING, **kwargs
+):
     """
-    Declare a dataclass field as a composition slot for :meth:`CompositionMixin.add`.
+    Declare a dataclass field as a part-whole relationship field for
+    :meth:`PartWholeRelationship.add`.
 
-    Marks the field's metadata with ``"composition": True`` so slot discovery can find it
-    locally, independent of where the field is declared in the class hierarchy. Accepts the same
-    keyword arguments as :func:`dataclasses.field` (``hash``, ``kw_only``, ...), merging any
-    caller-provided ``metadata`` with the composition marker.
+    Marks the field's metadata with ``"part_whole_relationship": True`` so the field discovery can
+    find it locally, independent of where the field is declared in the class hierarchy. Accepts the
+    same keyword arguments as :func:`dataclasses.field` (``hash``, ``kw_only``, ...), merging any
+    caller-provided ``metadata`` with the part-whole relationship marker.
     """
-    metadata = {**kwargs.pop("metadata", {}), "composition": True}
+    metadata = {**kwargs.pop("metadata", {}), "part_whole_relationship": True}
     return field(
         default=default, default_factory=default_factory, metadata=metadata, **kwargs
     )
 
 
 @dataclass
-class _CompositionFieldSpecification:
-    field_name: str
+class _PartWholeRelationshipFieldSpecification:
+    field_: Field
     element_type: Type[HasRootKinematicStructureEntity]
     is_one_to_many_relationship: bool
 
 
 @lru_cache(maxsize=None)
-def _composition_field_specifications(
-    cls: Type[CompositionMixin],
-) -> list[_CompositionFieldSpecification]:
+def _part_whole_relationship_field_specifications(
+    cls: Type[PartWholeRelationship],
+) -> list[_PartWholeRelationshipFieldSpecification]:
     """
-    Resolve the composition slots of ``cls`` as ``(field_name, element_type, is_plural)`` tuples.
+    Resolve the part-whole relationship fields of ``cls`` as ``(field_name, element_type,
+    is_plural)`` tuples.
 
-    Composition slots are the dataclass fields declared with :func:`composition_field` (whose
-    metadata carries ``"composition": True``), e.g. ``HasHandle.handle``; a field a concrete
-    annotation merely adds on top with a plain :func:`dataclasses.field` (e.g. ``Door.entry_way``)
-    is not a slot. Memoized per class because the slot set is immutable and resolving it
-    re-introspects the whole dataclass.
+    Part-whole relationship fields are the dataclass fields declared with
+    :func:`part_whole_relationship_field` (whose metadata carries
+    ``"part_whole_relationship": True``), e.g. ``HasHandle.handle``; a field a concrete annotation
+    merely adds on top with a plain :func:`dataclasses.field` (e.g. ``Door.entry_way``) is not a
+    part-whole relationship field. Memoized per class because the field set is immutable and
+    resolving it re-introspects the whole dataclass.
     """
     return [
-        _CompositionFieldSpecification(
-            wf.name, wf.type_endpoint, wf.is_one_to_many_relationship
+        _PartWholeRelationshipFieldSpecification(
+            wf.field, wf.type_endpoint, wf.is_one_to_many_relationship
         )
         for wf in WrappedClass(cls).fields
-        if wf.field.metadata.get("composition")
+        if wf.field.metadata.get("part_whole_relationship")
     ]
 
 
 @dataclass(eq=False)
-class CompositionMixin(HasRootKinematicStructureEntity, ABC):
+class PartWholeRelationship(HasRootKinematicStructureEntity, ABC):
     """
-    Base for annotations that have structural *parts* (the composition / part-of relation).
+    Base for annotations that have structural *parts* (the part-whole relation).
 
-    Each part mixin (``HasHandle``, ``HasDoors``, ...) declares a typed composition slot. The unified
-    :meth:`add` routes a part to the slot whose element type matches it and lets the part mount itself
-    (:meth:`HasRootKinematicStructureEntity._mount_strategy`).
+    Each part mixin (``HasHandle``, ``HasDoors``, ...) declares a typed part-whole relationship
+    field. The unified :meth:`add` routes a part to the field whose element type matches it and lets
+    the part mount itself (:meth:`HasRootKinematicStructureEntity._mount_strategy`).
     """
 
     @synchronized_attribute_modification
     def add(self, part: HasRootKinematicStructureEntity) -> None:
         """
-        Add ``part`` as a structural part, routing it to the matching composition slot by type.
+        Add ``part`` as a structural part, routing it to the matching part-whole relationship field
+        by type.
 
         :param part: The part to add.
-        :raises CannotBeAPartOf: If no composition slot of this annotation accepts ``type(part)``.
-        :raises AmbiguousPart: If ``type(part)`` matches more than one composition slot.
+        :raises CannotBeAPartOf: If no part-whole relationship field of this annotation accepts
+            ``type(part)``.
+        :raises AmbiguousPart: If ``type(part)`` matches more than one part-whole relationship field.
         """
         matches = [
-            composition_field_specification
-            for composition_field_specification in _composition_field_specifications(
+            part_whole_relationship_field_specification
+            for part_whole_relationship_field_specification in _part_whole_relationship_field_specifications(
                 type(self)
             )
-            if isinstance(part, composition_field_specification.element_type)
+            if isinstance(
+                part, part_whole_relationship_field_specification.element_type
+            )
         ]
         if not matches:
             raise CannotBeAPartOf(self, part)
         if len(matches) > 1:
-            raise AmbiguousPart(self, part, [match.field_name for match in matches])
+            raise AmbiguousPart(self, part, [match.field_ for match in matches])
 
         [match] = matches
         part._mount_strategy(self)
         if match.is_one_to_many_relationship:
-            getattr(self, match.field_name).append(part)
+            getattr(self, match.field_.name).append(part)
         else:
-            setattr(self, match.field_name, part)
+            setattr(self, match.field_.name, part)
 
 
 @dataclass(eq=False)
-class HasApertures(HasRootBody, CompositionMixin, ABC):
+class HasApertures(HasRootBody, PartWholeRelationship, ABC):
     """
     A mixin class for semantic annotations that have apertures.
     """
 
-    apertures: List[Aperture] = composition_field(
+    apertures: List[Aperture] = part_whole_relationship_field(
         default_factory=list, hash=False, kw_only=True
     )
     """
@@ -413,12 +425,14 @@ class HasApertures(HasRootBody, CompositionMixin, ABC):
 
 
 @dataclass(eq=False)
-class HasMechanicalJoint(HasRootBody, CompositionMixin, ABC):
+class HasMechanicalJoint(HasRootBody, PartWholeRelationship, ABC):
     """
     A mixin class for semantic annotations that have mechanical joints.
     """
 
-    mechanical_joint: Optional[MechanicalJoint] = composition_field(default=None)
+    mechanical_joint: Optional[MechanicalJoint] = part_whole_relationship_field(
+        default=None
+    )
     """
     The mechanical joint of the semantic annotation.
     """
@@ -438,12 +452,12 @@ class HasMechanicalJoint(HasRootBody, CompositionMixin, ABC):
 
 
 @dataclass(eq=False)
-class HasDrawers(CompositionMixin, ABC):
+class HasDrawers(PartWholeRelationship, ABC):
     """
     A mixin class for semantic annotations that have drawers.
     """
 
-    drawers: List[Drawer] = composition_field(
+    drawers: List[Drawer] = part_whole_relationship_field(
         default_factory=list, hash=False, kw_only=True
     )
     """
@@ -452,12 +466,12 @@ class HasDrawers(CompositionMixin, ABC):
 
 
 @dataclass(eq=False)
-class HasDoors(CompositionMixin, ABC):
+class HasDoors(PartWholeRelationship, ABC):
     """
     A mixin class for semantic annotations that have doors.
     """
 
-    doors: List[Door] = composition_field(
+    doors: List[Door] = part_whole_relationship_field(
         default_factory=list, hash=False, kw_only=True
     )
     """
@@ -466,12 +480,12 @@ class HasDoors(CompositionMixin, ABC):
 
 
 @dataclass(eq=False)
-class HasHandle(HasRootBody, CompositionMixin, ABC):
+class HasHandle(HasRootBody, PartWholeRelationship, ABC):
     """
     A mixin class for semantic annotations that have a handle.
     """
 
-    handle: Optional[Handle] = composition_field(default=None)
+    handle: Optional[Handle] = part_whole_relationship_field(default=None)
     """
     The handle of the semantic annotation.
     """

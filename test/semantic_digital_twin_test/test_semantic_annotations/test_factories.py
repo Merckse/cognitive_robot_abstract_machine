@@ -22,9 +22,9 @@ from semantic_digital_twin.exceptions import (
 )
 from semantic_digital_twin.orm.ormatic_interface import *
 from semantic_digital_twin.semantic_annotations.mixins import (
-    CompositionMixin,
+    PartWholeRelationship,
     HasRootBody,
-    composition_field,
+    part_whole_relationship_field,
 )
 from semantic_digital_twin.semantic_annotations.mixins import (
     HasCaseAsRootBody,
@@ -968,14 +968,16 @@ class TestFactories(unittest.TestCase):
 
 
 @dataclass(eq=False)
-class _HostWithOverlappingSlots(HasRootBody, CompositionMixin):
+class _AnnotationWithOverlappingPartWholeRelationshipFields(
+    HasRootBody, PartWholeRelationship
+):
     """
-    Throwaway host whose two composition slots have overlapping element types
+    Throwaway whole whose two part-whole relationship fields have overlapping element types
     (``Hinge`` is a subclass of ``MechanicalJoint``), so a ``Hinge`` matches both.
     """
 
-    joint: Optional[MechanicalJoint] = composition_field(default=None)
-    specific_joint: Optional[Hinge] = composition_field(default=None)
+    joint: Optional[MechanicalJoint] = part_whole_relationship_field(default=None)
+    specific_joint: Optional[Hinge] = part_whole_relationship_field(default=None)
 
 
 def _world_with_root() -> World:
@@ -1037,7 +1039,7 @@ def test_add_routes_slider_by_reparenting_self():
 
 
 def test_add_routes_plural_drawer_and_door():
-    """add() appends to the right list when the matching composition field is plural."""
+    """add() appends to the right list when the matching part-whole relationship field is plural."""
     world = _world_with_root()
     with world.modify_world():
         fridge = Fridge.create_with_new_body_in_world(
@@ -1099,7 +1101,7 @@ def test_add_object_stores_occupants():
 
 
 def test_add_does_not_route_occupants():
-    """An occupant matches no composition field, so add() rejects it (it must use place)."""
+    """An occupant matches no part-whole relationship field, so add() rejects it (it must use place)."""
     world = _world_with_root()
     with world.modify_world():
         fridge = Fridge.create_with_new_body_in_world(
@@ -1116,7 +1118,7 @@ def test_add_does_not_route_occupants():
 
 
 def test_add_rejects_unsupported_part_type():
-    """add() of a part type the annotation has no composition field for raises CannotBeAPartOf."""
+    """add() of a part type the annotation has no part-whole relationship field for raises CannotBeAPartOf."""
     world = _world_with_root()
     with world.modify_world():
         door = Door.create_with_new_body_in_world(
@@ -1125,37 +1127,37 @@ def test_add_rejects_unsupported_part_type():
         drawer = Drawer.create_with_new_body_in_world(
             name=PrefixedName("drawer"), world=world
         )
-        # A Door has handle/hinge composition fields but no drawer field.
+        # A Door has handle/hinge part-whole relationship fields but no drawer field.
         with pytest.raises(CannotBeAPartOf):
             door.add(drawer)
 
 
 def test_add_raises_on_ambiguous_part():
-    """add() of a part matching more than one composition slot raises AmbiguousPart."""
+    """add() of a part matching more than one part-whole relationship field raises AmbiguousPart."""
     world = _world_with_root()
     with world.modify_world():
-        host = _HostWithOverlappingSlots.create_with_new_body_in_world(
-            name=PrefixedName("host"), world=world
+        whole = _AnnotationWithOverlappingPartWholeRelationshipFields.create_with_new_body_in_world(
+            name=PrefixedName("whole"), world=world
         )
         hinge = Hinge.create_with_new_body_in_world(
             name=PrefixedName("hinge"), world=world, active_axis=Vector3.Z()
         )
-        # A Hinge is both a MechanicalJoint (joint slot) and a Hinge (specific_joint slot).
+        # A Hinge is both a MechanicalJoint (joint field) and a Hinge (specific_joint field).
         with pytest.raises(AmbiguousPart):
-            host.add(hinge)
+            whole.add(hinge)
 
 
 def test_containment_only_annotation_has_no_add():
-    """A pure-containment annotation (Table) exposes add_object but not the composition add()."""
+    """A pure-containment annotation (Table) exposes add_object but not the part-whole add()."""
     assert not hasattr(Table, "add")
     assert hasattr(Table, "add_object")
 
 
-def test_mechanical_joint_mount_splices_under_host_parent():
+def test_mechanical_joint_mount_splices_under_whole_parent():
     """
-    When the host already sits under a non-root parent, mounting a mechanical joint splices the joint
-    between the host and that parent (parent -> joint -> host): the host's ancestry is preserved and
-    the joint keeps its active (revolute) connection, now anchored at the host's parent.
+    When the whole already sits under a non-root parent, mounting a mechanical joint splices the joint
+    between the whole and that parent (parent -> joint -> whole): the whole's ancestry is preserved and
+    the joint keeps its active (revolute) connection, now anchored at the whole's parent.
     """
     world = _world_with_root()
     with world.modify_world():
@@ -1189,8 +1191,8 @@ def test_mechanical_joint_mount_splices_under_host_parent():
     assert fridge.root in ancestors
 
 
-def test_mechanical_joint_mount_onto_same_host_is_idempotent():
-    """Mounting the same joint onto the host it already connects is a no-op (no self-loop, no error)."""
+def test_mechanical_joint_mount_onto_same_whole_is_idempotent():
+    """Mounting the same joint onto the whole it already connects is a no-op (no self-loop, no error)."""
     world = _world_with_root()
     with world.modify_world():
         door = Door.create_with_new_body_in_world(
@@ -1206,8 +1208,8 @@ def test_mechanical_joint_mount_onto_same_host_is_idempotent():
     assert door.root.parent_kinematic_structure_entity == hinge.root
 
 
-def test_mechanical_joint_cannot_be_mounted_onto_a_second_host():
-    """A joint already connecting one host rejects being mounted onto a different host."""
+def test_mechanical_joint_cannot_be_mounted_onto_a_second_whole():
+    """A joint already connecting one whole rejects being mounted onto a different whole."""
     world = _world_with_root()
     with world.modify_world():
         door1 = Door.create_with_new_body_in_world(

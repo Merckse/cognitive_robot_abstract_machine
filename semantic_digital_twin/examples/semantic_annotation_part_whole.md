@@ -11,24 +11,24 @@ kernelspec:
   name: python3
 ---
 
-(semantic_annotation_composition)=
-# Composition
+(semantic_annotation_part_whole)=
+# Part-Whole Relationships
 
 Many semantic annotations are made of *parts*: a drawer has a handle and a slider, a dresser has
-drawers and doors. This structural *part-of* relation is called **composition**, and the
+drawers and doors. This structural *part-of* relation is the **part-whole relationship**, and the
 semantic digital twin models it with the single, type-routed method
-{py:meth}`semantic_digital_twin.semantic_annotations.mixins.CompositionMixin.add`.
+{py:meth}`semantic_digital_twin.semantic_annotations.mixins.PartWholeRelationship.add`.
 
 Calling `whole.add(part)` does two things:
 
-1. It finds the typed *composition slot* of `whole` whose element type matches `type(part)` and
-   stores the part there (a single-valued slot like `handle`, or appends to a list slot like
-   `drawers`).
+1. It finds the typed *part-whole relationship field* of `whole` whose element type matches
+   `type(part)` and stores the part there (a single-valued field like `handle`, or appends to a
+   list field like `drawers`).
 2. It lets the part mount itself into the kinematic structure (by default it becomes a kinematic
    child of the whole), so moving the whole moves the part with it.
 
-Composition is *parthood*, not occupancy: a handle is *part of* a drawer. The cup standing *on* a
-table is not part of the table — that "located-in/on" relation handled
+A part-whole relationship is *parthood*, not occupancy: a handle is *part of* a drawer. The cup
+standing *on* a table is not part of the table — that "located-in/on" relation handled
 separately by {py:class}`semantic_digital_twin.semantic_annotations.mixins.IsStorageSpace` and its
 `add_object` method.
 
@@ -87,7 +87,7 @@ with world.modify_world():
     # One method, routed by type: handle -> drawer.handle, slider -> drawer.mechanical_joint
     drawer.add(handle)
     drawer.add(slider)
-    # drawer -> dresser.drawers (a list slot, so it is appended)
+    # drawer -> dresser.drawers (a list field, so it is appended)
     dresser.add(drawer)
 
 print("drawer.handle:", drawer.handle)
@@ -100,35 +100,35 @@ rt.scene.show("jupyter")
 ```
 
 `add` raised nothing and put each part in the right place, because every part type matched
-exactly one slot of its target.
+exactly one part-whole relationship field of its target.
 
-## Declaring your own composition slot with `composition_field`
+## Declaring your own part-whole relationship field with `part_whole_relationship_field`
 
-To give a custom annotation its own composition slot, declare the slot with
-{py:func}`semantic_digital_twin.semantic_annotations.mixins.composition_field` and inherit from
-`CompositionMixin`. The marker on the field — not where the field sits in the class hierarchy —
-is what makes it a slot, so a plain `field(...)` on the same class is simply *not* a slot and is
-ignored by `add`.
+To give a custom annotation its own part-whole relationship field, declare it with
+{py:func}`semantic_digital_twin.semantic_annotations.mixins.part_whole_relationship_field` and
+inherit from `PartWholeRelationship`. The marker on the field — not where the field sits in the
+class hierarchy — is what makes it a part-whole relationship field, so a plain `field(...)` on the
+same class is simply *not* one and is ignored by `add`.
 
 ```{code-cell} ipython3
 from dataclasses import dataclass, field
 from typing import Optional
 
 from semantic_digital_twin.semantic_annotations.mixins import (
-    CompositionMixin,
+    PartWholeRelationship,
     HasRootBody,
-    composition_field,
+    part_whole_relationship_field,
 )
 
 @dataclass(eq=False)
-class ControlPanel(HasRootBody, CompositionMixin):
+class ControlPanel(HasRootBody, PartWholeRelationship):
     """A custom annotation that can hold a single handle as a structural part."""
 
-    handle: Optional[Handle] = composition_field(default=None)
-    """A composition slot: parts of type ``Handle`` are routed here by ``add``."""
+    handle: Optional[Handle] = part_whole_relationship_field(default=None)
+    """A part-whole relationship field: parts of type ``Handle`` are routed here by ``add``."""
 
     label: Optional[str] = field(default=None)
-    """A plain field — *not* a composition slot, so ``add`` never touches it."""
+    """A plain field — *not* a part-whole relationship field, so ``add`` never touches it."""
 ```
 
 Now we can build a `ControlPanel` and add a handle to it exactly like the built-in annotations:
@@ -152,7 +152,8 @@ with world.modify_world():
 print("panel.handle is panel_handle:", panel.handle is panel_handle)
 ```
 
-If you try to add a part whose type matches none of the slots, `add` refuses with
+If you try to add a part whose type matches none of the part-whole relationship fields, `add`
+refuses with
 {py:class}`semantic_digital_twin.exceptions.CannotBeAPartOf` — a `ControlPanel` has nowhere to put
 a `Drawer`:
 

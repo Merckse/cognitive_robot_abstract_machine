@@ -1,3 +1,4 @@
+import dataclasses
 import os
 import time
 from copy import deepcopy
@@ -26,6 +27,15 @@ from semantic_digital_twin.spatial_types.spatial_types import (
 )
 from semantic_digital_twin.world_description.shape_collection import ShapeCollection
 from semantic_digital_twin.world_description.world_entity import Body
+from semantic_digital_twin.spatial_types import Vector3
+from semantic_digital_twin.semantic_annotations.semantic_annotations import (
+    Drawer,
+    Handle,
+    Slider,
+)
+from semantic_digital_twin.semantic_annotations.mixins import (
+    _part_whole_relationship_field_specifications,
+)
 from semantic_digital_twin.orm.ormatic_interface import *
 from krrood.ormatic.data_access_objects.helper import to_dao
 
@@ -157,3 +167,76 @@ def test_pr2_semantic_annotation_and_safe_to_db(
 
     session.add(dao)
     session.commit()
+
+
+def _field_metadata(annotation_type, field_name):
+    """Return the dataclass-field metadata dict for ``field_name`` on ``annotation_type``."""
+    return {f.name: f for f in dataclasses.fields(annotation_type)}[field_name].metadata
+
+
+def test_part_whole_relationship_field_metadata_survives_orm_round_trip(session):
+    """
+    The ``part_whole_relationship`` marker is stored in a field's ``metadata`` and lives on the
+    dataclass definition, not in the persisted row (ORMatic never reads ``field.metadata``).
+    Reconstructing an annotation from its DAO must therefore yield an instance whose type still
+    carries the marker, the marked-field discovery must still find it, and the field *values*
+    (handle, mechanical_joint) must survive the round trip.
+    """
+    world = World()
+    root = Body(name=PrefixedName("root"))
+    with world.modify_world():
+        world.add_body(root)
+    with world.modify_world():
+        drawer = Drawer.create_with_new_body_in_world(
+            name=PrefixedName("drawer"), scale=Scale(0.2, 0.3, 0.2), world=world
+        )
+        handle = Handle.create_with_new_body_in_world(
+            name=PrefixedName("handle"), world=world
+        )
+        slider = Slider.create_with_new_body_in_world(
+            name=PrefixedName("slider"), world=world, active_axis=Vector3.X()
+        )
+        drawer.add(handle)
+        drawer.add(slider)
+
+    # The marker is present on the source class before persisting.
+    assert _field_metadata(Drawer, "handle").get("part_whole_relationship") is True
+    assert (
+        _field_metadata(Drawer, "mechanical_joint").get("part_whole_relationship")
+        is True
+    )
+
+    world_dao: WorldMappingDAO = to_dao(world)
+    session.add(world_dao)
+    session.commit()
+
+    reconstructed: World = session.scalar(select(WorldMappingDAO)).from_dao()
+    [reconstructed_drawer] = reconstructed.get_semantic_annotations_by_type(Drawer)
+
+    # The reconstructed object is a real Drawer, so its fields still carry the marker.
+    assert isinstance(reconstructed_drawer, Drawer)
+    assert (
+        _field_metadata(type(reconstructed_drawer), "handle").get(
+            "part_whole_relationship"
+        )
+        is True
+    )
+    assert (
+        _field_metadata(type(reconstructed_drawer), "mechanical_joint").get(
+            "part_whole_relationship"
+        )
+        is True
+    )
+
+    # The marked-field discovery still resolves the same part-whole relationship fields.
+    discovered = {
+        spec.field_name
+        for spec in _part_whole_relationship_field_specifications(
+            type(reconstructed_drawer)
+        )
+    }
+    assert {"handle", "mechanical_joint"} <= discovered
+
+    # The field values themselves survived the round trip.
+    assert isinstance(reconstructed_drawer.handle, Handle)
+    assert isinstance(reconstructed_drawer.mechanical_joint, Slider)

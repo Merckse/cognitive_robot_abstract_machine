@@ -1,7 +1,17 @@
-![](doc/source/_static/images/new_coraplex_logo_clean.svg#gh-light-mode-only)
-![](doc/source/_static/images/new_coraplex_logo_clean_dark.svg#gh-dark-mode-only)
+<img src="./doc/source/_static/images/cora-plex-dark.png" width="400">
 
 
+### Cite
+
+```bibtex
+@software{coraplex,
+  author  = {Dech, Jonas and Hassouna, Vanessa and Krohm, Luca},
+  title   = {{CoraPlex}: A Python Framework for Cognitive Orchestrated Reasoning Architecture Planning Executive},
+  url     = {https://github.com/cram2/cognitive_robot_abstract_machine/tree/main/coraplex},
+  version = {2.0.0},
+  year    = {2024}
+}
+```
 
 ## Key Features
 

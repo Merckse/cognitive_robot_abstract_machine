@@ -511,9 +511,7 @@ class MechanicalJointAlreadyMounted(UsageError):
         )
 
     def suggest_correction(self) -> str:
-        return (
-            f"if you think that you found a case where this error does not apply, please contact @LucaKro"
-        )
+        return f"if you think that you found a case where this error does not apply, please contact @LucaKro"
 
 
 @dataclass

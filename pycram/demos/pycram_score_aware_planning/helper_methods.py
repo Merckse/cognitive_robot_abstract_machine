@@ -30,7 +30,7 @@ from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import FixedConnection
 from semantic_digital_twin.world_description.geometry import Scale, Color
 from semantic_digital_twin.world_description.world_entity import (
-    Body,
+    Body, SemanticAnnotation,
 )
 
 import numpy as np
@@ -220,9 +220,9 @@ def navigation_subplan(target_location: str, world):
     )
     return NavigateAction(target_location=pose, keep_joint_states=True)
 
-def pickup_subplan(object_name: str, arm: Arms, world: World):
+def pickup_subplan(object_annotation: SemanticAnnotation, arm: Arms, world: World):
     manipulator: Manipulator = world.get_semantic_annotations_by_type(Manipulator)[0]
-    object_body = world.get_body_by_name(object_name)
+    object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
     grasp = GraspDescription(approach_direction=ApproachDirection.FRONT, vertical_alignment=VerticalAlignment.NoAlignment, manipulator=manipulator)
     return PickUpAction(grasp_description=grasp, object_designator=object_body, arm=arm)
 
@@ -359,8 +359,8 @@ def find_free_placement_pose(
 
 
 
-def place_subplan(object_name: str, arm: Arms, target_location: str, world):
-    object_body : Body= world.get_body_by_name(object_name)
+def place_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world):
+    object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
 
     surface_spaces = compute_surface_spaces(world=world)
 
@@ -442,8 +442,8 @@ def generate_plan(tasks: list[Task], context: Context):
                 case ActionType.NAVIGATE:
                     action = navigation_subplan(target_location=task_steps.location, world=context.world)
                 case ActionType.PICKUP:
-                    last_pickup_object = task_steps.object_name
-                    action = pickup_subplan(object_name=task_steps.object_name, arm=arm, world=context.world)
+                    last_pickup_object = task_steps.object_annotations
+                    action = pickup_subplan(object_name=task_steps.object_annotations, arm=arm, world=context.world)
                 case ActionType.PLACE:
                     action = place_subplan(object_name=last_pickup_object, arm=arm, target_location=task_steps.object_placement, world=context.world)
                 case ActionType.PARK:
@@ -462,7 +462,7 @@ def generate_plan_task(task: Task, context: Context):
     plan = sequential(children=[], context=context)
     arm = Arms.LEFT
     action = None
-    last_pickup_object: Optional[str] = None
+    last_pickup_object: Optional[SemanticAnnotation] = None
     action_list : list[ActionDescription] = []
     for task_steps in task.task_steps:
         if task_steps.action_assisted:
@@ -470,10 +470,10 @@ def generate_plan_task(task: Task, context: Context):
                 case ActionType.NAVIGATE:
                     action = navigation_subplan(target_location=task_steps.location, world=context.world)
                 case ActionType.PICKUP:
-                    last_pickup_object = task_steps.object_name
-                    action = pickup_subplan(object_name=task_steps.object_name, arm=arm, world=context.world)
+                    last_pickup_object = task_steps.object_annotations
+                    action = pickup_subplan(object_annotation=task_steps.object_annotations, arm=arm, world=context.world)
                 case ActionType.PLACE:
-                    action = place_subplan(object_name=last_pickup_object, arm=arm,
+                    action = place_subplan(object_annotation=last_pickup_object, arm=arm,
                                            target_location=task_steps.location, world=context.world)
                 case ActionType.PARK:
                     action = ParkArmsAction(Arms.LEFT)
@@ -486,10 +486,10 @@ def generate_plan_task(task: Task, context: Context):
                 case ActionType.NAVIGATE:
                     action = navigation_subplan(target_location=task_steps.location, world=context.world)
                 case ActionType.PICKUP:
-                    last_pickup_object = task_steps.object_name
-                    action = pickup_subplan(object_name=task_steps.object_name, arm=arm, world=context.world)
+                    last_pickup_object : SemanticAnnotation= task_steps.object_annotations
+                    action = pickup_subplan(object_annotation=last_pickup_object, arm=arm, world=context.world)
                 case ActionType.PLACE:
-                    action = place_subplan(object_name=last_pickup_object, arm=arm, target_location=task_steps.location, world=context.world)
+                    action = place_subplan(object_annotation=last_pickup_object, arm=arm, target_location=task_steps.location, world=context.world)
                 case ActionType.PARK:
                     action = ParkArmsAction(Arms.LEFT)
                 case ActionType.DETECT:
@@ -526,7 +526,7 @@ NAVIGATION_POSES: dict[str, tuple[float, float, tuple[float, float, float, float
     "": (0, 0, _quat(-math.pi / 2)),  # going to 0,0 if unknown
 }
 
-def get_values(action_type: ActionType, object_name: str = "", location: str = ""
+def get_values(action_type: ActionType, semantic_annotation: SemanticAnnotation = None, location: str = ""
                ) -> tuple[int, int, int, float]:
-    p = evaluation(action_type, object_name, location)
+    p = evaluation(action_type, semantic_annotation, location)
     return p.points, p.penalty, p.time, p.probability

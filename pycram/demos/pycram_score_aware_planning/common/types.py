@@ -4,9 +4,11 @@ from itertools import count
 from typing import Optional
 
 from pycram.robot_plans.actions.base import ActionDescription
+from semantic_digital_twin.semantic_annotations import semantic_annotations
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 
 from pycram.datastructures.enums import TaskStatus
+from semantic_digital_twin.world_description.world_entity import SemanticAnnotation
 
 
 # TODO: Unstatify the types?
@@ -47,7 +49,7 @@ class ScoreEvent:
     timestamp: float
     action_type: str
     outcome: str
-    object_name: Optional[str]
+    semantic_annotation: Optional[SemanticAnnotation]
     points: int
     penalty: int
     time_spent: float
@@ -66,7 +68,7 @@ class TaskStep:
     action_assisted: bool = False
     uncertain: bool = False # Meaning, if not all informations to a task are known, then there has to be something done
     location : str = ""
-    object_name: str = "" # Object that can be named for interaction. E.g: "bowl", with action_type: Pick_Up
+    object_annotations: SemanticAnnotation = None # SemanticAnnotations for the actions, that are used for, with action_type: Pick_Up
     object_pickup: str = None # Possible: cooking_table, shelf, lowerTable, table, desk, dining_table, shelf_1, shelf_2
     object_placement: str = None # Possible:a
 

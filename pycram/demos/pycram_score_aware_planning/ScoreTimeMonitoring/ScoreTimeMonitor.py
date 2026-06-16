@@ -14,6 +14,17 @@ from pycram.language import SequentialNode
 
 logger = logging.getLogger(__name__)
 
+
+def _json_default(o):
+    """Fallback encoder for values json can't handle natively.
+
+    SemanticAnnotations are carried as the annotation class itself (e.g. ``Bowl``),
+    which json can't serialize — emit its name instead.
+    """
+    if isinstance(o, type):
+        return o.__name__
+    return str(o)
+
 class ScoreTimeMonitor:
     _score_events: list[ScoreEvent] = []
     """
@@ -45,7 +56,7 @@ class ScoreTimeMonitor:
         action_start_time = (plan.start_time - self._start_time).seconds
         duration = plan.end_time - plan.start_time
         outcome = plan.status
-        max_points, max_penalty, _, _ = get_values(action_type=task_step.action_type, object_name=task_step.object_name, location=task_step.location)
+        max_points, max_penalty, _, _ = get_values(action_type=task_step.action_type, semantic_annotation=task_step.object_annotations, location=task_step.location)
 
         if outcome == TaskStatus.SUCCEEDED:
             self._score += max_points
@@ -61,7 +72,7 @@ class ScoreTimeMonitor:
             timestamp=action_start_time,
             action_type=task_step.action_type,
             outcome=outcome.name,
-            object_name=task_step.object_name,
+            semantic_annotation=task_step.object_annotations,
             points=points,
             penalty=penalty,
             time_spent=duration.seconds,
@@ -74,7 +85,7 @@ class ScoreTimeMonitor:
     def _log(self, event: ScoreEvent, start_time: datetime.datetime):
         filename = "plan_" + start_time.strftime("%Y%m%d-%H%M%S") + ".log"
         log_dir = os.path.join(os.getcwd(), filename)
-        entry = json.dumps(asdict(event), indent=2)
+        entry = json.dumps(asdict(event), indent=2, default=_json_default)
 
         if not os.path.exists(log_dir):
             # first event: open the JSON array

@@ -24,9 +24,9 @@ class CompositeEvaluator:
         task_list_score_evaluated = self.score_evaluator.estimate(task_list=task_list_probability_evaluated)
 
         # normalize list
-        normalized_evaluated_task_list = normalize_task_estimation(task_list_score_evaluated)
+        # normalized_evaluated_task_list = normalize_task_estimation(task_list_score_evaluated)
 
-        self.summary(task_list_score_evaluated)
+        # self.summary(task_list_score_evaluated)
         return task_list_score_evaluated
 
 
@@ -90,9 +90,9 @@ class CompositeEvaluator:
                 "-" * step_width,
             ]
             for i, step in enumerate(task.task_steps, 1):
-                net = getattr(step, "task_score_penalized", step.action_score - step.action_penatly)
+                net = getattr(step, "task_score_penalized", step.action_score + step.action_penatly)
                 lines.append(
-                    f"  {i:<4} {step.action_type.value:<18} {(step.object_name or '-'):<16} "
+                    f"  {i:<4} {step.action_type.value:<18} {(step.object_annotations or '-'):<16} "
                     f"{(step.location or '-'):<14} {step.action_score:>6.1f} {step.action_penatly:>8} "
                     f"{net:>7} {step.action_time:>8.1f} {step.action_probability:>7.3f} "
                     f"{str(step.action_assisted):<10} {(step.object_pickup or '-'):<14} "

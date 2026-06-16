@@ -6,7 +6,7 @@ from Stabilizer.PlanStabilizer import PlanStabilizer
 from common.types import Task, TaskStep
 from common.values import TASKS
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
-from helper_methods import generate_plan_task
+from helper_methods import generate_plan_task, perceive_and_spawn_all_objects
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms, TaskStatus
 from pycram.motion_executor import simulated_robot
@@ -149,6 +149,12 @@ while task_list != []:
         for i in range(len(plan_x.action_list)):
             task_step : TaskStep = plan_x.task_steps[i]
             action = plan_x.action_list[i]
+
+            # if task_step.uncertain:
+            #     try:
+            #         perceive_and_spawn_all_objects(world=world)
+            #     except:
+            #         pass
 
             plan = sequential([], context=context)
             plan.add_child(make_node(action))

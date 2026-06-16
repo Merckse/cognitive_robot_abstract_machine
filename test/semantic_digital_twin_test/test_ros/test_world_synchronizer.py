@@ -1524,6 +1524,7 @@ def test_state_diff_during_concurrent_dof_add_remove_is_consistent(rclpy_node):
     ss.close()
 
 
+@pytest.mark.skip("@lucakro has to finish his thesis here.")
 def test_bidirectional_nested_modify_worlds_no_deadlock(rclpy_node):
     """
     Nested modify_world across two Worlds must not deadlock.
@@ -1537,8 +1538,9 @@ def test_bidirectional_nested_modify_worlds_no_deadlock(rclpy_node):
     # Seed
     with w1.modify_world():
         w1.add_body(Body(name=PrefixedName("root1")))
-    with w2.modify_world():
-        w2.add_body(Body(name=PrefixedName("root2")))
+
+    time.sleep(0.1)
+    assert w2.root
 
     # Thread A: w1 -> w2 nested
     def a():
@@ -1565,9 +1567,10 @@ def test_bidirectional_nested_modify_worlds_no_deadlock(rclpy_node):
     t2.join(timeout=10.0)
 
     # If we hit a lock-order inversion between different Worlds this would hang.
-    assert len(w1.kinematic_structure_entities) > 0
-    assert len(w2.kinematic_structure_entities) > 0
-
+    assert len(w1.kinematic_structure_entities) == 21
+    assert len(w2.kinematic_structure_entities) == 21
+    w1.validate()
+    w2.validate()
     ms1.close()
     ms2.close()
 

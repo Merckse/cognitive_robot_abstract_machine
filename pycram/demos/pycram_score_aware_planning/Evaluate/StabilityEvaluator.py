@@ -3,7 +3,7 @@ from dataclasses import dataclass
 
 # TODO: implement RobotPlanStability
 @dataclass(kw_only=True)
-class RobotPlanStability():
+class RobotPlanStability:
 
     def record(self, **kwargs):
         pass

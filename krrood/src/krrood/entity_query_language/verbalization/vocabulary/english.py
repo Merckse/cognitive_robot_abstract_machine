@@ -284,6 +284,26 @@ class RangePhrases(VocabEnum):
     """Copula-less form for HAVING / post-nominal use (*"between"*)."""
 
 
+class CoindexedOperators(VocabEnum):
+    """Plural copular operator phrases for a factored co-indexed comparison — the *"are equal to"*
+    of *"the month and year of A are equal to those of B"*. Plural because the coordinated
+    terminals (*"month and year"*) are the grammatical subject."""
+
+    EQ = OperatorWord("are equal to")
+    GT = OperatorWord("are greater than")
+    LT = OperatorWord("are less than")
+    GE = OperatorWord("are at least")
+    LE = OperatorWord("are at most")
+
+
+class CoindexedPhrases(VocabEnum):
+    """Fixed phrases for the factored co-indexed comparison rendering: the *"those of"* anaphor of
+    the faithful form, and the *"have the same"* verb of the natural equality form."""
+
+    THOSE_OF = PlainWord("those of")
+    HAVE_THE_SAME = PlainWord("have the same")
+
+
 class SortDirections(VocabEnum):
     """Sort direction words for ORDERED BY clauses."""
 

@@ -11,7 +11,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List
 
-from krrood.entity_query_language.factories import variable
+import krrood.entity_query_language.factories as eql
+from krrood.entity_query_language.factories import (
+    a,
+    an,
+    entity,
+    set_of,
+    variable,
+)
 from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
     attribute_names,
     is_boolean_attribute_chain,
@@ -67,3 +74,169 @@ def test_predicate_form_end_to_end():
     assert "battery" in text
     assert "greater than" in text
     assert "50" in text
+
+
+# ── Co-indexed comparator factoring ──────────────────────────────────────────
+
+
+@dataclass
+class _Date:
+    month: int
+    year: int
+    day: int
+
+
+@dataclass
+class _Period:
+    begin: _Date
+    end: _Date
+
+
+@dataclass
+class _Inner:
+    z: _Date
+
+
+@dataclass
+class _Outer:
+    x: _Date
+    y: _Inner
+
+
+@dataclass
+class _Statement:
+    period: _Period
+    revenue: float
+
+
+def test_coindexed_equality_factors_to_have_the_same():
+    """The motivating example: two ``begin.X == end.X`` conditions fold to one natural clause."""
+    p = variable(_Statement, domain=None)
+    query = a(
+        set_of(p.period.begin.month, eql.average(p.revenue))
+        .where(
+            p.period.begin.month == p.period.end.month,
+            p.period.begin.year == p.period.end.year,
+        )
+        .grouped_by(p.period.begin.month)
+    )
+    text = verbalize_expression(query)
+    # The two prefixes coordinate and the shared period factors out (pronominalised by the
+    # coreference pass — "its"/"their" depending on the subject's number).
+    assert "the begin, and end of" in text
+    assert "period have the same month, and year" in text
+    # The shared structure is said once — no repeated per-attribute equality.
+    assert "is the month of the end" not in text
+
+
+def test_coindexed_equality_coordinates_three_terminals():
+    p = variable(_Statement, domain=None)
+    query = a(
+        set_of(p.period.begin.month)
+        .where(
+            p.period.begin.month == p.period.end.month,
+            p.period.begin.year == p.period.end.year,
+            p.period.begin.day == p.period.end.day,
+        )
+        .grouped_by(p.period.begin.month)
+    )
+    assert "have the same month, year, and day" in verbalize_expression(query)
+
+
+def test_coindexed_non_equality_uses_faithful_those_of_form():
+    p = variable(_Statement, domain=None)
+    query = a(
+        set_of(p.period.begin.month)
+        .where(
+            p.period.begin.month > p.period.end.month,
+            p.period.begin.year > p.period.end.year,
+        )
+        .grouped_by(p.period.begin.month)
+    )
+    text = verbalize_expression(query)
+    assert (
+        "the month, and year of the begin of its period are greater than "
+        "those of the end of its period" in text
+    )
+
+
+def test_coindexed_partial_group_keeps_unrelated_condition_in_order():
+    p = variable(_Statement, domain=None)
+    query = a(
+        set_of(p.period.begin.month)
+        .where(
+            p.period.begin.month == p.period.end.month,
+            p.period.begin.year == p.period.end.year,
+            p.revenue > 0,
+        )
+        .grouped_by(p.period.begin.month)
+    )
+    text = verbalize_expression(query)
+    factored = text.index("have the same month, and year")
+    unrelated = text.index("revenue")
+    assert factored < unrelated  # the factored clause precedes the unrelated one
+
+
+def test_coindexed_does_not_fold_inequality_operator():
+    p = variable(_Statement, domain=None)
+    query = a(
+        set_of(p.period.begin.month)
+        .where(
+            p.period.begin.month != p.period.end.month,
+            p.period.begin.year != p.period.end.year,
+        )
+        .grouped_by(p.period.begin.month)
+    )
+    text = verbalize_expression(query)
+    assert "have the same" not in text
+    assert "is not the month of the end" in text
+
+
+def test_coindexed_single_condition_is_not_factored():
+    p = variable(_Statement, domain=None)
+    query = a(
+        set_of(p.period.begin.month)
+        .where(p.period.begin.month == p.period.end.month)
+        .grouped_by(p.period.begin.month)
+    )
+    text = verbalize_expression(query)
+    assert "have the same" not in text
+    assert "is the month of the end of its period" in text
+
+
+def test_coindexed_mixed_operators_are_not_folded_together():
+    p = variable(_Statement, domain=None)
+    query = a(
+        set_of(p.period.begin.month)
+        .where(
+            p.period.begin.month == p.period.end.month,
+            p.period.begin.year > p.period.end.year,
+        )
+        .grouped_by(p.period.begin.month)
+    )
+    assert "have the same" not in verbalize_expression(query)
+
+
+def test_coindexed_non_sibling_prefixes_use_faithful_form():
+    o = variable(_Outer, domain=None)
+    query = a(
+        set_of(o.x.month)
+        .where(o.x.month == o.y.z.month, o.x.year == o.y.z.year)
+        .grouped_by(o.x.month)
+    )
+    text = verbalize_expression(query)
+    assert "are equal to those of" in text
+    assert "have the same" not in text
+
+
+def test_coindexed_factoring_in_subject_whose_path():
+    p = variable(_Period, domain=None)
+    query = an(
+        entity(p).where(
+            p.begin.month == p.end.month,
+            p.begin.year == p.end.year,
+        )
+    )
+    assert "the begin, and end of the _Period have the same month, and year" in (
+        verbalize_expression(query)
+    )

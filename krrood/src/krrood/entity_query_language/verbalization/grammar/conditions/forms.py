@@ -29,7 +29,7 @@ from krrood.entity_query_language.verbalization.grammar.framework.specificity im
     SpecificityRule,
 )
 from krrood.entity_query_language.verbalization.microplanning.coordination import (
-    fold_range_pairs,
+    reduce_conjuncts,
     RangeFold,
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import (
@@ -262,9 +262,10 @@ def as_subject_restrictions(
     caller positions: superlative noun modifiers, the shared *"whose"* group, and the standalone
     residual. This is the list form of :func:`place`.
 
-    The conjuncts are range-folded here first (a complementary lower/upper bound pair on one chain
-    becomes a single *"… is between …"*), so the caller hands over the raw conditions and never
-    invokes the fold itself — the same reduction :meth:`ConditionAssembler.as_statements` applies.
+    The conjuncts are reduced here first (a complementary lower/upper bound pair on one chain
+    becomes a single *"… is between …"*; co-indexed comparisons across two prefixes fold into one
+    *"… have the same …"*), so the caller hands over the raw conditions and never invokes the fold
+    itself — the same reduction :meth:`ConditionAssembler.as_statements` applies.
 
     :param conditions: The subject's WHERE conjuncts (an ``AND`` already flattened to a list).
     :param subject: The variable the restriction is on.
@@ -275,7 +276,7 @@ def as_subject_restrictions(
     """
     placed = [
         place(Placement(item=item, subject=subject, number=number), context)
-        for item in fold_range_pairs(list(conditions))
+        for item in reduce_conjuncts(list(conditions))
     ]
     grouped = [item.fragment for item in placed if item.slot is Slot.WHOSE]
     whose = (

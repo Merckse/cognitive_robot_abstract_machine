@@ -16,18 +16,18 @@ class CompositeEvaluator:
         self.probability_evaluator = RobotProbability()
         # self.plan_stability_evaluator = RobotPlanStability()
 
-
-
     def estimate(self, context : Context, task_list : list[Task]) -> list[Task]:
         # estimating score and probability, with score relying on probability
         task_list_probability_evaluated = self.probability_evaluator.estimate(task_list=task_list, context=context)
         task_list_score_evaluated = self.score_evaluator.estimate(task_list=task_list_probability_evaluated)
 
-        # normalize list
-        # normalized_evaluated_task_list = normalize_task_estimation(task_list_score_evaluated)
+        self.summary(task_list_score_evaluated)
 
-        # self.summary(task_list_score_evaluated)
-        return task_list_score_evaluated
+        # normalize list
+        normalized_evaluated_task_list = normalize_task_estimation(task_list_score_evaluated)
+
+        self.summary(normalized_evaluated_task_list)
+        return normalized_evaluated_task_list
 
 
     def summary(self, task_list: list[Task]) -> None:
@@ -46,7 +46,7 @@ class CompositeEvaluator:
         # ── Overview table ────────────────────────────────────────────────────
         ov_header = (
             f"{'Rank':<6} {'Task ID':<10} {'Status':<24} {'Score':>7} "
-            f"{'Penalized':>10} {'Time(s)':>8} {'pts/s':>8} {'P(success)':>12} {'Steps':>6}"
+            f"{'Penalized':>10} {'Time(s)':>8} {'pts/s':>8} {'P(success)':>12} {'Steps':>6} {'n_score':>10} {'n_prob.':>8} {'n_spm':>8.4}"
         )
         ov_width = len(ov_header)
         lines: list[str] = [
@@ -60,7 +60,8 @@ class CompositeEvaluator:
             lines.append(
                 f"{rank:<6} {task.id:<10} {str(task.status):<24} {task.score:>7} "
                 f"{task.score_penalized:>10} {task.duration:>8} {task.score_per_seconds:>8.3f} "
-                f"{task.probability:>12.3f} {len(task.task_steps):>6}{marker}"
+                f"{task.probability:>12.3f} {len(task.task_steps):>6}"
+                f"{task.normalized_score:>10} {task.probability:>8} {task.normalized_score_per_seconds:>8.3f} {marker}"
             )
         lines += [
             "=" * ov_width,
@@ -91,8 +92,9 @@ class CompositeEvaluator:
             ]
             for i, step in enumerate(task.task_steps, 1):
                 net = getattr(step, "task_score_penalized", step.action_score + step.action_penatly)
+                object_annotation = step.object_annotations.__name__ if step.object_annotations is not None else ""
                 lines.append(
-                    f"  {i:<4} {step.action_type.value:<18} {(step.object_annotations or '-'):<16} "
+                    f"  {i:<4} {step.action_type.value:<18} {(object_annotation or '-'):<16} "
                     f"{(step.location or '-'):<14} {step.action_score:>6.1f} {step.action_penatly:>8} "
                     f"{net:>7} {step.action_time:>8.1f} {step.action_probability:>7.3f} "
                     f"{str(step.action_assisted):<10} {(step.object_pickup or '-'):<14} "

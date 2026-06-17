@@ -29,9 +29,11 @@ class ActionType(str, Enum):
     PARK = "park"
     CUSTOM = "custom"
 
+
 class ActionOutcome(str, Enum):
     SUCCESS = "success"
     SUCCESS_WITH_ASSIST = "success_with_assist"
+    FAILURE = "failure"
     FAILURE_RECOVERABLE = "failure_recoverable"
     FAILURE_UNRECOVERABLE = "failure_unrecoverable"
     SKIPPED = "skipped"
@@ -61,6 +63,7 @@ class ScoreEvent:
 class TaskStep:
     # task_step_id: int = field(default_factory=lambda: next(_taskstep_id_counter), init=False)
     action_type: ActionType
+    action_outcome : ActionOutcome = ActionOutcome.NOT_ASSIGNED
     action_probability : float= 1
     action_score : float = 0
     action_penatly: int = 0
@@ -81,11 +84,15 @@ class Task:
     uncertain: bool = False # Meaning, if not all informations to a task are known, then there has to be something done
     status : TaskStatus = ActionOutcome.NOT_ASSIGNED
     score: int = 0
+    normalized_score : float = 0
     penatly: int = 0
     score_penalized: int = 0
+    task_begin : int= 0
     duration: int = 0
     score_per_seconds : float = 0
+    normalized_score_per_seconds : float = 0
     probability : float = 1
+    normalized_probability : float = 1
 
 @dataclass
 class SurfaceSpace:

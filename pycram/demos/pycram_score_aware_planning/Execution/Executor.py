@@ -1,9 +1,11 @@
+import datetime
 import logging
 import threading
 from queue import Empty, Queue
 from typing import Optional
 
 from Evaluate.CompositeEvaluator import CompositeEvaluator
+from Execution.clean_the_table import scoretime_monitor
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from Stabilizer.PlanStabilizer import PlanStabilizer
 from common.types import Task, TaskStep
@@ -58,6 +60,7 @@ class ArmExecutorInterface:
 
     def _execute_task(self, task: Task) -> None:
         task.action_list = generate_plan_task(task=task, context=self.context)
+        task.task_begin = datetime.datetime.now()
 
         with simulated_robot:
             for i, action in enumerate(task.action_list):
@@ -177,6 +180,7 @@ class Executor:
                 for t in threads:
                     t.join()
             else:
+
                 self.arm_interfaces[0].run()
 
 

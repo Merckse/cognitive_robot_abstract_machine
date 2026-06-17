@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from helper_methods import NAVIGATION_POSES
 from pycram.datastructures.dataclasses import Context
 from pycram.locations.costmaps import OccupancyCostmap
-from demos.pycram_score_aware_planning.common.types import Task
+from demos.pycram_score_aware_planning.common.types import Task, ActionOutcome
 from demos.pycram_score_aware_planning.common.values import evaluation
 from demos.pycram_score_aware_planning.helper_methods import find_surface_of_object
 
@@ -43,21 +43,6 @@ class RobotProbability:
             return 1.0
         return 1.0 / (1.0 + math.exp(5 * (distance - distance_max)))
 
-
-    def p_robot_distance(self, robot_body: Body, target_body: Pose, distance_optimal=2.0, distance_max=5) -> float:
-        """
-        A method used for calculating, that a action from the robot to a specific ose works. In this case especially for the pickup.
-        :param robot_body = robot body
-        :param target_pose = object pose for distance
-        :param distance_optimal = optimal distance
-        :param distance_max = max distance
-        """
-        # TODO: implement robots arm length to consider in optimality AND its dofs: Infos either from pose_validator, robot_predicates
-        distance = float(compute_euclidean_planar_distance(body1=robot_body, body2=target_body, ignore_dimension=Vector3.Z()))
-        # Full probability up to distance_optimal, sigmoid decay after distance_max
-        if distance <= distance_optimal:
-            return 1.0
-        return 1.0 / (1.0 + math.exp(5 * (distance - distance_max)))
 
     def p_clutter_count(self, target_body: Body, radius=0.4) -> float:
         """
@@ -121,9 +106,12 @@ class RobotProbability:
                 location: str = step.location
                 action_type = step.action_type
 
+
+                if step.action_outcome == ActionOutcome.SUCCESS:
+                    step_probability = 1
                 # print(task.task_steps)
                 # Retrieving values
-                if location not in ("", None):
+                elif location not in ("", None):
                     step_probability = evaluation(action_type, object_annotation, location).probability
                     if location in NAVIGATION_POSES:
                         x, y, _ = NAVIGATION_POSES[location]

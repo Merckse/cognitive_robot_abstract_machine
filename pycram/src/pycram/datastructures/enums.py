@@ -88,10 +88,21 @@ class TaskStatus(int, Enum):
     FAILED = 3
     INTERRUPTED = 4
     PAUSE = 5
+    SKIPPED = 6
 
 class UncertaintyReason(int, Enum):
-    OBJECT_MISSING = 1
-    ROOM_MISSING = 2
+    OBJECT_MISSING = 0
+    ROOM_MISSING = 1
+
+class PlanTransformationOperator(int, Enum):
+    NONE = 0
+    SKIP = 1
+    RETRY = 2
+    RETRY_WITH_ASSISTANCE = 3
+    SUBSTITUTE = 4
+    SUBSTITUTE_WITH_ASSISTANCE = 5
+    REPLAN = 6
+    REORDER = 7
 
 
 class JointType(Enum):

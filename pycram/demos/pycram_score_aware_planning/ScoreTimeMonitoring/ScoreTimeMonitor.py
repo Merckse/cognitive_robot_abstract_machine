@@ -5,7 +5,7 @@ import logging
 import os
 import time
 
-from dataclasses import asdict
+from dataclasses import asdict, dataclass, field
 
 from common.types import ScoreEvent, TaskStep
 from helper_methods import get_values
@@ -25,30 +25,28 @@ def _json_default(o):
         return o.__name__
     return str(o)
 
+@dataclass
 class ScoreTimeMonitor:
-    _score_events: list[ScoreEvent] = []
+    _score_events: list[ScoreEvent] = field(default_factory=list)
     """
     List of all score events.
     """
-    _start_time = datetime.datetime.now()
+    _start_time : datetime.datetime = field(default_factory=datetime.datetime.now)
     """
     The starting time of the entire challenge, this is also used for naming the log file.
     """
-    _score: int = 0
+    _score: int = field(default=0)
     """
     The total score of the entire challenge.
     """
-    _time: int = 0
+    _time: int = field(default=0)
     """
     The total time of the entire challenge.
     """
-    _challenge_duration: int = 0
+    _challenge_duration: int = field(default=0)
     """
     the duration that the challenge has run for.
     """
-
-    def __init__(self, challenge_duration_seconds: int):
-        self._challenge_duration: int = challenge_duration_seconds
 
     def record_score(self, task_step: TaskStep, plan: SequentialNode):
         penalty : int = 0
@@ -81,6 +79,14 @@ class ScoreTimeMonitor:
         )
         self._score_events.append(event)
         self._log(event=event, start_time=self._start_time)
+
+    def time_remaining_seconds(self):
+        remaining_time : int = self._challenge_duration - (datetime.datetime.now() - self._start_time ).seconds
+        return remaining_time
+
+    def time_taken_seconds(self):
+        time_taken : int = (datetime.datetime.now() - self._start_time).seconds
+        return time_taken
 
     def _log(self, event: ScoreEvent, start_time: datetime.datetime):
         filename = "plan_" + start_time.strftime("%Y%m%d-%H%M%S") + ".log"

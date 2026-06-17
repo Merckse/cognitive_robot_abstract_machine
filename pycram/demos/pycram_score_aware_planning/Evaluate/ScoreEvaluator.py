@@ -93,18 +93,25 @@ class RobotScorer:
                 base_score: int = 0
                 expected_time: int = 0
                 penalty: int = 0
-                step_profile = evaluation(
+
+                # if action is already successful, dont give score, else as expected
+                if step.action_outcome == ActionOutcome.SUCCESS:
+                    pass
+                else:
+                    step_profile = evaluation(
                     step.action_type, step.object_annotations, step.location
-                )
+                    )
+                    base_score = step_profile.score
+                    expected_time = step_profile.time
 
-                if step.action_assisted:
-                    outcome = ActionOutcome.SUCCESS_WITH_ASSIST
-                    penalty : int = step_profile.penalty
+                    if step.action_assisted:
+                        outcome = ActionOutcome.SUCCESS_WITH_ASSIST
+                        penalty : int = step_profile.penalty
 
 
 
-                base_score += step_profile.points
-                expected_time += step_profile.time
+                base_score += base_score
+                expected_time += time
 
                 # calculation of total scores
                 total_score += base_score

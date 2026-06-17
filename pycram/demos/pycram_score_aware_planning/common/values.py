@@ -31,7 +31,7 @@ ANY = "*"   # wildcard: matches any object or location in that slot
 @dataclass(frozen=True)
 class ActionEvaluation:
     """All scoring attributes of a single (action, object, location) case."""
-    points: int          # reward on clean success
+    score: int          # reward on clean success
     penalty: int         # cost on failure (negative)
     time: int            # estimated duration, seconds
     probability: float   # base success probability
@@ -39,104 +39,104 @@ class ActionEvaluation:
 
 ACTIONS: dict[tuple[ActionType, SemanticAnnotation, str], ActionEvaluation] = {
     (ActionType.PARK, ANY, ANY):
-        ActionEvaluation(points=0, penalty=0, time=0, probability=1.0),
+        ActionEvaluation(score=0, penalty=0, time=0, probability=1.0),
 
     # ------------------ PICKUP (base: 50pts / -20 / 30s / 0.5)
     (ActionType.PICKUP, Plate, ANY):
-        ActionEvaluation(points=50 + 100, penalty=-20 - 30, time=50, probability=0.01),
+        ActionEvaluation(score=50 + 100, penalty=-20 - 30, time=50, probability=0.01),
     # CUTLERY — hard to grasp/locate
     (ActionType.PICKUP, Knife, ANY):
-        ActionEvaluation(points=50 + 50, penalty=-20 - 10, time=100, probability=0.01),
+        ActionEvaluation(score=50 + 50, penalty=-20 - 10, time=100, probability=0.01),
     (ActionType.PICKUP, Fork, ANY):
-        ActionEvaluation(points=50 + 50, penalty=-20 - 10, time=100, probability=0.01),
+        ActionEvaluation(score=50 + 50, penalty=-20 - 10, time=100, probability=0.01),
     (ActionType.PICKUP, Spoon, ANY):
-        ActionEvaluation(points=50 + 50, penalty=-20 - 10, time=100, probability=0.01),
+        ActionEvaluation(score=50 + 50, penalty=-20 - 10, time=100, probability=0.01),
     # Common objects
     (ActionType.PICKUP, Bowl, ANY):
-        ActionEvaluation(points=50 - 20, penalty=-20 + 10, time=30, probability=0.75),
+        ActionEvaluation(score=50 - 20, penalty=-20 + 10, time=30, probability=0.75),
     (ActionType.PICKUP, Milk, ANY):
-        ActionEvaluation(points=50 - 20, penalty=-20 + 10, time=15, probability=0.95),
+        ActionEvaluation(score=50 - 20, penalty=-20 + 10, time=15, probability=0.95),
     (ActionType.PICKUP, Cereal, ANY):
-        ActionEvaluation(points=15, penalty=-10, time=15, probability=0.95),
+        ActionEvaluation(score=15, penalty=-10, time=15, probability=0.95),
     # any other object
     (ActionType.PICKUP, ANY, ANY):
-        ActionEvaluation(points=50, penalty=-20, time=30, probability=0.5),
+        ActionEvaluation(score=50, penalty=-20, time=30, probability=0.5),
 
     # ------------------ PLACE (base: 40pts / -15 / 40s / 0.6)
     (ActionType.PLACE, ANY, "dishwasher"):
-        ActionEvaluation(points=40 + 70, penalty=-15 - 25, time=20, probability=0.4),
+        ActionEvaluation(score=40 + 70, penalty=-15 - 25, time=20, probability=0.4),
     # place next to a similar object
     (ActionType.PLACE, "PLACEHOLDER", ANY):
-        ActionEvaluation(points=40 + 20, penalty=-15 - 5, time=40, probability=0.6),
+        ActionEvaluation(score=40 + 20, penalty=-15 - 5, time=40, probability=0.6),
     # CUTLERY (base is 40 — fixed copy-paste from PICKUP that read 50)
     (ActionType.PLACE, Knife, ANY):
-        ActionEvaluation(points=40 + 50, penalty=-15 - 15, time=40, probability=0.6),
+        ActionEvaluation(score=40 + 50, penalty=-15 - 15, time=40, probability=0.6),
     (ActionType.PLACE, Fork, ANY):
-        ActionEvaluation(points=40 + 50, penalty=-15 - 15, time=40, probability=0.6),
+        ActionEvaluation(score=40 + 50, penalty=-15 - 15, time=40, probability=0.6),
     (ActionType.PLACE, Spoon, ANY):
-        ActionEvaluation(points=40 + 50, penalty=-15 - 15, time=40, probability=0.6),
+        ActionEvaluation(score=40 + 50, penalty=-15 - 15, time=40, probability=0.6),
     # Common objects
     (ActionType.PLACE, Bowl, ANY):
-        ActionEvaluation(points=40 - 20, penalty=-15 + 5, time=40 - 20, probability=0.8),
+        ActionEvaluation(score=40 - 20, penalty=-15 + 5, time=40 - 20, probability=0.8),
     (ActionType.PLACE, Milk, ANY):
-        ActionEvaluation(points=40 - 20, penalty=-15 + 5, time=40 - 20, probability=0.99),
+        ActionEvaluation(score=40 - 20, penalty=-15 + 5, time=40 - 20, probability=0.99),
     (ActionType.PLACE, Cereal, ANY):
-        ActionEvaluation(points=15, penalty=-10, time=15, probability=0.99),
+        ActionEvaluation(score=15, penalty=-10, time=15, probability=0.99),
     (ActionType.PLACE, Plate, ANY):
-        ActionEvaluation(points=40, penalty=-15, time=40, probability=0.01),
+        ActionEvaluation(score=40, penalty=-15, time=40, probability=0.01),
     # any other object
     (ActionType.PLACE, ANY, ANY):
-        ActionEvaluation(points=40, penalty=-15, time=40, probability=0.6),
+        ActionEvaluation(score=40, penalty=-15, time=40, probability=0.6),
 
     # ------------------ OPEN / CLOSE (probability 0 — not yet implemented)
     (ActionType.OPEN, ANY, "dishwasher"):
-        ActionEvaluation(points=200, penalty=-50, time=60, probability=0.0),
+        ActionEvaluation(score=200, penalty=-50, time=60, probability=0.0),
     (ActionType.OPEN, ANY, ANY):
-        ActionEvaluation(points=0, penalty=0, time=50, probability=0.0),
+        ActionEvaluation(score=0, penalty=0, time=50, probability=0.0),
     (ActionType.CLOSE, ANY, "dishwasher"):
-        ActionEvaluation(points=200, penalty=-50, time=50, probability=0.0),
+        ActionEvaluation(score=200, penalty=-50, time=50, probability=0.0),
     (ActionType.CLOSE, ANY, ANY):
-        ActionEvaluation(points=0, penalty=0, time=50, probability=0.0),
+        ActionEvaluation(score=0, penalty=0, time=50, probability=0.0),
 
     # ------------------ NAVIGATE (points/penalty always 0; ~20s)
     # NOTE: the old duplicate (NAVIGATE,"","") keys (20 then 30) collapse into the
     # single catch-all below.
     (ActionType.NAVIGATE, ANY, "table"):
-        ActionEvaluation(points=0, penalty=0, time=20, probability=1.0),
+        ActionEvaluation(score=0, penalty=0, time=20, probability=1.0),
     (ActionType.NAVIGATE, ANY, "cooking_table"):
-        ActionEvaluation(points=0, penalty=0, time=20, probability=0.98),
+        ActionEvaluation(score=0, penalty=0, time=20, probability=0.98),
     (ActionType.NAVIGATE, ANY, "desk"):
-        ActionEvaluation(points=0, penalty=0, time=20, probability=0.98),
+        ActionEvaluation(score=0, penalty=0, time=20, probability=0.98),
     (ActionType.NAVIGATE, ANY, "counterTop"):
-        ActionEvaluation(points=0, penalty=0, time=20, probability=0.98),
+        ActionEvaluation(score=0, penalty=0, time=20, probability=0.98),
     (ActionType.NAVIGATE, ANY, "shelf_1"):
-        ActionEvaluation(points=0, penalty=0, time=20, probability=0.98),
+        ActionEvaluation(score=0, penalty=0, time=20, probability=0.98),
     (ActionType.NAVIGATE, ANY, ANY):
-        ActionEvaluation(points=0, penalty=0, time=20, probability=0.98),
+        ActionEvaluation(score=0, penalty=0, time=20, probability=0.98),
 
     # ------------------ Handover
     (ActionType.HAND_OVER, ANY, ANY):
-        ActionEvaluation(points=15, penalty=-10, time=15, probability=0.95),
+        ActionEvaluation(score=15, penalty=-10, time=15, probability=0.95),
 
     # ------------------ Pour (~200s; probability 0 — not yet implemented)
     (ActionType.POUR, Cereal, ANY):
-        ActionEvaluation(points=0, penalty=0, time=200, probability=0.0),
+        ActionEvaluation(score=0, penalty=0, time=200, probability=0.0),
     (ActionType.POUR, Milk, ANY):
-        ActionEvaluation(points=0, penalty=0, time=200, probability=0.0),
+        ActionEvaluation(score=0, penalty=0, time=200, probability=0.0),
     (ActionType.POUR, ANY, ANY):
-        ActionEvaluation(points=0, penalty=0, time=10, probability=0.0),
+        ActionEvaluation(score=0, penalty=0, time=10, probability=0.0),
 
     # ------------------ Push / Detect / Custom
     (ActionType.PUSH, ANY, ANY):
-        ActionEvaluation(points=0, penalty=0, time=8, probability=0.0),
+        ActionEvaluation(score=0, penalty=0, time=8, probability=0.0),
     (ActionType.DETECT, ANY, ANY):
-        ActionEvaluation(points=5, penalty=-5, time=5, probability=0.8),
+        ActionEvaluation(score=5, penalty=-5, time=5, probability=0.8),
     (ActionType.CUSTOM, ANY, ANY):
-        ActionEvaluation(points=0, penalty=0, time=0, probability=0.0),
+        ActionEvaluation(score=0, penalty=0, time=0, probability=0.0),
 }
 
 # Fallback
-action_evaluation = ActionEvaluation(points=0, penalty=0, time=0, probability=1.0)
+action_evaluation = ActionEvaluation(score=0, penalty=0, time=0, probability=1.0)
 
 
 def evaluation(action_type: ActionType, semantic_annotation: SemanticAnnotation = None, location: str = "") -> ActionEvaluation:
@@ -166,6 +166,7 @@ MAX_TIME_ESTIMATE: dict[TaskMode, int] = {
 }
 
 # All possible tasks for PP
+# TODO: implement navigationTimeOut, for unexpected length
 TASKSTEP_PP: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.NAVIGATE, location="cooking_table"),
                                                    TaskStep(ActionType.PICKUP, object_annotations=Bowl),
                                                    TaskStep(ActionType.PARK),

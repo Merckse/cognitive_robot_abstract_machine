@@ -3,6 +3,7 @@ import math
 from time import sleep
 from typing import Optional
 
+from common.types import ActionOutcome
 from common.values import evaluation
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
@@ -13,7 +14,7 @@ from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.pick_up import PickUpAction
 from pycram.robot_plans.actions.core.placing import PlaceAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
-from demos.pycram_score_aware_planning.common.types import Task, ActionType, SurfaceSpace
+from demos.pycram_score_aware_planning.common.types import Task, ActionType, SurfaceSpace, TaskStep
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import WorldEntityNotFoundError
 from semantic_digital_twin.reasoning.predicates import is_supported_by
@@ -122,7 +123,7 @@ def generic_object_spawner(
         scale_ : Scale= Scale(x=0.2, y=0.2, z=0.2)
 
         object_to_spawn = spawn_semantic_with_body(semantic_type=name,name=name.lower(),pose=pose_, scale=scale_,world=world, color = color)
-        i=+1
+        i+=1
     return object_to_spawn
 
 
@@ -205,9 +206,9 @@ def normalize_task_estimation(task_list : list[Task]) -> list[Task]:
     normalized_score_per_seconds = normalize_list_values(score_per_seconds)
     normalized_probabilities = normalize_list_values(probabilities)
     for i,task_estimate in enumerate(task_list):
-        task_estimate.task_score = normalized_score[i]
-        task_estimate.task_score_per_seconds = normalized_score_per_seconds[i]
-        task_estimate.task_probability = normalized_probabilities[i]
+        task_estimate.normalized_score = normalized_score[i]
+        task_estimate.normalized_probability = normalized_probabilities[i]
+        task_estimate.normalized_score_per_seconds = normalized_score_per_seconds[i]
     return task_list
 
 
@@ -529,4 +530,16 @@ NAVIGATION_POSES: dict[str, tuple[float, float, tuple[float, float, float, float
 def get_values(action_type: ActionType, semantic_annotation: SemanticAnnotation = None, location: str = ""
                ) -> tuple[int, int, int, float]:
     p = evaluation(action_type, semantic_annotation, location)
-    return p.points, p.penalty, p.time, p.probability
+    return p.score, p.penalty, p.time, p.probability
+
+def get_post_failed_taskstep(task: Task) -> list[TaskStep]:
+    failed_taskstep : list[TaskStep] = []
+    for t in task.task_steps:
+        if t.action_outcome in (
+                ActionOutcome.FAILURE,
+                ActionOutcome.FAILURE_RECOVERABLE,
+                ActionOutcome.FAILURE_UNRECOVERABLE) or failed_taskstep != []:
+            failed_taskstep.append(t)
+
+    return failed_taskstep
+

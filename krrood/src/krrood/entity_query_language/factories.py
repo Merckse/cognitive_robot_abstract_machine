@@ -131,9 +131,149 @@ def underspecified(
         expression: Union[Type[T], Callable[..., T]], target_type: Type[T] | None = None
 ) -> Union[Type[T], Match[T]]:
     """
-    Same as :py:func:`krrood.entity_query_language.factories.match` but instead of searching for solutions in
-    the domain objects, it is used as a query for generative processes to infer solutions that satisfy the constraints
-    in the query.
+    Declare an *underspecified* (partially specified) object that a generative backend must complete.
+
+    Unlike :py:func:`match`, which searches an existing domain for objects satisfying the constraints,
+    ``underspecified`` hands the constraints to a *generative* backend (e.g.
+    :py:class:`~krrood.entity_query_language.backends.ProbabilisticBackend` or
+    :py:class:`~krrood.entity_query_language.backends.EntityQueryLanguageBackend`) that *creates* new
+    instances. The returned :py:class:`~krrood.entity_query_language.query.match.Match` object can be
+    called with keyword arguments to constrain individual fields and chained with ``.where(...)`` to
+    add post-generation filter conditions.
+
+    :param expression: The class (or callable factory) whose instances should be generated.
+    :param target_type: Explicit return type when it cannot be inferred from ``expression`` alone
+        (e.g. when passing a plain callable instead of a class).
+    :return: A :py:class:`~krrood.entity_query_language.query.match.Match` instance typed as ``T``.
+
+    **Kwargs vs. where – two very different roles**
+
+    The keyword arguments supplied to the *factory call* and the conditions added via ``.where()``
+    look similar on the surface but have fundamentally different semantics inside a probabilistic
+    backend:
+
+    * **kwargs (factory arguments)** – these are *structural constraints* on the object being
+      built.  They become part of the :py:class:`~krrood.entity_query_language.query.match.Match`
+      tree and are processed by
+      :py:class:`~krrood.parametrization.parameterizer.UnderspecifiedParameters` *before* sampling:
+
+      - ``Ellipsis (...)`` marks the field as *free* – the backend samples a value from the
+        marginal distribution for that dimension.
+      - A **concrete value** (literal) becomes a *conditioning assignment*: the probabilistic
+        model is conditioned on that field being exactly that value before sampling.  This is
+        the Bayesian ``P(rest | field = value)`` operation.
+      - A :py:func:`variable` with an explicit domain becomes a *truncation assignment*: the
+        model's distribution for that dimension is restricted to the given set of values.
+
+    * ```.where(condition)``` – these are *post-hoc filters* applied **after** the model has
+      been conditioned by the kwargs.  They are translated into a random event and used to
+      *truncate* the already-conditioned distribution before sampling.  Geometrically, a
+      ``.where`` clause carves out a region of the sample space; structurally, it expresses
+      relationships *between* dimensions (e.g. one field greater than another) that cannot be
+      expressed as a single-field conditioning assignment in the factory call.
+
+    In short: **use kwargs to pin or restrict individual fields; use** ``.where`` **to express
+    cross-field constraints or inequality ranges**.
+
+    **Examples**
+
+    *Basic – all fields free (Ellipsis):*
+
+    .. code-block:: python
+
+        from krrood.entity_query_language.factories import underspecified
+        from krrood.entity_query_language.backends import ProbabilisticBackend
+
+        query = underspecified(KRROODPosition)(x=..., y=..., z=...)
+        backend = ProbabilisticBackend(number_of_samples=10)
+        positions = list(backend.evaluate(query))
+        # Returns 10 KRROODPosition instances sampled from the prior.
+
+    *Conditioning on a literal value (kwargs):*
+
+    .. code-block:: python
+
+        # Fix x=0.5; the backend conditions the joint model on x==0.5 and samples
+        # y and z from the resulting conditional distribution P(y, z | x=0.5).
+        query = underspecified(KRROODPosition)(x=0.5, y=..., z=...)
+        backend = ProbabilisticBackend(number_of_samples=10)
+        positions = list(backend.evaluate(query))
+        assert all(p.x == 0.5 for p in positions)
+
+    *Restricting a field to a discrete set (kwargs with variable):*
+
+    .. code-block:: python
+
+        from krrood.entity_query_language.factories import variable
+
+        # z is restricted to {1, 2, 3}; internally this becomes a truncation event
+        # that cuts the z-marginal to those three values before sampling.
+        query = underspecified(KRROODPosition)(x=..., y=..., z=variable(int, domain=[1, 2, 3]))
+        backend = ProbabilisticBackend(number_of_samples=10)
+        positions = list(backend.evaluate(query))
+        assert all(p.z in (1, 2, 3) for p in positions)
+
+    *Cross-field filter via .where:*
+
+    .. code-block:: python
+
+        # None of the individual fields can express "x > 0.5" as a single-field
+        # conditioning.  .where translates the inequality into a truncation event
+        # applied to the already-conditioned model.
+        query = underspecified(KRROODPose)(
+            position=underspecified(KRROODPosition)(x=..., y=..., z=...),
+            orientation=KRROODOrientation(x=0.0, y=0.0, z=0.0, w=1.0),
+        )
+        query.resolve()
+        query.where(query.variable.position.x > 0.5)
+
+        backend = ProbabilisticBackend(number_of_samples=10)
+        poses = list(backend.evaluate(query))
+        assert all(p.position.x > 0.5 for p in poses)
+        # Note: orientation is conditioned to (0,0,0,1) via kwargs, not .where.
+
+    *Cross-field inequality using .where (relationship between two fields):*
+
+    .. code-block:: python
+
+        from krrood.entity_query_language.factories import variable_from
+
+        query = underspecified(Atom)(
+            element=...,
+            type=variable_from([0, 1, 2]),
+            charge=variable_from([0.0, 1.0, 2.0]),
+            timestamp=datetime.datetime.now(),
+        )
+        query.resolve()
+        query.where(query.variable.type > query.variable.charge)
+        backend = EntityQueryLanguageBackend()
+        results = list(backend.evaluate(query))
+        # Only Atom instances where type > charge are returned.
+
+    *Nested underspecified objects:*
+
+    .. code-block:: python
+
+        query = underspecified(NestedAction)(
+            obj=variable(Apple, domain=[apple]),
+            pose=underspecified(KRROODPose)(
+                position=underspecified(KRROODPosition)(x=0.02, y=..., z=...),
+                orientation=underspecified(KRROODOrientation)(x=..., y=..., z=..., w=variable(float, domain=[0.0, 1.0])),
+            ),
+        )
+        # x=0.02 becomes a conditioning assignment (Bayesian evidence).
+        # w is truncated to {0.0, 1.0}.
+        # y, z, orientation.x/y/z are sampled freely from their marginals.
+
+    .. seealso::
+
+        :py:func:`match` – retrieves existing domain objects instead of generating new ones.
+
+        :py:class:`~krrood.parametrization.parameterizer.UnderspecifiedParameters` – extracts
+        variables and conditioning/truncation assignments from a Match tree.
+
+        :py:class:`~krrood.entity_query_language.backends.ProbabilisticBackend` – the generative
+        backend that consumes underspecified queries.
     """
     if target_type is not None:
         return Match(factory=expression, type_=target_type)

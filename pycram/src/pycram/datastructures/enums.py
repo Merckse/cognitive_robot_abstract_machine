@@ -103,6 +103,7 @@ class PlanTransformationOperator(int, Enum):
     SUBSTITUTE_WITH_ASSISTANCE = 5
     REPLAN = 6
     REORDER = 7
+    ASSISTED = 8
 
 
 class JointType(Enum):

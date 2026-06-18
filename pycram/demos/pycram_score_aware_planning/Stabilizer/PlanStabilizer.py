@@ -47,15 +47,6 @@ class PlanStabilizer:
         for o in transformation_operators:
             self._expected_value(post_failed, o, scoretime_monitor)
 
-
-    def stabilize_unreachable(self, task: Task):
-        # TODO
-        pass
-
-    def stabilize_failure_any(self, task: Task):
-        # TODO
-        pass
-
     def skip(self, task: Task):
         """
         Skips the current task and continues with a new one.
@@ -116,10 +107,14 @@ class PlanStabilizer:
         if operator == PlanTransformationOperator.RETRY:
             task_list = task_list
             for t in task_list:
-                expected_value += t.action_score * t.action_probability
+                # TODO: Unsure if this is really practicable
+                expected_value += t.action_score * t.action_probability - (1 - t.action_probability) - t.action_time
         elif operator == PlanTransformationOperator.SKIP:
-            expected_value = 0
-
+            failed_task =  task_list[0]
+            expected_value = failed_task.action_penatly
+        elif operator == PlanTransformationOperator.RETRY_WITH_ASSISTANCE:
+            failed_task =  task_list[0]
+            expected_value = failed_task.action_penatly
         # operator == PlanTransformationOperator.SKIP
         else:
             expected_value = 0

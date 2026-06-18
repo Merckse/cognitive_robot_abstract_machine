@@ -111,7 +111,7 @@ class RobotScorer:
 
 
                 base_score += base_score
-                expected_time += time
+                expected_time += expected_time
 
                 # calculation of total scores
                 total_score += base_score

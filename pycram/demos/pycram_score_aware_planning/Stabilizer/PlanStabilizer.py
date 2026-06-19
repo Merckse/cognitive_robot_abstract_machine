@@ -64,7 +64,7 @@ class PlanStabilizer:
 
 
     def _build_stabilized_task_list(self, task_list: list[TaskStep], operator_list: list[PlanTransformationOperator]) -> list[TaskStep]:
-
+        pass
 
 
 
@@ -74,6 +74,7 @@ class PlanStabilizer:
         Potentially continuing the skipped task, at the last task step, if worth it.
         """
         task.status = TaskStatus.SKIPPED
+        pass
 
     def retry(self, task: Task):
         """

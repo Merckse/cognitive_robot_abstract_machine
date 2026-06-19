@@ -122,13 +122,13 @@ pre_table_pose = Pose(
 """
 Generate a structurized plan - based on standard evaluation 
 """
-taskmode = ChallengeMode.PP
-task_list : list[Task] = CHALLENGE_TASKS.get(taskmode)
+challengemode = ChallengeMode.PP
+task_list : list[Task] = CHALLENGE_TASKS.get(challengemode)
 
 evaluator = CompositeEvaluator()
 structurizer = PlanStructurizer()
 stabilizer = PlanStabilizer()
-scoretime_monitor = ScoreTimeMonitor(_challenge_duration=500)
+scoretime_monitor = ScoreTimeMonitor(task_mode)
 
 
 while task_list != []:

@@ -30,11 +30,11 @@ def _json_default(o):
 
 @dataclass
 class ScoreTimeMonitor:
+    challenge_mode: ChallengeMode = field(default=None)
+    """
+    Challenge mode, that is being executed.
+    """
     _score_events: list[ScoreEvent] = field(default_factory=list)
-    """
-    List of all score events.
-    """
-    challenge_mode: ChallengeMode = field(default_factory=None)
     """
     List of all score events.
     """
@@ -50,10 +50,13 @@ class ScoreTimeMonitor:
     """
     The total time of the entire challenge.
     """
-    _challenge_duration: int = field(default_factory=CHALLENGE_DURATION.get(challenge_mode))
+    _challenge_duration: int = field(default=0, init=False)
     """
     the duration that the challenge has run for.
     """
+
+    def __post_init__(self):
+        self._challenge_duration = CHALLENGE_DURATION.get(self.challenge_mode, 0)
 
     def record_score(self, task_step: TaskStep, plan: SequentialNode):
         penalty : int = 0

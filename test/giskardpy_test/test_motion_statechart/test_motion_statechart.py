@@ -53,6 +53,7 @@ from giskardpy.motion_statechart.test_nodes.test_nodes import (
     TestEndBeforeStart,
     TestUnpauseUnknownFromParentPause,
 )
+from giskardpy.motion_statechart.constraint_builders import GeometricConstraintBuilder
 from giskardpy.qp.constraint import GiskardEqualityConstraint
 from giskardpy.qp.enforcement_strategy import IntegralStrategy
 from giskardpy.qp.constraint_collection import ConstraintCollection
@@ -1220,7 +1221,7 @@ def test_constraint_collection(pr2_world_state_reset: World):
 
     expr = Vector3.X(tip).angle_between(Vector3.Y(root))
 
-    col.add_point_goal_constraints(
+    GeometricConstraintBuilder(col).add_point_goal_constraints(
         frame_P_current=Point3(0, 0, 0, reference_frame=tip),
         frame_P_goal=Point3(0, 0, 0, reference_frame=tip),
         reference_velocity=0.1,

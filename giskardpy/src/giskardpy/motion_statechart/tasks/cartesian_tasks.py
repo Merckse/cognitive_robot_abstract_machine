@@ -4,11 +4,25 @@ from functools import cached_property
 from typing import Optional, ClassVar
 
 import numpy as np
-from line_profiler.explicit_profiler import profile
 from typing_extensions import List
 
 import krrood.symbolic_math.symbolic_math as sm
+from giskardpy.motion_statechart.binding_policy import (
+    GoalBindingPolicy,
+    ForwardKinematicsBinding,
+)
+from giskardpy.motion_statechart.context import MotionStatechartContext
+from giskardpy.motion_statechart.data_types import (
+    DefaultWeights,
+    ObservationStateValues,
+)
 from giskardpy.motion_statechart.exceptions import NodeInitializationError
+from giskardpy.motion_statechart.goals.templates import Parallel
+from giskardpy.motion_statechart.graph_node import (
+    NodeArtifacts,
+    MotionStatechartNode,
+)
+from giskardpy.motion_statechart.graph_node import Task
 from krrood.symbolic_math.float_variable_data import FloatVariableData
 from krrood.symbolic_math.symbolic_math import VariableParameters, CompiledFunction
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
@@ -21,25 +35,8 @@ from semantic_digital_twin.spatial_types import (
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world_description.degree_of_freedom import PositionVariable
 from semantic_digital_twin.world_description.world_entity import (
-    Body,
     KinematicStructureEntity,
 )
-from giskardpy.motion_statechart.binding_policy import (
-    GoalBindingPolicy,
-    ForwardKinematicsBinding,
-)
-from giskardpy.motion_statechart.context import MotionStatechartContext
-from giskardpy.motion_statechart.data_types import (
-    DefaultWeights,
-    ObservationStateValues,
-)
-from giskardpy.motion_statechart.goals.templates import Parallel
-from giskardpy.motion_statechart.graph_node import (
-    NodeArtifacts,
-    DebugExpression,
-    MotionStatechartNode,
-)
-from giskardpy.motion_statechart.graph_node import Task
 
 
 @dataclass(eq=False, repr=False)
@@ -139,7 +136,7 @@ class CartesianPosition(CartesianTask):
         ).to_position()
 
         # Add constraints to move tip towards goal
-        artifacts.constraints.add_point_goal_constraints(
+        artifacts.geometry.add_point_goal_constraints(
             frame_P_goal=root_P_goal,
             frame_P_current=root_P_current,
             reference_velocity=self.reference_velocity,
@@ -232,7 +229,7 @@ class CartesianPositionTrajectory(CartesianTask):
         ).to_position()
 
         # Add constraints to move tip towards goal
-        artifacts.constraints.add_point_goal_constraints(
+        artifacts.geometry.add_point_goal_constraints(
             frame_P_goal=root_P_goal,
             frame_P_current=root_P_current,
             reference_velocity=self.reference_velocity,
@@ -506,7 +503,7 @@ class CartesianOrientation(CartesianTask):
         root_R_current = root_T_current.to_rotation_matrix()
 
         # Add constraints to rotate tip towards goal
-        artifacts.constraints.add_rotation_goal_constraints(
+        artifacts.geometry.add_rotation_goal_constraints(
             frame_R_current=root_R_current,
             frame_R_goal=root_R_goal,
             reference_velocity=self.reference_velocity,
@@ -571,7 +568,7 @@ class CartesianPose(CartesianTask):
         root_P_current = root_T_current.to_position()
 
         # Add position constraints
-        artifacts.constraints.add_point_goal_constraints(
+        artifacts.geometry.add_point_goal_constraints(
             name="position",
             frame_P_goal=root_P_goal,
             frame_P_current=root_P_current,
@@ -585,7 +582,7 @@ class CartesianPose(CartesianTask):
         root_R_current = root_T_current.to_rotation_matrix()
 
         # Add orientation constraints
-        artifacts.constraints.add_rotation_goal_constraints(
+        artifacts.geometry.add_rotation_goal_constraints(
             name="rotation",
             frame_R_current=root_R_current,
             frame_R_goal=root_R_goal,
@@ -647,7 +644,7 @@ class CartesianPositionVelocityLimit(Task):
         root_P_tip = context.world.compose_forward_kinematics_expression(
             self.root_link, self.tip_link
         ).to_position()
-        artifacts.constraints.add_translational_velocity_limit(
+        artifacts.geometry.add_translational_velocity_limit(
             frame_P_current=root_P_tip,
             max_velocity=self.max_linear_velocity,
             quadratic_weight=self.weight,
@@ -703,7 +700,7 @@ class CartesianRotationVelocityLimit(Task):
             self.root_link, self.tip_link
         ).to_rotation_matrix()
 
-        artifacts.constraints.add_rotational_velocity_limit(
+        artifacts.geometry.add_rotational_velocity_limit(
             frame_R_current=root_R_tip,
             max_velocity=self.max_angular_velocity,
             quadratic_weight=self.weight,
@@ -773,45 +770,3 @@ class CartesianVelocityLimit(Parallel):
         )
         self.nodes.append(translational)
         self.nodes.append(rotational)
-
-
-@dataclass(eq=False, repr=False)
-class CartesianPositionVelocityTarget(Task):
-    root_link: Body = field(kw_only=True)
-    tip_link: Body = field(kw_only=True)
-    x_vel: float = field(kw_only=True)
-    y_vel: float = field(kw_only=True)
-    z_vel: float = field(kw_only=True)
-    weight: float = DefaultWeights.WEIGHT_ABOVE_CA
-
-    def __post_init__(self):
-        """
-        This goal will use put a strict limit on the Cartesian velocity. This will require a lot of constraints, thus
-        slowing down the system noticeably.
-        :param root_link: root link of the kinematic chain
-        :param tip_link: tip link of the kinematic chain
-        :param root_group: if the root_link is not unique, use this to say to which group the link belongs
-        :param tip_group: if the tip_link is not unique, use this to say to which group the link belongs
-        :param max_linear_velocity: m/s
-        :param max_angular_velocity: rad/s
-        :param weight: default DefaultWeights.WEIGHT_ABOVE_CA
-        :param hard: Turn this into a hard constraint. This make create unsolvable optimization problems
-        """
-        r_P_c = context.world.compose_forward_kinematics_expression(
-            self.root_link, self.tip_link
-        ).to_position()
-        self.add_velocity_eq_constraint_vector(
-            velocity_goals=sm.Vector([self.x_vel, self.y_vel, self.z_vel]),
-            task_expression=r_P_c,
-            reference_velocities=[
-                CartesianPosition.default_reference_velocity,
-                CartesianPosition.default_reference_velocity,
-                CartesianPosition.default_reference_velocity,
-            ],
-            names=[
-                f"{self.name}/x",
-                f"{self.name}/y",
-                f"{self.name}/z",
-            ],
-            weights=[self.weight] * 3,
-        )

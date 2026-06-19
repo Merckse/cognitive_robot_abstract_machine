@@ -7,7 +7,10 @@ import time
 
 from dataclasses import asdict, dataclass, field
 
-from common.types import ScoreEvent, TaskStep, Task
+from fontTools.merge.util import avg_int
+
+from common.types import ScoreEvent, TaskStep, Task, ChallengeMode
+from common.values import CHALLENGE_DURATION, CHALLENGE_TASKS
 from helper_methods import get_values
 from pycram.datastructures.enums import TaskStatus
 from pycram.language import SequentialNode
@@ -31,6 +34,10 @@ class ScoreTimeMonitor:
     """
     List of all score events.
     """
+    challenge_mode: ChallengeMode = field(default_factory=None)
+    """
+    List of all score events.
+    """
     _start_time : datetime.datetime = field(default_factory=datetime.datetime.now)
     """
     The starting time of the entire challenge, this is also used for naming the log file.
@@ -43,7 +50,7 @@ class ScoreTimeMonitor:
     """
     The total time of the entire challenge.
     """
-    _challenge_duration: int = field(default=0)
+    _challenge_duration: int = field(default_factory=CHALLENGE_DURATION.get(challenge_mode))
     """
     the duration that the challenge has run for.
     """
@@ -117,6 +124,9 @@ class ScoreTimeMonitor:
         expected_time : float = sum(t.action_time for t in task_list)
         return expected_time
 
+    def time_expected_seconds_task_total(self, task: Task):
+        expected_time = self.time_expected_seconds_task_list(task.task_steps)
+        return expected_time
 
     def _log(self, event: ScoreEvent, start_time: datetime.datetime):
         filename = "plan_" + start_time.strftime("%Y%m%d-%H%M%S") + ".log"
@@ -140,3 +150,30 @@ class ScoreTimeMonitor:
                 f.truncate()
                 f.write(",\n" + entry + "\n]")
         logger.info("recorded finished action")
+
+    def mean_tasks(self, challenge_mode : ChallengeMode) -> float:
+        """
+        mean of time taken for tasks in challenge
+        """
+        tasks = CHALLENGE_TASKS.get(challenge_mode)
+        task_number = len(tasks)
+        ts_times: list[int] = []
+        for t in tasks:
+            task_steps = len(t.task_steps)
+            ts_time : int = 0
+            for ts in t.task_steps:
+                ts_time += ts.action_time
+            ts_times.append(ts_time)
+        avg_time = sum(ts_times) / task_number
+        return avg_time
+
+    def limited_time(self) -> bool:
+        """
+        A function, that just returns if there is limited time. Limited time is here defined by a limit
+        of 10 percent of the overall time and the median of all task durations.
+        """
+        avg_task_duration = self.mean_tasks(self.challenge_mode)
+        challenge_remaining = self._total_time - self._challenge_duration
+        limited : bool = False if challenge_remaining > avg_task_duration else True
+
+        return limited

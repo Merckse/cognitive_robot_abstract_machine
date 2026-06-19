@@ -4,7 +4,7 @@ from Evaluate.CompositeEvaluator import CompositeEvaluator
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from Stabilizer.PlanStabilizer import PlanStabilizer
 from common.types import Task, TaskStep, ActionOutcome
-from common.values import TASKS
+from common.values import CHALLENGE_TASKS
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from helper_methods import generate_plan_task, perceive_and_spawn_all_objects
 from pycram.datastructures.dataclasses import Context
@@ -15,7 +15,7 @@ from pycram.plans.factories import sequential, make_node
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
 
 from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
-from demos.pycram_score_aware_planning.common.types import TaskMode
+from demos.pycram_score_aware_planning.common.types import ChallengeMode
 from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.semantic_annotations.mixins import HasSupportingSurface
@@ -80,7 +80,7 @@ world, dispatcher = setup_world()
 
 hsrb = HSRB.from_world(world)
 context = Context(world=world, robot=hsrb)
-task_mode = TaskMode.PP
+task_mode = ChallengeMode.PP
 context.evaluate_conditions = False
 dispatcher.known_furniture = world.bodies
 
@@ -122,8 +122,8 @@ pre_table_pose = Pose(
 """
 Generate a structurized plan - based on standard evaluation 
 """
-taskmode = TaskMode.PP
-task_list : list[Task] = TASKS.get(taskmode)
+taskmode = ChallengeMode.PP
+task_list : list[Task] = CHALLENGE_TASKS.get(taskmode)
 
 evaluator = CompositeEvaluator()
 structurizer = PlanStructurizer()

@@ -533,7 +533,7 @@ def get_values(action_type: ActionType, semantic_annotation: SemanticAnnotation 
     p = evaluation(action_type, semantic_annotation, location)
     return p.score, p.penalty, p.time, p.probability
 
-def get_post_failed_taskstep(task: Task) -> list[TaskStep]:
+def get_remaining_task_steps(task: Task) -> list[TaskStep]:
     failed_taskstep : list[TaskStep] = []
     for t in task.task_steps:
         if t.action_outcome in (

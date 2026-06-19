@@ -9,7 +9,7 @@ from Execution.clean_the_table import scoretime_monitor
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from Stabilizer.PlanStabilizer import PlanStabilizer
 from common.types import Task, TaskStep
-from common.values import TASKS
+from common.values import CHALLENGE_TASKS
 from helper_methods import generate_plan_task, perceive_and_spawn_all_objects
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus
@@ -18,7 +18,7 @@ from pycram.plans.factories import make_node, sequential
 from semantic_digital_twin.robots.abstract_robot import AbstractRobot, Arm
 
 from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
-from demos.pycram_score_aware_planning.common.types import TaskMode
+from demos.pycram_score_aware_planning.common.types import ChallengeMode
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ class Executor:
     def __init__(
         self,
         context: Context,
-        task_mode: TaskMode,
+        task_mode: ChallengeMode,
         challenge_duration_seconds: int = 500,
     ):
         self.context = context
@@ -148,7 +148,7 @@ class Executor:
         it directly on the main thread.
         """
         if task_list is None:
-            task_list = list(TASKS.get(self.task_mode) or [])
+            task_list = list(CHALLENGE_TASKS.get(self.task_mode) or [])
 
         while task_list:
             evaluated: list[Task] = self.evaluator.estimate(
@@ -210,7 +210,7 @@ if __name__ == "__main__":
 
     executor = Executor(
         context=context,
-        task_mode=TaskMode.PP,
+        task_mode=ChallengeMode.PP,
         challenge_duration_seconds=500,
     )
     executor.run()

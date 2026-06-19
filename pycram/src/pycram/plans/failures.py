@@ -107,3 +107,21 @@ class BodyUnfetchable(PlanFailure):
 
     def __post_init__(self):
         self.message = f"Body {self.body} not fetchable from arm {self.arm}"
+
+@dataclass
+class ObjectNotGrasped(PlanFailure):
+    """
+    Raised, when robot failed to grasp a object.
+    """
+    body: Body
+    """
+    The body that cannot be fetched.
+    """
+
+    arm: Arms
+    """
+    The arm from which the body cannot be fetched.
+    """
+
+    def __post_init__(self):
+        self.message = f"Failed to grasp {self.body} with arm {self.arm}"

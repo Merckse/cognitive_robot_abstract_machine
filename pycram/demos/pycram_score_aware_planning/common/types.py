@@ -42,7 +42,7 @@ class ActionOutcome(str, Enum):
     NOT_ASSIGNED = "not_assigned"
 
 
-class TaskMode(str, Enum):
+class ChallengeMode(str, Enum):
     GPSR = "gpsr"
     PP = "pp"
     FD = "fd"

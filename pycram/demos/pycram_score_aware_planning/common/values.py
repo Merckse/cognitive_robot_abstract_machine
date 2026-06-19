@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 from dataclasses import dataclass
 
-from demos.pycram_score_aware_planning.common.types import ActionType, ActionOutcome, TaskMode, TaskStep, Task
+from demos.pycram_score_aware_planning.common.types import ActionType, ActionOutcome, ChallengeMode, TaskStep, Task
 from pycram.datastructures.enums import TaskStatus
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Plate, Knife, Fork, Spoon, Bowl, Milk, Cereal
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation
@@ -165,10 +165,10 @@ OUTCOME_MODIFIERS: dict[ActionOutcome|TaskStatus, float] = {
     ActionOutcome.NOT_ASSIGNED: 0,
 }
 
-MAX_TIME_ESTIMATE: dict[TaskMode, int] = {
-    TaskMode.GPSR: 50,
-    TaskMode.PP: 50,
-    TaskMode.FD: 50,
+CHALLENGE_DURATION: dict[ChallengeMode, int] = {
+    ChallengeMode.GPSR: 50,
+    ChallengeMode.PP: 500,
+    ChallengeMode.FD: 50,
 }
 
 # All possible tasks for PP
@@ -213,9 +213,9 @@ TASKSTEP_FD: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.NAVIGATE)
                            Task(id= 2, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Milk), TaskStep(ActionType.PLACE, object_annotations=Milk)]),
                            Task(id= 3, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Cereal), TaskStep(ActionType.PLACE, object_annotations=Cereal)]), ]
 
-TASKS : dict[TaskMode, list[Task]] = {
-    TaskMode.PP: TASKSTEP_PP,
-    TaskMode.GPSR: TASKSTEP_GPSR,
-    TaskMode.FD: TASKSTEP_FD
+CHALLENGE_TASKS : dict[ChallengeMode, list[Task]] = {
+    ChallengeMode.PP: TASKSTEP_PP,
+    ChallengeMode.GPSR: TASKSTEP_GPSR,
+    ChallengeMode.FD: TASKSTEP_FD
 }
 

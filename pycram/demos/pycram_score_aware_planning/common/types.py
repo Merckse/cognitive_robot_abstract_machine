@@ -1,3 +1,4 @@
+import datetime
 from dataclasses import dataclass, field
 from enum import Enum
 from itertools import count
@@ -57,6 +58,7 @@ class ScoreEvent:
     time_spent: float
     cumulative_score: int
     cumulative_time: float
+    assisted : bool = False
 
 # The action step is equivilant to an action, just has been named TaskStep to find seperation, between the two
 @dataclass
@@ -82,12 +84,12 @@ class Task:
     task_steps: list[TaskStep]
     action_list: list[ActionDescription] = field(default_factory=list)
     uncertain: bool = False # Meaning, if not all informations to a task are known, then there has to be something done
-    status : TaskStatus = ActionOutcome.NOT_ASSIGNED
+    status : ActionOutcome = ActionOutcome.NOT_ASSIGNED
     score: int = 0
     normalized_score : float = 0
     penatly: int = 0
     score_penalized: int = 0
-    task_begin : int= 0
+    task_begin: Optional[datetime.datetime] = None
     duration: int = 0
     score_per_seconds : float = 0
     normalized_score_per_seconds : float = 0

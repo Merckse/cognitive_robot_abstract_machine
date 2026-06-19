@@ -22,6 +22,18 @@ class PlanStabilizer:
         - then go on
     """
     def stabilize(self, context: Context, task: Task, exception: Exception, evaluator : CompositeEvaluator, scoretime_monitor : ScoreTimeMonitor):
+        """
+        Stabilize works by taking the task and the exception and using it to match it to candidate solutions.
+        These solutions are hardcoded by the developers. Since there is (at least not expected to be) a unified way of
+        solving the evaluation of every stabilizer operator, for every failure.
+        :param context: The context of the Beliefstate/world
+        :param task: The failed task, with all its TaskSteps
+        :param exception: The exception raised by the failed task, with all its TaskSteps
+        :param evaluator: The evaluator, that is used to evaluate the tasks
+        :param scoretime_monitor: Monitor for the scoring and time spent on the task
+
+        TODO: if the evaluator turns out to be useless or overkill, just throw it
+        """
         post_failed : list[TaskStep]= get_post_failed_taskstep(task)
         transformation_operators : list[PlanTransformationOperator] = []
 
@@ -42,10 +54,13 @@ class PlanStabilizer:
         elif isinstance(exception, CollisionViolatedError):
             transformation_operators.insert(0, PlanTransformationOperator.REPLAN)
         else:
-            transformation_operators.insert(0, PlanTransformationOperator.SKIP)
+            transformation_operators.insert(0, PlanTransformationOperator.RETRY)
 
-        for o in transformation_operators:
-            self._expected_value(post_failed, o, scoretime_monitor)
+        sorted_operators = sorted(transformation_operators,
+                                  key=lambda o: self._expected_value(task,post_failed, o, scoretime_monitor),
+                                  reverse=True)
+
+
 
     def skip(self, task: Task):
         """
@@ -102,8 +117,21 @@ class PlanStabilizer:
         # TODO
         pass
 
-    def _expected_value(self, task_list :list[TaskStep], operator : PlanTransformationOperator, scoretime_monitor : ScoreTimeMonitor):
+    def _expected_value(self, task:Task, task_list :list[TaskStep], operator : PlanTransformationOperator, scoretime_monitor : ScoreTimeMonitor, composite_evaluator : CompositeEvaluator):
         expected_value : float = 0
+        # Evaluate the possible score, that can be gained and how much time has been spent so far.
+
+        # retrieving the time it took and we are already overdue, to see if it is worth it
+        overrun_time = scoretime_monitor.task_overtime_seconds(task) # Positive if underperformed, negative if time is left
+        task_remaining = scoretime_monitor.time_remaining_seconds_task(task)
+        time_remaining = scoretime_monitor.time_remaining_seconds_total()
+
+        # retrieving the score and possibilities of the remaining tasks, to see if they are worth it
+        possible_task_score = composite_evaluator.get_score_task_list(task_list=task_list)
+        possible_task_possibility = composite_evaluator.get_probability_task_list(task_list=task_list)
+
+
+
         if operator == PlanTransformationOperator.RETRY:
             task_list = task_list
             for t in task_list:

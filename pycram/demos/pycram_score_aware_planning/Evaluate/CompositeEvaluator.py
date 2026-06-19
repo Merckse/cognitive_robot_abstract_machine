@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 
-from common.types import Task
+from numpy.ma.core import product
+
+from common.types import Task, TaskStep
 from demos.pycram_score_aware_planning.Evaluate.ProbabilityEvaluator import RobotProbability
 from demos.pycram_score_aware_planning.Evaluate.ScoreEvaluator import RobotScorer, ScoreEvent
 from helper_methods import normalize_task_estimation
@@ -28,6 +30,12 @@ class CompositeEvaluator:
 
         self.summary(normalized_evaluated_task_list)
         return normalized_evaluated_task_list
+
+    def get_score_task_list(self, task_list : list[TaskStep]) -> int:
+        return self.score_evaluator.get_score_task_list(task_list=task_list)
+
+    def get_probability_task_list(self, task_list : list[TaskStep]) -> float:
+        return self.probability_evaluator.get_probability_task_list(task_list=task_list)
 
 
     def summary(self, task_list: list[Task]) -> None:

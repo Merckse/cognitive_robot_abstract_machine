@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from common.types import ActionOutcome
+from common.types import ActionOutcome, TaskStep
 from demos.pycram_score_aware_planning.common.types import (
     Task, ScoreEvent,
 )
@@ -41,19 +41,6 @@ This is the estimator for the Expected Score.
 :param expected_score: The expected score created by completing the action.
 """
 
-
-@dataclass(kw_only=True)
-class ExpectedScoreEvent:
-    task_id: int = 0
-    # action_type: str TODO: Do i want to pain or not?
-    outcome: str
-    # object_name: Optional[str] TODO: Well more pain here
-    expected_time: float
-    expected_score: int
-    expected_score_per_seconds: float
-    task_step_count: int = 0
-
-
 @dataclass(kw_only=True)
 class RobotScorer:
     """
@@ -65,7 +52,6 @@ class RobotScorer:
     The context providing world and robot.
     """
 
-    events: list[ScoreEvent] = field(default_factory=list)
     _score: int = field(default=0, init=False, repr=False)
     _time: int = field(default=0, init=False, repr=False)
     _start_time_action: float = field(default=time.time(), init=False, repr=False)
@@ -106,12 +92,10 @@ class RobotScorer:
 
                     if step.action_assisted:
                         outcome = ActionOutcome.SUCCESS_WITH_ASSIST
-                        penalty : int = step_profile.penalty
+                        base_score : int = 0
 
 
 
-                base_score += base_score
-                expected_time += expected_time
 
                 # calculation of total scores
                 total_score += base_score
@@ -132,3 +116,6 @@ class RobotScorer:
             task.score_per_seconds = total_score_penalized / total_time
             task.status = TaskStatus.CREATED
         return task_list
+
+    def get_score_task_list(self, task_list : list[TaskStep]) -> int:
+        return sum(t.action_score for t in task_list)

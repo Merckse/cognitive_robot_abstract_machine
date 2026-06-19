@@ -2,6 +2,9 @@ import math
 from copy import deepcopy
 from dataclasses import dataclass, field
 
+from numpy.ma.core import product
+
+from common.types import TaskStep
 from helper_methods import NAVIGATION_POSES
 from pycram.datastructures.dataclasses import Context
 from pycram.locations.costmaps import OccupancyCostmap
@@ -151,3 +154,6 @@ class RobotProbability:
             task.probability = joint_probability
 
         return task_list
+
+    def get_probability_task_list(self, task_list : list[TaskStep]) -> float:
+        return product(t.action_probability for t in task_list)

@@ -7,7 +7,7 @@ import time
 
 from dataclasses import asdict, dataclass, field
 
-from common.types import ScoreEvent, TaskStep
+from common.types import ScoreEvent, TaskStep, Task
 from helper_methods import get_values
 from pycram.datastructures.enums import TaskStatus
 from pycram.language import SequentialNode
@@ -51,8 +51,10 @@ class ScoreTimeMonitor:
     def record_score(self, task_step: TaskStep, plan: SequentialNode):
         penalty : int = 0
         points : int = 0
-        action_start_time = (plan.start_time - self._start_time).seconds
-        duration = plan.end_time - plan.start_time
+        action_start_time = (plan.start_time - self._start_time).total_seconds()
+        duration = (plan.end_time - plan.start_time).total_seconds()
+        self._time += duration
+
         outcome = plan.status
         max_points, max_penalty, _, _ = get_values(action_type=task_step.action_type, semantic_annotation=task_step.object_annotations, location=task_step.location)
 
@@ -67,26 +69,54 @@ class ScoreTimeMonitor:
             return
 
         event = ScoreEvent(
+            assisted=task_step.action_assisted,
             timestamp=action_start_time,
             action_type=task_step.action_type,
             outcome=outcome.name,
             semantic_annotation=task_step.object_annotations,
             points=points,
             penalty=penalty,
-            time_spent=duration.seconds,
+            time_spent=duration,
             cumulative_score=self._score,
             cumulative_time=self._time,
         )
         self._score_events.append(event)
         self._log(event=event, start_time=self._start_time)
 
-    def time_remaining_seconds(self):
-        remaining_time : int = self._challenge_duration - (datetime.datetime.now() - self._start_time ).seconds
+
+    def record_task_start(self, task: Task):
+        """
+        Call at the start of each task execution so elapsed and overtime
+        can be computed mid-task by the stabilizer.
+        """
+        task.task_begin = datetime.datetime.now()
+
+    def task_elapsed_seconds(self, task: Task) -> float:
+        """Seconds since this task started executing."""
+        if task.task_begin is None:
+            return 0.0
+        return (datetime.datetime.now() - task.task_begin).total_seconds()
+
+    def task_overtime_seconds(self, task: Task) -> float:
+        """Positive = running over the estimated duration. Negative = ahead of schedule."""
+        return self.task_elapsed_seconds(task) - task.duration
+
+    def time_remaining_seconds_total(self):
+        remaining_time = self._challenge_duration - (datetime.datetime.now() - self._start_time).total_seconds()
         return remaining_time
 
-    def time_taken_seconds(self):
-        time_taken : int = (datetime.datetime.now() - self._start_time).seconds
+    def time_remaining_seconds_task(self, task: Task):
+        remaining_time = task.duration - (datetime.datetime.now() - task.task_begin).total_seconds()
+        return remaining_time
+
+    def time_taken_seconds_total(self):
+        time_taken : int = round((datetime.datetime.now() - self._start_time).total_seconds())
         return time_taken
+
+    def time_expected_seconds_task_list(self, task_list: list[TaskStep]) -> float:
+        expected_time : float = sum(t.action_time for t in task_list)
+        return expected_time
+
 
     def _log(self, event: ScoreEvent, start_time: datetime.datetime):
         filename = "plan_" + start_time.strftime("%Y%m%d-%H%M%S") + ".log"

@@ -11,8 +11,7 @@ class PlanStructurizer:
         # sort by normalized score_per_seconds + probability (set by normalize_task_estimation)
         sorted_task_list = sorted(
             task_list,
-            key=lambda t: getattr(t, "normalized_score_per_seconds", t.normalized_score_per_seconds)
-                          + getattr(t, "normalized_probability", t.probability),
+            key=lambda t: t.score_per_seconds *  t.probability,
             reverse=True,
         )
         self.summary(sorted_task_list)

@@ -466,6 +466,7 @@ def generate_plan_task(task: Task, context: Context):
     last_pickup_object: Optional[SemanticAnnotation] = None
     action_list : list[ActionDescription] = []
     for task_steps in task.task_steps:
+        # TODO: add assisted tasks
         if task_steps.action_assisted:
             match task_steps.action_type:
                 case ActionType.NAVIGATE:

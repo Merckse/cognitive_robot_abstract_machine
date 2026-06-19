@@ -43,7 +43,7 @@ ACTIONS: dict[tuple[ActionType, SemanticAnnotation, str], ActionEvaluation] = {
 
     # ------------------ PICKUP (base: 50pts / -20 / 30s / 0.5)
     (ActionType.PICKUP, Plate, ANY):
-        ActionEvaluation(score=50 + 100, penalty=-20 - 30, time=50, probability=0.01),
+        ActionEvaluation(score=50 + 100, penalty=-10 - 30, time=50, probability=0.01),
     # CUTLERY — hard to grasp/locate
     (ActionType.PICKUP, Knife, ANY):
         ActionEvaluation(score=50 + 50, penalty=-20 - 10, time=100, probability=0.01),
@@ -140,6 +140,12 @@ action_evaluation = ActionEvaluation(score=0, penalty=0, time=0, probability=1.0
 
 
 def evaluation(action_type: ActionType, semantic_annotation: SemanticAnnotation = None, location: str = "") -> ActionEvaluation:
+    """
+    Wild card search, for the Action. In short: if the sem_anno or loc isnt in ACTIONS, it becomes ANY. If a hit is registered, it is returned
+    :param action_type: action type defines the action to be evaluated
+    :param semantic_annotation: semantic annotation of the action to be evaluated
+    :param location: location of the action to be evaluated
+    """
     for sem_anno in (semantic_annotation, ANY):
         for loc in (location, ANY):
             hit = ACTIONS.get((action_type, sem_anno, loc))

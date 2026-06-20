@@ -184,7 +184,7 @@ block = BlockFragment(header=keyword_frag, items=[item1, item2])
 2. {py:func}`~krrood.entity_query_language.verbalization.grammar.framework.phrase_rule.select`s the most-specific {py:class}`~krrood.entity_query_language.verbalization.grammar.framework.phrase_rule.PhraseRule` and calls its `build`, handing it a fresh {py:class}`~krrood.entity_query_language.verbalization.grammar.framework.phrase_rule.RuleContext` whose `child` re-enters `fold`.
 3. If no rule matches, raises {py:class}`~krrood.entity_query_language.verbalization.exceptions.UnverbalizableExpressionError`.
 
-A rule never recurses by hand — it calls `context.child(sub_expression)`.
+A rule never recurses by hand — it calls `context.child(sub_expression)`.  `child` accepts optional per-recursion render flags (`number`, `inline`, `as_value`), bundled internally as a {py:class}`~krrood.entity_query_language.verbalization.grammar.framework.phrase_rule.RenderOptions`; a single `root_context` factory builds the `RuleContext` so the continuation is defined in one place (a new flag is one field on `RenderOptions`, not a signature change at every call site).
 
 **Query scoping is declarative.**  A rule whose construct *is* a query body (the top-level / nested `Entity` and `SetOf` rules) declares `enters_query_scope = True`; the engine then runs its `build` inside `context.configuration.query_depth_scope()`, so any Entity found within renders as a nested noun phrase (`query_depth > 0`) rather than emitting *"Find …"*.  Neither rules nor assemblers ever push the scope by hand.  `when` runs *outside* the scope — it guards on the rule's own position (`query_depth == 0` for the top-level form).
 
@@ -192,7 +192,7 @@ A rule never recurses by hand — it calls `context.child(sub_expression)`.
 
 `select` ranks the rules whose `construct` matches (`isinstance`) and whose `when` guard passes, by the key **(construct MRO depth, guarded over unguarded, rule-class MRO depth)**, highest wins.  Specificity comes primarily from the *construct* class, so rules stay flat; the final component lets a rule that is a genuine *special case* of another express that by subclassing it (when both guards hold, the more-derived rule class wins).  For example `Literal <: Variable`, so `LiteralRule` (deeper construct) shadows `VariableRule`; a guarded boolean-attribute chain rule outranks the plain possessive chain rule.
 
-The same most-specific-wins selection is reused, off the EQL tree, by the {py:class}`~krrood.entity_query_language.verbalization.grammar.framework.specificity.SpecificityRule` registries — small families of guarded alternatives ranked by class depth (the {py:class}`~krrood.entity_query_language.verbalization.grammar.conditions.forms.ConditionForm` surface-form registry and the navigation-form registry).  Adding an alternative is a new subclass; nothing else changes.
+The same most-specific-wins selection is reused, off the EQL tree, by the {py:class}`~krrood.entity_query_language.verbalization.grammar.framework.specificity.SpecificityRule` registries — several small families of guarded alternatives ranked by class depth: the {py:class}`~krrood.entity_query_language.verbalization.grammar.conditions.forms.ConditionForm` surface-form registry, the {py:class}`~krrood.entity_query_language.verbalization.grammar.conditions.transforms.PredicateTransform` predicate registry, the {py:class}`~krrood.entity_query_language.verbalization.grammar.chain.assembler.NavigationForm` navigation registry, the {py:class}`~krrood.entity_query_language.verbalization.grammar.query.ranking.RankingForm` selection-ranking registry, and the {py:class}`~krrood.entity_query_language.verbalization.grammar.conditions.restriction.RestrictionSubjectRule` registry.  Adding an alternative is a new subclass; nothing else changes.
 
 ### How to Extend — A Worked Example
 
@@ -294,7 +294,7 @@ The rule's `build` just calls `XAssembler(context).assemble(node)` (or, for plan
 
 Navigation chains analyse the chain once into a {py:class}`~krrood.entity_query_language.verbalization.grammar.chain.planner.ChainPlan` ({py:class}`~krrood.entity_query_language.verbalization.grammar.chain.planner.ChainPlanner`); {py:class}`~krrood.entity_query_language.verbalization.grammar.chain.assembler.ChainAssembler` then renders the plural / boolean-predicative / possessive form, with the possessive/pronominal surface built by {py:mod}`~krrood.entity_query_language.verbalization.microplanning.possessive` and the navigation prefix chosen by the navigation-form registry over {py:func}`~krrood.entity_query_language.verbalization.navigation_path.build_path_parts`.
 
-Conditions are owned by {py:class}`~krrood.entity_query_language.verbalization.grammar.conditions.assembler.ConditionAssembler` (the surface forms) plus the {py:class}`~krrood.entity_query_language.verbalization.grammar.conditions.forms.ConditionForm` registry (which form attaches where), with pure structural predicates in {py:mod}`~krrood.entity_query_language.verbalization.grammar.conditions.recognition` and the operator phrase in {py:func}`~krrood.entity_query_language.verbalization.grammar.conditions.operator_phrase.comparator_operator`.
+Conditions are owned by {py:class}`~krrood.entity_query_language.verbalization.grammar.conditions.assembler.ConditionAssembler` (the surface forms) plus the {py:class}`~krrood.entity_query_language.verbalization.grammar.conditions.forms.ConditionForm` registry (which form attaches where).  Its `predicate` form does not hard-code the special cases either: it dispatches over the {py:class}`~krrood.entity_query_language.verbalization.grammar.conditions.transforms.PredicateTransform` registry, so the generic *"<left> <op> <right>"* is one transform alongside the absence (*"has no …"*) and boolean-polarity (*"is [not] <attr>"*) forms.  Pure structural predicates live in {py:mod}`~krrood.entity_query_language.verbalization.grammar.conditions.recognition` and the operator phrase in {py:func}`~krrood.entity_query_language.verbalization.grammar.conditions.operator_phrase.comparator_operator`.
 
 ---
 
@@ -303,16 +303,16 @@ Conditions are owned by {py:class}`~krrood.entity_query_language.verbalization.g
 After the fold, {py:func}`~krrood.entity_query_language.verbalization.rendering.realization.realize_tree` runs four ordered passes over the fragment tree:
 
 1. **{py:class}`~krrood.entity_query_language.verbalization.rendering.coreference_processor.CoreferenceProcessor`** — resolves referring expressions in document order and strips `PossessiveChain` markers (below).
-2. **{py:class}`~krrood.entity_query_language.verbalization.rendering.determiner_processor.DeterminerProcessor`** — lowers every `NounPhrase` to a determiner-bearing `PhraseFragment` via the concord table (INDEFINITE×SINGULAR → *a/an*; INDEFINITE×PLURAL → bare; DEFINITE → *the*; BARE → no determiner), and tags the head with its `Number`.
+2. **{py:class}`~krrood.entity_query_language.verbalization.rendering.determiner_processor.DeterminerProcessor`** — lowers every `NounPhrase` to a determiner-bearing `PhraseFragment` via the concord table (INDEFINITE×SINGULAR → *a/an*; INDEFINITE×PLURAL → bare; DEFINITE → *the*; UNIQUE → *the unique*; BARE → no determiner), and tags the head with its `Number`.
 3. **{py:class}`~krrood.entity_query_language.verbalization.rendering.morphology_processor.MorphologyProcessor`** — inflects every leaf tagged `Number.PLURAL` (pluralise nouns; copula suppletion *is*→*are*).  Domain exceptions can be registered via {py:func}`~krrood.entity_query_language.verbalization.morphology.register_plural` / {py:func}`~krrood.entity_query_language.verbalization.morphology.register_indefinite_article`.
 4. **{py:class}`~krrood.entity_query_language.verbalization.rendering.orthography_processor.OrthographyProcessor`** — removes the space adjacent to glued punctuation (a `Punctuation` token carries a spacing feature), so rules emit *","* / *"("* / *")"* as ordinary, normally-separated tokens and still get *"x, y"* / *"(x)"*.
 
 ### Coreference
 
-Rules emit the *first-mention* form — a `NounPhrase` tagged with a `referent_id` (and `Definiteness` INDEFINITE / BARE), with variable-rooted chains emitted as a `PossessiveChain`.  The discourse focus (which referent is the current subject, for *"its …"*) is **not** marked by rules; it is projected once from the shared plan read model by {py:class}`~krrood.entity_query_language.verbalization.rendering.discourse.DiscourseModel` (`DiscourseModel.from_expression(expression, microplan)`), and the coreference pass consults it.  The pass then, in output order:
+Rules emit the *first-mention* form — a `NounPhrase` tagged with a `referent_id` (and `Definiteness` INDEFINITE / BARE, or UNIQUE for a *"the unique X"* `the(entity(...))` selection), with variable-rooted chains emitted as a `PossessiveChain`.  The discourse focus (which referent is the current subject, for *"its …"*) is **not** marked by rules; it is projected once from the shared plan read model by {py:class}`~krrood.entity_query_language.verbalization.rendering.discourse.DiscourseModel` (`DiscourseModel.from_expression(expression, microplan)`), and the coreference pass consults it.  The pass then, in output order:
 
 * keeps the first mention of a referent (e.g. *"a Robot"*) and marks it introduced;
-* downgrades a repeat **singular** mention to definite, dropping the first-mention modifiers (*"the Robot"*); numbered labels (*"Robot 2"*, `BARE`) never downgrade;
+* downgrades a repeat **singular** mention to definite, dropping the first-mention modifiers (*"the Robot"*; a UNIQUE *"the unique Robot"* likewise downgrades to a plain DEFINITE *"the Robot"*); numbered labels (*"Robot 2"*, `BARE`) never downgrade;
 * renders a `PossessiveChain` as *"its …"* when its root is the discourse subject, else as the possessive *"the … of …"*.
 
 The build is therefore free of in-fold coreference mutation.  {py:class}`~krrood.entity_query_language.verbalization.microplanning.referring.ReferringExpressions` holds only the pre-computed disambiguation map and a `seen` **set** of introduced referent ids — the latter solely to *seed* the pass across builds sharing one services bundle.  `numbered_label(var)` is the single source of the disambiguation lookup; `noun_for_parts(var)` builds on it for the first-mention `Definiteness`.
@@ -340,7 +340,7 @@ A single {py:class}`~krrood.entity_query_language.verbalization.context.Micropla
 | {py:class}`~krrood.entity_query_language.verbalization.microplanning.config.RenderConfiguration` (`context.configuration`) | render-mode flags (query depth, compact predicates) |
 | {py:class}`~krrood.entity_query_language.verbalization.microplanning.microplan.Microplan` (`context.microplan`) | the plan read model — each node's plan computed once and shared (lazy / memoised) |
 
-`MicroplanningServices` also exposes the value-lexicalisation helper `type_name_of_value` (Python value → text).
+Value lexicalisation (Python value → text — e.g. `None` → *"nothing"*, an enum member → its name, a `datetime` → *"May 23, 2026"*) is the pure module-level function {py:func}`~krrood.entity_query_language.verbalization.value_lexicon.value_phrase`, not a method on the services.
 
 ### Constraint frames (BindingScope)
 
@@ -396,10 +396,10 @@ The resolver is passed to the renderer at construction (via the `VerbalizationPi
 | Lexicon | `vocabulary/english.py`, `vocabulary/words.py` — **all** English words/phrases/punctuation |
 | Grammar framework | `grammar/framework/` — `phrase_rule` (`PhraseRule`, `RuleContext`, `select`), `registry` (`RULES` via `recursive_subclasses`), `specificity` (`SpecificityRule`, `most_applicable`), `assembler` (`Assembler` base), `planner` (`Planner` base) |
 | Grammar (per construct) | `grammar/<construct>/` — `terms`, `chain`, `conditions`, `query`, `inference`, `aggregation`, `clauses`, `instantiated`, `match`; each has `rules.py`, and the involved ones a `planner.py` + `assembler.py` |
-| Conditions | `grammar/conditions/` — `rules`, `assembler` (`ConditionAssembler`), `forms` (`ConditionForm` registry, `place` / `as_subject_restrictions`), `recognition`, `operator_phrase`, `restriction` |
+| Conditions | `grammar/conditions/` — `rules`, `assembler` (`ConditionAssembler`), `forms` (`ConditionForm` registry, `place` / `as_subject_restrictions`), `transforms` (`PredicateTransform` registry), `recognition`, `operator_phrase`, `restriction` |
 | Microplanning | `microplanning/` — `referring`, `binding_scope`, `config` (`RenderConfiguration`), `microplan` (`Microplan`), `coordination`, `possessive` |
 | Rendering | `rendering/` — `realization` (the passes), `coreference_processor`, `determiner_processor`, `morphology_processor`, `orthography_processor`, `discourse` (`DiscourseModel`), `renderer`, `formatter`, `source_link_resolver` |
-| Utilities | `morphology.py` (inflect facade), `navigation_path.py` (`build_path_parts`, `PathStep`), `subquery.py`; chain walking is `core.expression_structure.walk_chain` |
+| Utilities | `morphology.py` (inflect facade), `navigation_path.py` (`build_path_parts`, `PathStep`), `value_lexicon.py` (`value_phrase`), `subquery.py`; chain walking is `core.expression_structure.walk_chain` |
 
 ---
 

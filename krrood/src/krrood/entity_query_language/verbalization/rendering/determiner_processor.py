@@ -33,6 +33,7 @@ class DeterminerProcessor:
     ==============  ==================  ======================
     INDEFINITE      *"a/an"* + head     Ø (bare) + head
     DEFINITE        *"the"* + head      *"the"* + head
+    UNIQUE          *"the unique"*      *"the unique"*
     BARE            Ø                   Ø
     ==============  ==================  ======================
 

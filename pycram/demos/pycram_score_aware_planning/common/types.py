@@ -31,7 +31,7 @@ class ActionType(str, Enum):
     CUSTOM = "custom"
 
 
-class ActionOutcome(str, Enum):
+class Status(str, Enum):
     SUCCESS = "success"
     SUCCESS_WITH_ASSIST = "success_with_assist"
     FAILURE = "failure"
@@ -65,7 +65,7 @@ class ScoreEvent:
 class TaskStep:
     # task_step_id: int = field(default_factory=lambda: next(_taskstep_id_counter), init=False)
     action_type: ActionType
-    action_outcome : ActionOutcome = ActionOutcome.NOT_ASSIGNED
+    action_outcome : Status = Status.NOT_ASSIGNED
     action_probability : float= 1
     action_score : float = 0
     action_penatly: int = 0
@@ -84,7 +84,7 @@ class Task:
     task_steps: list[TaskStep]
     action_list: list[ActionDescription] = field(default_factory=list)
     uncertain: bool = False # Meaning, if not all informations to a task are known, then there has to be something done
-    status : ActionOutcome = ActionOutcome.NOT_ASSIGNED
+    status : Status = Status.NOT_ASSIGNED
     score: int = 0
     normalized_score : float = 0
     penatly: int = 0

@@ -3,7 +3,7 @@ import math
 from Evaluate.CompositeEvaluator import CompositeEvaluator
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from Stabilizer.PlanStabilizer import PlanStabilizer
-from common.types import Task, TaskStep, ActionOutcome
+from common.types import Task, TaskStep, Status
 from common.values import CHALLENGE_TASKS
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from helper_methods import generate_plan_task, perceive_and_spawn_all_objects
@@ -163,9 +163,9 @@ while task_list != []:
             scoretime_monitor.record_score(task_step=task_step, plan=plan)
             if plan.status == TaskStatus.SUCCEEDED:
                 if task_step.action_assisted:
-                    task_step.action_outcome = ActionOutcome.SUCCESS_WITH_ASSIST
+                    task_step.action_outcome = Status.SUCCESS_WITH_ASSIST
                     continue
-                task_step.action_outcome = ActionOutcome.SUCCESS
+                task_step.action_outcome = Status.SUCCESS
 
 
             # if plan.status is TaskStatus.FAILED:

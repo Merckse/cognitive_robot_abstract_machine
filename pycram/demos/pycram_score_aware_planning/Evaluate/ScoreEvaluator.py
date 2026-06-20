@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from common.types import ActionOutcome, TaskStep
+from common.types import Status, TaskStep
 from demos.pycram_score_aware_planning.common.types import (
     Task, ScoreEvent,
 )
@@ -71,7 +71,7 @@ class RobotScorer:
             total_score :int= 0
             total_time : int= 0
             total_score_penalized : int = 0
-            outcome : TaskStatus | ActionOutcome = TaskStatus.SUCCEEDED
+            outcome : TaskStatus | Status = TaskStatus.SUCCEEDED
 
             if task.id in finished_task_ids:
                 continue
@@ -81,7 +81,7 @@ class RobotScorer:
                 penalty: int = 0
 
                 # if action is already successful, dont give score, else as expected
-                if step.action_outcome == ActionOutcome.SUCCESS:
+                if step.action_outcome == Status.SUCCESS:
                     pass
                 else:
                     step_profile = evaluation(
@@ -91,7 +91,7 @@ class RobotScorer:
                     expected_time = step_profile.time
 
                     if step.action_assisted:
-                        outcome = ActionOutcome.SUCCESS_WITH_ASSIST
+                        outcome = Status.SUCCESS_WITH_ASSIST
                         base_score : int = 0
 
 

@@ -8,7 +8,7 @@ from common.types import TaskStep
 from helper_methods import NAVIGATION_POSES
 from pycram.datastructures.dataclasses import Context
 from pycram.locations.costmaps import OccupancyCostmap
-from demos.pycram_score_aware_planning.common.types import Task, ActionOutcome
+from demos.pycram_score_aware_planning.common.types import Task, Status
 from demos.pycram_score_aware_planning.common.values import evaluation
 from demos.pycram_score_aware_planning.helper_methods import find_surface_of_object
 
@@ -110,7 +110,7 @@ class RobotProbability:
                 action_type = step.action_type
 
 
-                if step.action_outcome == ActionOutcome.SUCCESS:
+                if step.action_outcome == Status.SUCCESS:
                     step_probability = 1
                 # print(task.task_steps)
                 # Retrieving values

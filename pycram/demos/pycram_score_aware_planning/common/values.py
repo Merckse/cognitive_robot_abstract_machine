@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 from dataclasses import dataclass
 
-from demos.pycram_score_aware_planning.common.types import ActionType, ActionOutcome, ChallengeMode, TaskStep, Task
+from demos.pycram_score_aware_planning.common.types import ActionType, Status, ChallengeMode, TaskStep, Task
 from pycram.datastructures.enums import TaskStatus
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Plate, Knife, Fork, Spoon, Bowl, Milk, Cereal
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation
@@ -154,15 +154,15 @@ def evaluation(action_type: ActionType, semantic_annotation: SemanticAnnotation 
     return action_evaluation
 
 # Penalties applied on top of (or instead of) base points
-OUTCOME_MODIFIERS: dict[ActionOutcome|TaskStatus, float] = {
+OUTCOME_MODIFIERS: dict[Status | TaskStatus, float] = {
     TaskStatus.SUCCEEDED:                 1.0,
     TaskStatus.FAILED:                    0.0,
-    ActionOutcome.SUCCESS: 1.0,  # full points
-    ActionOutcome.SUCCESS_WITH_ASSIST: 0.5,  # half points, assist penalty applied separately
-    ActionOutcome.FAILURE_RECOVERABLE: 0.0,  # no points
-    ActionOutcome.FAILURE_UNRECOVERABLE: 0.0,  # no points
-    ActionOutcome.SKIPPED: 0.0,
-    ActionOutcome.NOT_ASSIGNED: 0,
+    Status.SUCCESS: 1.0,  # full points
+    Status.SUCCESS_WITH_ASSIST: 0.5,  # half points, assist penalty applied separately
+    Status.FAILURE_RECOVERABLE: 0.0,  # no points
+    Status.FAILURE_UNRECOVERABLE: 0.0,  # no points
+    Status.SKIPPED: 0.0,
+    Status.NOT_ASSIGNED: 0,
 }
 
 CHALLENGE_DURATION: dict[ChallengeMode, int] = {

@@ -68,4 +68,4 @@ def setup_world():
     print(apartment_world.bodies)
     dispatcher = EventDispatcher()
 
-    return apartment_world, dispatcher
+    return apartment_world, dispatcher, hsrb_sem_world

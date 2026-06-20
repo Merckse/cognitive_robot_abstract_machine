@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from Evaluate.CompositeEvaluator import CompositeEvaluator
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
-from common.types import Task, ActionOutcome, TaskStep
+from common.types import Task, Status, TaskStep
 from common.values import evaluation
 from giskardpy.motion_statechart.exceptions import CollisionViolatedError
 from giskardpy.motion_statechart.goals.pick_up import ObjectNotReachableException, ObjectDoesntFitException
@@ -22,7 +22,7 @@ class PlanStabilizer:
         - then try to fix error
         - then go on
     """
-    def stabilize(self, context: Context, task: Task, exception: Exception, evaluator : CompositeEvaluator, scoretime_monitor : ScoreTimeMonitor):
+    def stabilize(self, context: Context, task: Task, exception: Exception, scoretime_monitor : ScoreTimeMonitor):
         """
         Stabilize works by taking the task and the exception and using it to match it to candidate solutions.
         These solutions are hardcoded by the developers. Since there is (at least not expected to be) a unified way of
@@ -33,33 +33,39 @@ class PlanStabilizer:
         :param evaluator: The evaluator, that is used to evaluate the tasks
         :param scoretime_monitor: Monitor for the scoring and time spent on the task
 
-        TODO: if the evaluator turns out to be useless or overkill, just throw it
+        # TOOD: add a constant probability decrease, on actually failed task, so the "hope", becomes less
         """
         remaining_task_steps : list[TaskStep]= get_remaining_task_steps(task)
-        transformation_operators : list[PlanTransformationOperator] = []
+        candidate_operators : list[PlanTransformationOperator] = []
 
         # Pickup-Motion issues
         if isinstance(exception,ObjectNotReachableException):
             # TODO: implement Bring closer action or reposition action (more difficult)
-            transformation_operators.insert(0, PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE)
+            candidate_operators.insert(0, PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE)
         elif isinstance(exception, ObjectDoesntFitException):
-            # TODO: Implement is graspable function
-            transformation_operators.insert(0, PlanTransformationOperator.RETRY_WITH_ASSISTANCE)
+            # TODO: Implement is graspable in any position function
+            candidate_operators.insert(0, PlanTransformationOperator.RETRY_WITH_ASSISTANCE)
+        elif isinstance(exception, TimeoutError):
+            candidate_operators.insert(0, PlanTransformationOperator.RETRY)
+            candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
+            candidate_operators.insert(0, PlanTransformationOperator.SKIP)
         # Any-Motion issues
         elif isinstance(exception, MotionDidNotFinish) or isinstance(ObjectNotGrasped):
-            transformation_operators.insert(0, PlanTransformationOperator.RETRY)
-            transformation_operators.insert(0, PlanTransformationOperator.REPLAN)
-            transformation_operators.insert(0, PlanTransformationOperator.SKIP)
+            candidate_operators.insert(0, PlanTransformationOperator.RETRY)
+            candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
+            candidate_operators.insert(0, PlanTransformationOperator.SKIP)
         # Navigate, Place, Pickup motion issues
         elif isinstance(exception, CollisionViolatedError):
-            transformation_operators.insert(0, PlanTransformationOperator.REPLAN)
+            candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
         else:
-            transformation_operators.insert(0, PlanTransformationOperator.REPLAN)
-            transformation_operators.insert(0, PlanTransformationOperator.SKIP)
+            candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
+            candidate_operators.insert(0, PlanTransformationOperator.SKIP)
 
-        sorted_operators = sorted(transformation_operators,
-                                  key=lambda o: self._evaluate_operators(task,remaining_task_steps, scoretime_monitor),
-                                  reverse=True)
+        score : list[list[PlanTransformationOperator, float, list[TaskStep]]]= []
+        for op in candidate_operators:
+            repaired_task_list : list[TaskStep] = self._stabilize_task_list(remaining_task_steps)
+            expected_value = self._expected_value(task, repaired_task_list, scoretime_monitor)
+            score.append([op, expected_value, repaired_task_list])
 
 
 
@@ -73,14 +79,15 @@ class PlanStabilizer:
         Skips the current task and continues with a new one.
         Potentially continuing the skipped task, at the last task step, if worth it.
         """
-        task.status = TaskStatus.SKIPPED
-        pass
+        task.status = Status.SKIPPED
+        return
 
     def retry(self, task: Task):
         """
         Rawly retrying the entire task.
         Potentially cutting TaskSteps, like the Navigation in order of minimizing failure.
         """
+
         # TODO
         pass
 
@@ -104,15 +111,15 @@ class PlanStabilizer:
         pass
 
 
-    def assisted(self, task: Task):
+    def assisted(self, task: Task, task_list : list[TaskStep], scoretime_monitor ):
         """
         The substitution, by requesting assistance.
         If the system expects that the task still earns enough points or that the rest of the plan is still
         executeable, then it can be assisted and continue its´ task. This is mostly useful, since execution time of new plans and navigation times
         can strongly vary.
         """
-        # TODO
-        pass
+        task_list.pop(0)
+        return task_list
 
 
     def replan(self, task: Task):
@@ -125,7 +132,11 @@ class PlanStabilizer:
         # TODO
         pass
 
-    def _evaluate_operators(self, task:Task, task_list :list[TaskStep], transformation_operator : PlanTransformationOperator, scoretime_monitor : ScoreTimeMonitor, composite_evaluator : CompositeEvaluator):
+    def _evaluate_operators(self, task:Task, task_list :list[TaskStep],
+                            exception: Exception,
+                            transformation_operator : PlanTransformationOperator,
+                            scoretime_monitor : ScoreTimeMonitor,
+                            composite_evaluator : CompositeEvaluator):
         """
         Scores a single transformation operator against the remaining task steps and returns its expected value.
 
@@ -154,8 +165,6 @@ class PlanStabilizer:
         :return: Expected value (float) — higher is better. Negative means the operator is not worth applying.
         """
 
-
-        transformation_operator : PlanTransformationOperator = transformation_operator
         expected_value : float = self._expected_value(task,
                                                       task_list,
                                                       scoretime_monitor)
@@ -165,12 +174,20 @@ class PlanStabilizer:
                                                       task_list_without_failed,
                                                       scoretime_monitor)
 
-        # Check the expected score and if there is enough time, to still execute a task with average legnth.
+        # a.) if the penalty is too high, then the assistance will be worth it. b.) if there is no further value with assistance, then its not worth it.
+        # The base assumption here being, that the action is always more worth it to continue, if there are points to be gained
         if expected_value < expected_value_with_assistance and expected_value_with_assistance > 0:
-            transformation_operator = PlanTransformationOperator.ASSISTED
-        if expected_value < 0:
+            transformation_operator = [PlanTransformationOperator.ASSISTED].append(transformation_operator)
+            return transformation_operator
+
+        elif expected_value < 0:
             limited = scoretime_monitor.limited_time()
             transformation_operator = transformation_operator if limited else PlanTransformationOperator.SKIP
+            return transformation_operator
+
+        # TODO: evaluate, when what operator is more worth, all assisted operators are lowkey out anyway
+
+
 
 
         return transformation_operator

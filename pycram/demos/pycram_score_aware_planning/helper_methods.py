@@ -3,7 +3,7 @@ import math
 from time import sleep
 from typing import Optional
 
-from common.types import ActionOutcome
+from common.types import Status
 from common.values import evaluation
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
@@ -537,9 +537,9 @@ def get_remaining_task_steps(task: Task) -> list[TaskStep]:
     failed_taskstep : list[TaskStep] = []
     for t in task.task_steps:
         if t.action_outcome in (
-                ActionOutcome.FAILURE,
-                ActionOutcome.FAILURE_RECOVERABLE,
-                ActionOutcome.FAILURE_UNRECOVERABLE) or failed_taskstep != []:
+                Status.FAILURE,
+                Status.FAILURE_RECOVERABLE,
+                Status.FAILURE_UNRECOVERABLE) or failed_taskstep != []:
             failed_taskstep.append(t)
 
     return failed_taskstep

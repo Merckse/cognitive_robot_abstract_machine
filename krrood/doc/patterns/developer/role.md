@@ -54,10 +54,11 @@ fields whose annotation uses the generic parameter are rewritten to the bound co
 role subclass (keeping generic roles introspectable by the class diagram), and from `Symbol` to
 participate in the Symbol Graph and do reasoning over it (see last point below).
 
-**`role_taker_field()`** is a thin wrapper around `dataclasses.field()` that tags the field in
-its metadata with `ROLE_TAKER_METADATA_KEY`. This tag is the single source of truth that the
-role uses to identify which field is the role taker. The tag also allows the class diagram
-(`krrood.class_diagrams`) to recognise role-taker relationships during graph construction.
+**`role_taker_field()`** is a thin wrapper around `dataclasses.field()` that produces a
+`RoleTakerField` (a `dataclasses.Field` subclass) by building a field and reassigning its
+`__class__`. The field's type is the single source of truth that the role uses to identify
+which field is the role taker. It also allows the class diagram (`krrood.class_diagrams`) to
+recognise role-taker relationships during graph construction.
 
 **`SymbolGraph`** (external, in `krrood.symbol_graph`) is the runtime registry. When a role is
 constructed, `Role.__post_init__` calls
@@ -95,11 +96,10 @@ transformations.
 A role is only created when calling code explicitly passes a role taker instance to the role
 constructor (or to `from_role_taker`).
 
-### Field-Tag Discovery of the Role Taker
+### Field-Type Discovery of the Role Taker
 
-The role taker field is identified at runtime by inspecting field metadata for
-`ROLE_TAKER_METADATA_KEY`. The name of that field is cached per class via `@lru_cache` on
-`role_taker_field_name()`.
+The role taker field is identified at runtime by an `isinstance` check against `RoleTakerField`.
+The name of that field is cached per class via `@lru_cache` on `role_taker_field_name()`.
 
 ### Distinct Identity and the `IsSameEntity` Predicate
 
@@ -144,7 +144,7 @@ explicitly through `role.role_taker` (or `role.root_persistent_entity`).
   `DelegatedFactoryMethodError`, `RoleAttributeNotDeclaredError`
 - `krrood/src/krrood/patterns/subclass_safe_generic.py` — `SubClassSafeGeneric`,
   `AbstractSubClassSafeGeneric`
-- `krrood/src/krrood/class_diagrams/utils.py` — `ROLE_TAKER_METADATA_KEY`
+- `krrood/src/krrood/class_diagrams/utils.py` — `RoleTakerField`
 - `krrood/src/krrood/symbol_graph/symbol_graph.py` — `SymbolGraph`, `PredicateClassRelation`,
   `Symbol`
 - `test/krrood_test/test_patterns/test_role.py` — behavioural tests for the role pattern

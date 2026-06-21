@@ -266,8 +266,11 @@ class PlanNode(PlanEntity):
                 return
         self.status = TaskStatus.RUNNING
 
+        print("parent =", self.parent)
+        print("self =", self.plan)
         try:
             self.result = self._perform()
+            self.status = TaskStatus.SUCCEEDED
         except UnreachableException as e:
             self.status = TaskStatus.FAILED
             self.reason = "unreachable"
@@ -277,6 +280,9 @@ class PlanNode(PlanEntity):
             self.status = TaskStatus.FAILED
             self.reason = e
             logger.info(f"Failed node: {e}")
+            self.plan.root.interrupt()
+            # self. = TaskStatus.INTERRUPTED
+            self.interrupt()
             return
         # except PlanFailure as e:
         #     print("except")
@@ -285,7 +291,6 @@ class PlanNode(PlanEntity):
         #     raise e
         finally:
             self.end_time = datetime.now()
-        self.status = TaskStatus.SUCCEEDED
 
     def mount_subplan(self, root: PlanNode):
         """

@@ -8,7 +8,9 @@ from common.values import evaluation
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
 from pycram.datastructures.grasp import GraspDescription
+from pycram.language import SequentialNode
 from pycram.plans.factories import sequential
+from pycram.plans.plan_node import PlanNode
 from pycram.robot_plans.actions.base import ActionDescription
 from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.pick_up import PickUpAction
@@ -458,7 +460,7 @@ def generate_plan(tasks: list[Task], context: Context):
 
     return plan
 
-def generate_plan_task(task: Task, context: Context):
+def generate_plan_task(task: Task, context: Context) -> PlanNode:
     from pycram.plans.factories import make_node
     plan = sequential(children=[], context=context)
     arm = Arms.LEFT
@@ -499,10 +501,10 @@ def generate_plan_task(task: Task, context: Context):
                 case _:
                     raise NotImplementedError(f"Action type not implemented: {task_steps.action_type}")
         if action is not None:
-            action_list.append(action)
-            # plan.add_child(make_node(action))
+            # action_list.append(action)
+            plan.add_child(make_node(action))
 
-    return action_list
+    return plan
 
 def _quat(yaw: float) -> tuple[float, float, float, float]:
     return (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))

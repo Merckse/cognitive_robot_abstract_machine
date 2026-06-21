@@ -54,7 +54,7 @@ def setup_world():
     node = rclpy.create_node("kitchen_environment")
     publisher = VizMarkerPublisher(_world=KitchenEnvironment().get_world(), node=node)
     (publisher.with_tf_publisher())
-    apartment_world = publisher._world
+    apartment_world : World= publisher._world
 
     with apartment_world.modify_world():
         hsrb_root = hsrb_sem_world.get_body_by_name("base_footprint")
@@ -68,4 +68,4 @@ def setup_world():
     print(apartment_world.bodies)
     dispatcher = EventDispatcher()
 
-    return apartment_world, dispatcher, hsrb_sem_world
+    return apartment_world, dispatcher

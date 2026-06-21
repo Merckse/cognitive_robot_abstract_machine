@@ -98,13 +98,10 @@ class PlanTransformationOperator(int, Enum):
     NONE = 0
     SKIP = 1
     RETRY = 2
-    RETRY_WITH_ASSISTANCE = 3
-    SUBSTITUTE = 4
+    REPLAN_WITH_ASSISTANCE = 3
     SUBSTITUTE_WITH_ASSISTANCE = 5
     REPLAN = 6
     REORDER = 7
-    ASSISTED = 8
-
 
 class JointType(Enum):
     """

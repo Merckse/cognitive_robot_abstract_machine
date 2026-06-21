@@ -28,6 +28,7 @@ from semantic_digital_twin.datastructures.definitions import (
     GripperState,
     StaticJointState,
 )
+from ....plans.failures import ObjectNotGrasped
 
 
 @dataclass
@@ -43,13 +44,14 @@ class MoveTorsoAction(ActionDescription):
 
     def execute(self) -> None:
         joint_state = self.robot.torso.get_joint_state_by_type(self.torso_state)
+
         self.add_subplan(
             execute_single(
                 MoveJointsMotion(
                     [c.name.name for c in joint_state.connections],
                     joint_state.target_values,
                 ),
-            )
+            ),
         ).perform()
 
     @staticmethod
@@ -105,6 +107,8 @@ class ParkArmsAction(ActionDescription):
         self.add_subplan(
             execute_single(MoveJointsMotion(names=joint_names, positions=joint_poses))
         ).perform()
+        raise Exception
+
 
     def get_joint_poses(self) -> Tuple[List[str], List[float]]:
         """

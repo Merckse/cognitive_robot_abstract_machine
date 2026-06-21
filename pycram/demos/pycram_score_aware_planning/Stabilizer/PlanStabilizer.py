@@ -1,8 +1,9 @@
 from dataclasses import dataclass
+from unittest import skip
 
 from Evaluate.CompositeEvaluator import CompositeEvaluator
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
-from common.types import Task, Status, TaskStep
+from common.types import Task, Status, TaskStep, ActionType
 from common.values import evaluation
 from giskardpy.motion_statechart.exceptions import CollisionViolatedError
 from giskardpy.motion_statechart.goals.pick_up import ObjectNotReachableException, ObjectDoesntFitException
@@ -10,7 +11,9 @@ from helper_methods import get_remaining_task_steps
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator
 from pycram.exceptions import MotionDidNotFinish
+from pycram.language import SequentialNode
 from pycram.plans.failures import ObjectNotGrasped
+from pycram.plans.plan_node import PlanNode
 
 
 @dataclass(kw_only=True)
@@ -22,7 +25,7 @@ class PlanStabilizer:
         - then try to fix error
         - then go on
     """
-    def stabilize(self, context: Context, task: Task, exception: Exception, scoretime_monitor : ScoreTimeMonitor):
+    def stabilize(self, plan: SequentialNode, task: Task, exception: Exception, scoretime_monitor : ScoreTimeMonitor):
         """
         Stabilize works by taking the task and the exception and using it to match it to candidate solutions.
         These solutions are hardcoded by the developers. Since there is (at least not expected to be) a unified way of
@@ -37,6 +40,8 @@ class PlanStabilizer:
         """
         remaining_task_steps : list[TaskStep]= get_remaining_task_steps(task)
         candidate_operators : list[PlanTransformationOperator] = []
+        remaining_plan_nodes : list[PlanNode]= get_unfinished_nodes(plan.children)
+        plan.children
 
         # Pickup-Motion issues
         if isinstance(exception,ObjectNotReachableException):
@@ -44,13 +49,13 @@ class PlanStabilizer:
             candidate_operators.insert(0, PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE)
         elif isinstance(exception, ObjectDoesntFitException):
             # TODO: Implement is graspable in any position function
-            candidate_operators.insert(0, PlanTransformationOperator.RETRY_WITH_ASSISTANCE)
+            candidate_operators.insert(0, PlanTransformationOperator.REPLAN_WITH_ASSISTANCE)
         elif isinstance(exception, TimeoutError):
             candidate_operators.insert(0, PlanTransformationOperator.RETRY)
             candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
             candidate_operators.insert(0, PlanTransformationOperator.SKIP)
         # Any-Motion issues
-        elif isinstance(exception, MotionDidNotFinish) or isinstance(ObjectNotGrasped):
+        elif isinstance(exception, MotionDidNotFinish) or isinstance(exception, ObjectNotGrasped):
             candidate_operators.insert(0, PlanTransformationOperator.RETRY)
             candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
             candidate_operators.insert(0, PlanTransformationOperator.SKIP)
@@ -62,81 +67,73 @@ class PlanStabilizer:
             candidate_operators.insert(0, PlanTransformationOperator.SKIP)
 
         score : list[list[PlanTransformationOperator, float, list[TaskStep]]]= []
+
         for op in candidate_operators:
-            repaired_task_list : list[TaskStep] = self._stabilize_task_list(remaining_task_steps)
+            repaired_plan : list[PlanNode] = self._build_stabilized_task_list(remaining_task_steps, op)
             expected_value = self._expected_value(task, repaired_task_list, scoretime_monitor)
             score.append([op, expected_value, repaired_task_list])
 
+        maxed_task_list = max(score, key=lambda row: row[1])
 
+        return maxed_task_list
 
-    def _build_stabilized_task_list(self, task_list: list[TaskStep], operator_list: list[PlanTransformationOperator]) -> list[TaskStep]:
-        pass
+    def _build_stabilized_task_list(self, task_list: list[TaskStep], operator: PlanTransformationOperator) -> list[TaskStep]:
+        if operator == PlanTransformationOperator.SKIP:
+            transformed_task_list = self.skip()
+        elif operator == PlanTransformationOperator.RETRY:
+            transformed_task_list = self.retry(task_list)
+        elif operator == PlanTransformationOperator.REPLAN:
+            transformed_task_list = self.replan(task_list)
+        elif operator == PlanTransformationOperator.REPLAN_WITH_ASSISTANCE:
+            transformed_task_list = self.replan_with_asstistance(task_list)
+        elif operator == PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE:
+            transformed_task_list = self.substitute_with_assistance(task_list)
+        else:
+            transformed_task_list = task_list
+        return transformed_task_list
+    def replan_with_asstistance(self, task_list : list[TaskStep]):
+        # TODO
+        return task_list
 
-
-
-    def skip(self, task: Task):
+    def skip(self):
         """
         Skips the current task and continues with a new one.
         Potentially continuing the skipped task, at the last task step, if worth it.
         """
-        task.status = Status.SKIPPED
-        return
+        return []
 
-    def retry(self, task: Task):
+    def retry(self, task_list: list[TaskStep]):
         """
         Rawly retrying the entire task.
         Potentially cutting TaskSteps, like the Navigation in order of minimizing failure.
         """
+        task_list.insert(0, TaskStep(ActionType.PARK)) # defaulting to parked arms, before doing so.
+        return task_list
 
-        # TODO
-        pass
-
-    def assisted_replan(self, task: Task):
+    def substitute_with_assistance(self, task_list: list[TaskStep]):
         """
         Rawly replaning the entire task.
         But with assistance, meaning a object gets moved, so the action works.
 
         """
         # TODO
-        pass
-
-    def substitute(self, task: Task):
-        """
-        The substitution, by requesting assistance.
-        If the system expects that the task still earns enough points or that the rest of the plan is still
-        executeable, then it can be assisted and continue its´ task. This is mostly useful, since execution time of new plans and navigation times
-        can strongly vary.
-        """
-        # TODO
-        pass
-
-
-    def assisted(self, task: Task, task_list : list[TaskStep], scoretime_monitor ):
-        """
-        The substitution, by requesting assistance.
-        If the system expects that the task still earns enough points or that the rest of the plan is still
-        executeable, then it can be assisted and continue its´ task. This is mostly useful, since execution time of new plans and navigation times
-        can strongly vary.
-        """
-        task_list.pop(0)
         return task_list
 
-
-    def replan(self, task: Task):
+    def replan(self, task_list: list[TaskStep]):
         """
         The substitution, by requesting assistance.
         If the system expects that the task still earns enough points or that the rest of the plan is still
         executeable, then it can be assisted and continue its´ task. This is mostly useful, since execution time of new plans and navigation times
         can strongly vary.
         """
-        # TODO
-        pass
+        task_list.insert(0, TaskStep(ActionType.PARK))
+        task_list.insert(0, TaskStep(ActionType.DETECT))
+        return task_list
 
-    def _evaluate_operators(self, task:Task, task_list :list[TaskStep],
-                            exception: Exception,
+    def _evaluate_operators(self, task:Task,
+                            task_list :list[TaskStep],
                             transformation_operator : PlanTransformationOperator,
-                            scoretime_monitor : ScoreTimeMonitor,
-                            composite_evaluator : CompositeEvaluator):
+                            scoretime_monitor : ScoreTimeMonitor):
         """
         Scores a single transformation operator against the remaining task steps and returns its expected value.
 
@@ -225,6 +222,8 @@ class PlanStabilizer:
         overrun_time : float= scoretime_monitor.task_overtime_seconds(task) # Positive if underperformed, negative if time is left
         task_time_remaining : float = scoretime_monitor.time_remaining_seconds_task(task)
         expected_time : float= scoretime_monitor.time_expected_seconds_task_list(task_list)
+        if expected_time == 0:
+            expected_time: float = 1 # fallback for skipping
 
         time_ratio : float = max(0, task_time_remaining / expected_time)
 
@@ -232,7 +231,7 @@ class PlanStabilizer:
         # possible_task_score = composite_evaluator.get_score_task_list(task_list=task_list)
         # possible_task_possibility = composite_evaluator.get_probability_task_list(task_list=task_list)
 
-        for t in task.task_steps:
+        for t in task_list:
             profile = evaluation(t.action_type, t.object_annotations, t.location)
             expected_score += ((profile.probability * profile.score) -
                                (abs(profile.penalty) * (1 - profile.probability)))

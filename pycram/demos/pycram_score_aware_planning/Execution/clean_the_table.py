@@ -133,22 +133,20 @@ scoretime_monitor = ScoreTimeMonitor(task_mode)
 
 while task_list != []:
     evaluated_tasks: list[Task] = evaluator.estimate(context=context, task_list=task_list)
-
     task_list: list[Task] = structurizer.structurize(task_list=evaluated_tasks)
 
-    plan_x = task_list[0]
-
+    current_task = task_list[0]
     task_list.pop(0)
 
-    plan_x.action_list = generate_plan_task(task=plan_x, context=context)
+    plan = generate_plan_task(task=current_task, context=context)
 
     # Have to check before some long taking action
     # TODO: what happens, if the score event fails and the robot has to fallback, how to re-evaluated / stabilize
     # TODO: maybe add a on the fly monitor, that basically checks a action in the task_list as done, resulting in instant feedback, where to implement that?
     with simulated_robot:
-        for i in range(len(plan_x.action_list)):
-            task_step : TaskStep = plan_x.task_steps[i]
-            action = plan_x.action_list[i]
+        # for i in range(len(current_task.action_list)):
+        #     task_step : TaskStep = current_task.task_steps[i]
+        #     action = current_task.action_list[i]
 
             # if task_step.uncertain:
             #     try:
@@ -156,16 +154,22 @@ while task_list != []:
             #     except:
             #         pass
 
-            plan = sequential([], context=context)
-            plan.add_child(make_node(action))
-            plan.perform()
+            # plan = sequential([], context=context)
+            # plan.add_child(make_node(action))
 
-            scoretime_monitor.record_score(task_step=task_step, plan=plan)
-            if plan.status == TaskStatus.SUCCEEDED:
-                if task_step.action_assisted:
-                    task_step.action_outcome = Status.SUCCESS_WITH_ASSIST
-                    continue
-                task_step.action_outcome = Status.SUCCESS
+
+            try:
+                plan.perform()
+            except Exception as e:
+                stabilizer.stabilize(plan, current_task, e, scoretime_monitor)
+
+            # TODO: reimplement scoretime_monitor
+            # scoretime_monitor.record_score(task_step=task_step, plan=plan)
+            # if plan.status == TaskStatus.SUCCEEDED:
+            #     if task_step.action_assisted:
+            #         task_step.action_outcome = Status.SUCCESS_WITH_ASSIST
+            #         continue
+            #     task_step.action_outcome = Status.SUCCESS
 
 
             # if plan.status is TaskStatus.FAILED:

@@ -65,15 +65,22 @@ class FixedConnection(Connection):
         world: World,
         parent: KinematicStructureEntity,
         child: KinematicStructureEntity,
+        *,
         name: Optional[PrefixedName] = None,
-        *args,
-        **kwargs,
+        parent_T_connection_expression: Optional[
+            HomogeneousTransformationMatrix
+        ] = None,
     ) -> Self:
-        return FixedConnection(parent=parent, child=child, name=name, **kwargs)
+        return cls(
+            parent=parent,
+            child=child,
+            name=name,
+            parent_T_connection_expression=parent_T_connection_expression,
+        )
 
 
 @dataclass(eq=False)
-class ActiveConnection(Connection):
+class ActiveConnection(Connection, ABC):
     """
     Has one or more degrees of freedom that can be actively controlled, e.g., robot joints.
     """
@@ -89,11 +96,11 @@ class ActiveConnection(Connection):
 
         A door hinge is also active but cannot be controlled.
         """
-        return any(dof.has_hardware_interface for dof in self.dofs)
+        return any(dof.has_hardware_interface for dof in self.active_dofs)
 
     @has_hardware_interface.setter
     def has_hardware_interface(self, value: bool) -> None:
-        for dof in self.dofs:
+        for dof in self.active_dofs:
             dof.has_hardware_interface = value
 
     @property
@@ -125,7 +132,8 @@ class ActiveConnection1DOF(ActiveConnection, ABC):
 
     raw_dof: DegreeOfFreedom = field(kw_only=True)
     """
-    
+    The degree of freedom whose raw, unscaled state this connection drives.
+    Use the :attr:`dof` property to obtain it with ``multiplier`` and ``offset`` applied.
     """
 
     dynamics: JointDynamics = field(default_factory=JointDynamics)
@@ -166,28 +174,30 @@ class ActiveConnection1DOF(ActiveConnection, ABC):
         world: World,
         parent: KinematicStructureEntity,
         child: KinematicStructureEntity,
+        *,
         axis: Vector3,
         name: Optional[PrefixedName] = None,
+        parent_T_connection_expression: Optional[
+            HomogeneousTransformationMatrix
+        ] = None,
         multiplier: float = 1.0,
         offset: float = 0.0,
         dof_limits: Optional[DegreeOfFreedomLimits] = None,
-        *args,
-        **kwargs,
     ) -> Self:
         """
-        Creates and returns an instance of the class with associated degrees of freedom
-        (DOFs) based on the specified parameters. This method facilitates initializing
-        a kinematic relationship between a parent and a child entity, augmented by
-        an axis representation and configurable properties such as multiplier and offset.
+        Creates and returns an instance of the class with its single degree of freedom, initializing a
+        kinematic relationship between a parent and a child entity along ``axis``.
 
         :param world: The motion world in which to add the degree of freedom.
         :param parent: The parent kinematic structure entity.
         :param child: The child kinematic structure entity.
         :param axis: The axis vector defining the joint relation.
-        :param name: Optional specific name for the DOF entity. If not provided, a
+        :param name: Optional specific name for the connection. If not provided, a
                      default name is generated based on the parent and child.
+        :param parent_T_connection_expression: Constant pose of the connection relative to its parent.
         :param multiplier: A scaling factor applied to the DOF's motion. Defaults to 1.0.
         :param offset: A constant offset value applied to the DOF's motion. Defaults to 0.0.
+        :param dof_limits: Optional limits for the generated degree of freedom.
         :return: An instance of the class representing the defined relationship with
                  its DOF added to the world.
         """
@@ -198,26 +208,13 @@ class ActiveConnection1DOF(ActiveConnection, ABC):
             name=name,
             parent=parent,
             child=child,
+            parent_T_connection_expression=parent_T_connection_expression,
             axis=axis,
             multiplier=multiplier,
             offset=offset,
             raw_dof=dof,
-            *args,
-            **kwargs,
         )
         return connection
-
-    def add_to_world(self, world: World):
-        super().add_to_world(world)
-        if self.multiplier is None:
-            self.multiplier = 1
-        else:
-            self.multiplier = self.multiplier
-        if self.offset is None:
-            self.offset = 0
-        else:
-            self.offset = self.offset
-        self.axis = self.axis
 
     @property
     def dof(self) -> DegreeOfFreedom:
@@ -445,12 +442,11 @@ class Connection6DoF(Connection):
         world: World,
         parent: KinematicStructureEntity,
         child: KinematicStructureEntity,
+        *,
         name: Optional[PrefixedName] = None,
         parent_T_connection_expression: Optional[
             HomogeneousTransformationMatrix
         ] = None,
-        *args,
-        **kwargs,
     ) -> Self:
         """
         Creates an instance of the class with automatically generated degrees of freedom (DoFs)
@@ -656,14 +652,13 @@ class OmniDrive(WheeledDrive):
         world: World,
         parent: KinematicStructureEntity,
         child: KinematicStructureEntity,
+        *,
         name: Optional[PrefixedName] = None,
         parent_T_connection_expression: Optional[
             HomogeneousTransformationMatrix
         ] = None,
         translation_velocity_limits: float = 0.6,
         rotation_velocity_limits: float = 0.5,
-        *args,
-        **kwargs,
     ) -> Self:
         """
         Creates an instance of the class with automatically generated degrees of freedom
@@ -744,8 +739,6 @@ class OmniDrive(WheeledDrive):
             yaw=yaw,
             x_velocity=x_vel,
             y_velocity=y_vel,
-            *args,
-            **kwargs,
         )
 
     @property
@@ -755,10 +748,6 @@ class OmniDrive(WheeledDrive):
     @property
     def passive_dofs(self) -> List[DegreeOfFreedom]:
         return [self.x, self.y, self.roll, self.pitch]
-
-    @property
-    def dofs(self) -> List[DegreeOfFreedom]:
-        return self.active_dofs + self.passive_dofs
 
     def update_state(self, dt: float) -> None:
         state = self._world.state
@@ -797,16 +786,6 @@ class OmniDrive(WheeledDrive):
 
     def get_free_variable_names(self) -> List[UUID]:
         return [self.x.id, self.y.id, self.yaw.id]
-
-    @property
-    def has_hardware_interface(self) -> bool:
-        return self.x_velocity.has_hardware_interface
-
-    @has_hardware_interface.setter
-    def has_hardware_interface(self, value: bool) -> None:
-        self.x_velocity.has_hardware_interface = value
-        self.y_velocity.has_hardware_interface = value
-        self.yaw.has_hardware_interface = value
 
     def copy_for_world(self, world: World) -> OmniDrive:
         """
@@ -929,14 +908,13 @@ class DifferentialDrive(WheeledDrive):
         world: World,
         parent: KinematicStructureEntity,
         child: KinematicStructureEntity,
+        *,
         name: Optional[PrefixedName] = None,
         parent_T_connection_expression: Optional[
             HomogeneousTransformationMatrix
         ] = None,
         translation_velocity_limits: float = 0.6,
         rotation_velocity_limits: float = 0.5,
-        *args,
-        **kwargs,
     ) -> Self:
         """
         Creates an instance of the class with automatically generated DoFs for translation on the x-axis,
@@ -1002,8 +980,6 @@ class DifferentialDrive(WheeledDrive):
             pitch=pitch,
             yaw=yaw,
             x_velocity=x_vel,
-            *args,
-            **kwargs,
         )
 
     @property
@@ -1013,10 +989,6 @@ class DifferentialDrive(WheeledDrive):
     @property
     def passive_dofs(self) -> List[DegreeOfFreedom]:
         return [self.x, self.y, self.roll, self.pitch]
-
-    @property
-    def dofs(self) -> List[DegreeOfFreedom]:
-        return self.active_dofs + self.passive_dofs
 
     def update_state(self, dt: float) -> None:
         state = self._world.state
@@ -1053,15 +1025,6 @@ class DifferentialDrive(WheeledDrive):
 
     def get_free_variable_names(self) -> List[UUID]:
         return [self.x.id, self.y.id, self.yaw.id]
-
-    @property
-    def has_hardware_interface(self) -> bool:
-        return self.x_velocity.has_hardware_interface
-
-    @has_hardware_interface.setter
-    def has_hardware_interface(self, value: bool) -> None:
-        self.x_velocity.has_hardware_interface = value
-        self.yaw.has_hardware_interface = value
 
     def copy_for_world(self, world: World) -> DifferentialDrive:
         """

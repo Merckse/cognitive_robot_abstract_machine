@@ -142,6 +142,13 @@ class Plan:
         self.remove_node(node2)
 
     def remove_node(self, node_for_removal: PlanNode):
+        if node_for_removal.plan is self:
+            self.plan_graph.remove_node(node_for_removal.index)
+            node_for_removal.index = None
+            node_for_removal.layer_index = None
+            node_for_removal.plan = None
+            node_for_removal.world = None
+    def remove_node_and_repair(self, node_for_removal: PlanNode):
         if node_for_removal.plan is not self:
             return
         parent = node_for_removal.parent

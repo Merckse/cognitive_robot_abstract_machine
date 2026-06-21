@@ -156,9 +156,6 @@ class Plan:
             for child in children:
                 self.add_edge(parent, child)
 
-    def plan_graph_repair(self):
-        # TODO
-        pass
     def add_node(self, node: PlanNode):
         """
         Adds a node to the plan. The node will not be connected to any other node of the plan.

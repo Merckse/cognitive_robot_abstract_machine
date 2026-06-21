@@ -235,6 +235,8 @@ class PlanNode(PlanEntity):
         Resumes the execution of this node and all nodes below
         """
         self.status = TaskStatus.RUNNING
+        for c in self.children:
+            c.status = TaskStatus.RUNNING
 
     def pause(self):
         """
@@ -266,22 +268,28 @@ class PlanNode(PlanEntity):
                 return
         self.status = TaskStatus.RUNNING
 
-        print("parent =", self.parent)
-        print("self =", self.plan)
         try:
             self.result = self._perform()
-            self.status = TaskStatus.SUCCEEDED
+
+            if self.parent is None and self.is_interrupted:
+                return
+            if self.parent is not None and self.parent.is_interrupted :
+                self.status = TaskStatus.INTERRUPTED
+                return
+            else:
+                self.status = TaskStatus.SUCCEEDED
+
         except UnreachableException as e:
             self.status = TaskStatus.FAILED
             self.reason = "unreachable"
             logger.info(f"Failed node: {e}")
             return
+        # broad error catch, since anything else doesnt seem to work
         except Exception as e:
             self.status = TaskStatus.FAILED
             self.reason = e
             logger.info(f"Failed node: {e}")
             self.plan.root.interrupt()
-            # self. = TaskStatus.INTERRUPTED
             self.interrupt()
             return
         # except PlanFailure as e:

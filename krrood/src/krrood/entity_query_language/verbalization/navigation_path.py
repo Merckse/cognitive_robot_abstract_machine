@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
 
 from typing_extensions import TYPE_CHECKING, Callable, List, Optional
 
@@ -67,6 +67,11 @@ class PathStep:
     clause *"the <Type> which <owner> is <verb-phrase>"* instead of the genitive *"the <attr> of
     <owner>"*; ``None`` for a plain noun hop."""
 
+    is_scalar_value: bool = False
+    """``True`` when this hop's value is an atomic scalar (a number / string / date), not an entity.
+    A scalar leaf possessed by a plural subject distributes (*"their salaries"*); an entity owner of
+    further structure does not (*"the begin and end of their period"*)."""
+
     @property
     def is_relation(self) -> bool:
         """:return: ``True`` when this hop renders as a relative clause rather than a genitive."""
@@ -118,6 +123,7 @@ def build_path_parts(
                     name,
                     SourceReference.for_attribute(owner, name),
                     relation=relation,
+                    is_scalar_value=_is_scalar_value(node._type_),
                 )
             )
         elif isinstance(node, Index):
@@ -127,6 +133,12 @@ def build_path_parts(
         elif isinstance(node, FlatVariable):
             pass
     return parts
+
+
+def _is_scalar_value(value_type: object) -> bool:
+    """:return: ``True`` when *value_type* is an atomic scalar — a primitive value, not an entity
+    (an entity is a dataclass and reads as an owner, not a distributable value)."""
+    return value_type is not None and not is_dataclass(value_type)
 
 
 def _index_step(key: object) -> PathStep:

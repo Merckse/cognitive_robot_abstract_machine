@@ -39,6 +39,13 @@ def coindexed_operator(operation) -> Fragment:
     return _COINDEXED_OPERATOR_MAP[operation].as_fragment()
 
 
+def has_coindexed_operator(operation) -> bool:
+    """:return: ``True`` when *operation* has a plural copular phrase (*"are greater than"*) — so a
+    plural subject's predicate can agree without falling back to the singular comparator phrase.
+    """
+    return operation in _COINDEXED_OPERATOR_MAP
+
+
 def comparator_operator(
     comparator: Comparator,
     services: MicroplanningServices,

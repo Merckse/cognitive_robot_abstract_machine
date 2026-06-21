@@ -198,7 +198,9 @@ class WhoseRangeForm(StandaloneForm):
 
     @classmethod
     def render(cls, request: Placement, context: RuleContext) -> Fragment:
-        return ConditionAssembler(context).range_modifier(request.item, request.subject)
+        return ConditionAssembler(context).range_modifier(
+            request.item, request.subject, request.number
+        )
 
 
 class WhosePredicateForm(StandaloneForm):

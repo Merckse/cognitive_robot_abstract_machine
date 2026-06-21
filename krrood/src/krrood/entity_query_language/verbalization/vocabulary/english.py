@@ -422,6 +422,8 @@ class RangePhrases(VocabEnum):
 
     IS_BETWEEN = OperatorWord("is between")
     """Standard form keeping the copula (*"is between"*)."""
+    ARE_BETWEEN = OperatorWord("are between")
+    """Plural form, for a plural subject (*"whose salaries are between …"*)."""
     BETWEEN = OperatorWord("between")
     """Copula-less form for HAVING / post-nominal use (*"between"*)."""
 

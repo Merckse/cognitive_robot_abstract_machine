@@ -16,7 +16,9 @@ from krrood.entity_query_language.verbalization.grammar.framework.assembler impo
     Assembler,
 )
 from krrood.entity_query_language.verbalization.grammar.conditions.operator_phrase import (
+    coindexed_operator,
     comparator_operator,
+    has_coindexed_operator,
 )
 from krrood.entity_query_language.verbalization.grammar.conditions.recognition import (
     single_hop_attribute,
@@ -99,28 +101,35 @@ class ConditionAssembler(Assembler[Comparator, None]):
         """
         :param comparator: The comparator on *subject*'s single-hop attribute.
         :param subject: The subject variable.
-        :param number: The number the attribute noun, operator, and value agree with — singular for
-            a query subject; plural for an aggregated inference antecedent (*"whose children are …"*).
+        :param number: The number the attribute noun, operator, and value agree with — singular for a
+            singular subject; plural for a plural one (a ranking / ordered report, or an aggregated
+            inference antecedent — *"whose salaries are greater than 5"*).
         :return: The bare *"<attribute> <operator> <value>"* grouped predicate a *"whose …"* envelope
-            wraps. An equality reads as a copula agreeing with *number* (so a plural subject gives
-            *"are"*); any other operator keeps its comparator phrase (singular).
+            wraps, all agreeing with *number* (see :meth:`_agreeing_operator`).
         """
         attribute = single_hop_attribute(comparator.left, subject)
-        if comparator.operation is operator.eq and number is Number.PLURAL:
-            operator_fragment = Copulas.for_number(number)
-        else:
-            operator_fragment = comparator_operator(
-                comparator, self.context.services, compact=False
-            )
         return PhraseFragment(
             parts=[
                 RoleFragment.for_attribute(
                     attribute._owner_class_, attribute._attribute_name_, number=number
                 ),
-                operator_fragment,
+                self._agreeing_operator(comparator, number),
                 self.context.child(comparator.right, number=number, as_value=True),
             ]
         )
+
+    def _agreeing_operator(self, comparator: Comparator, number: Number) -> Fragment:
+        """:return: the comparator's operator phrase agreeing with *number* — for a plural subject, a
+        bare equality is the copula *"are"* and an ordering comparator its plural copular phrase
+        (*"are greater than"*); every other case keeps the singular comparator phrase.
+        """
+        if number is not Number.PLURAL:
+            return comparator_operator(comparator, self.context.services, compact=False)
+        if comparator.operation is operator.eq:
+            return Copulas.for_number(number)
+        if has_coindexed_operator(comparator.operation):
+            return coindexed_operator(comparator.operation)
+        return comparator_operator(comparator, self.context.services, compact=False)
 
     def superlative_modifier(
         self, comparator: Comparator, subject: Variable
@@ -142,21 +151,29 @@ class ConditionAssembler(Assembler[Comparator, None]):
             ]
         )
 
-    def range_modifier(self, range_fold: RangeFold, subject: Variable) -> Fragment:
+    def range_modifier(
+        self,
+        range_fold: RangeFold,
+        subject: Variable,
+        number: Number = Number.SINGULAR,
+    ) -> Fragment:
         """
         :param range_fold: The folded lower/upper bound pair on *subject*'s single-hop attribute.
         :param subject: The subject variable.
+        :param number: The number the attribute noun and copula agree with — *"salaries are between
+            …"* for a plural subject.
         :return: The modifier *"<attribute> is between low and high"*.
         """
         attribute = single_hop_attribute(range_fold.chain_expression, subject)
         left = RoleFragment.for_attribute(
-            attribute._owner_class_, attribute._attribute_name_
+            attribute._owner_class_, attribute._attribute_name_, number=number
         )
         return build_between(
             left,
             self.context.child(range_fold.lower_expression),
             self.context.child(range_fold.upper_expression),
             compact=False,
+            number=number,
         )
 
     def attribute_predicate(

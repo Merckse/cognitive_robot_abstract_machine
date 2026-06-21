@@ -329,6 +329,17 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
             return self._sentence_initial(Keywords.REPORT.as_fragment())
         return Keywords.FIND.as_fragment()
 
+    def _subject_number(self, plan: QueryPlan) -> Number:
+        """:return: the grammatical number of the rendered subject — plural for a ranking of several
+        (*"the top three Employees"*) or an ordered report (*"Report Employees"*), else singular. The
+        subject's restriction and possessives agree with it (*"whose salaries are …"*).
+        """
+        if plan.ranking is not None:
+            return ranking_surface(RankingRequest(plan=plan.ranking)).number
+        if plan.report is not None and plan.report.kind is ReportKind.ORDERING:
+            return Number.PLURAL
+        return Number.SINGULAR
+
     # ── subject selection ──────────────────────────────────────────────────────
 
     def _assemble_subject(self, node: Query, plan: QueryPlan) -> Fragment:
@@ -351,7 +362,7 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
         if plan.report is not None and plan.report.kind is ReportKind.ORDERING:
             # An ordered listing presents all the matching results, so the subject is plural
             # ("Report Employees …"); a plural subject pronominalises to "their".
-            return self._selected(variable, Number.PLURAL)
+            return self._selected(variable, self._subject_number(plan))
         if plan.is_the:
             # "the unique <type>" first mention; the coreference pass reduces a repeat to
             # "the <type>" (UNIQUE downgrades to DEFINITE) — so it is a referring noun phrase.
@@ -388,7 +399,9 @@ class QueryAssembler(Assembler[Query, QueryPlan]):
         """:return: The selection with its inline superlative modifiers attached, and the WHERE's
         clause items — the *"whose"* group (a sub-list of points in hierarchical) then a separate
         *"such that <residual>"* clause (each ``None`` when absent)."""
-        rendered = ClauseComposer(self.context).restriction(plan)
+        rendered = ClauseComposer(self.context).restriction(
+            plan, self._subject_number(plan)
+        )
         if rendered is None:
             return selected, []
         if rendered.inline_modifiers:

@@ -6,6 +6,7 @@ from typing_extensions import Optional
 
 from krrood.entity_query_language.query.query import Query
 from krrood.entity_query_language.verbalization.fragments.base import Fragment
+from krrood.entity_query_language.verbalization.fragments.features import Number
 from krrood.entity_query_language.verbalization.grammar.clauses.assembler import (
     GroupedByAssembler,
     HavingAssembler,
@@ -34,13 +35,16 @@ class ClauseComposer:
 
     context: RuleContext
 
-    def restriction(self, plan: QueryPlan) -> Optional[RestrictionFragments]:
+    def restriction(
+        self, plan: QueryPlan, number: Number = Number.SINGULAR
+    ) -> Optional[RestrictionFragments]:
         """:return: The placed subject-restriction pieces (superlatives / whose / residual), or
-        ``None`` when the query has no groupable subject restriction."""
+        ``None`` when the query has no groupable subject restriction. The predicate agrees with
+        *number* — a plural subject gives *"whose salaries are …"*."""
         if plan.subject_restriction is None:
             return None
         return as_subject_restrictions(
-            plan.subject_restriction.conditions, plan.subject, self.context
+            plan.subject_restriction.conditions, plan.subject, self.context, number
         )
 
     def grouped_by(self, node: Query) -> Optional[Fragment]:

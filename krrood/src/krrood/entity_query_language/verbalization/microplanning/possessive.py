@@ -26,12 +26,16 @@ from krrood.entity_query_language.verbalization.vocabulary.english import (
 )
 
 
-def attribute_fragment(step: PathStep) -> RoleFragment:
-    """:return: A role-tagged attribute fragment for *step*."""
+def attribute_fragment(
+    step: PathStep, number: Number = Number.SINGULAR
+) -> RoleFragment:
+    """:return: A role-tagged attribute fragment for *step*, tagged with *number* for inflection
+    (a single-hop possessive of a plural subject distributes — *"their salaries"*)."""
     return RoleFragment(
         text=step.name,
         role=SemanticRole.ATTRIBUTE,
         source_reference=step.source_reference,
+        number=number,
     )
 
 
@@ -124,11 +128,19 @@ def pronominal_path(parts: List[PathStep], subject_number: Number) -> Fragment:
     owner: Fragment = possessive_pronoun
     for index, step in enumerate(parts):
         if index == 0:
+            # A scalar leaf possessed by a plural subject distributes ("their salaries"); an entity
+            # owner of further structure stays singular ("the begin and end of their period").
+            attribute_number = (
+                subject_number if step.is_scalar_value else Number.SINGULAR
+            )
             owner = (
                 _relative_clause(step, nominative_pronoun, subject_number)
                 if step.is_relation
                 else PhraseFragment(
-                    parts=[possessive_pronoun, attribute_fragment(step)]
+                    parts=[
+                        possessive_pronoun,
+                        attribute_fragment(step, attribute_number),
+                    ]
                 )
             )
         else:

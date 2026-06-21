@@ -1,3 +1,5 @@
+import time
+
 from common.hsrb_testing import setup_world
 from helper_methods import generic_object_spawner
 from pycram.datastructures.dataclasses import Context
@@ -21,12 +23,7 @@ context = Context(world , hsrb)
 plan = sequential(
     [
         MoveTorsoAction(TorsoState.HIGH),
-        MoveTorsoAction(TorsoState.LOW),
-        MoveTorsoAction(TorsoState.HIGH),
-        MoveTorsoAction(TorsoState.LOW),
         ParkArmsAction(Arms.BOTH),
-        MoveTorsoAction(TorsoState.LOW),
-        MoveTorsoAction(TorsoState.LOW),
         MoveTorsoAction(TorsoState.LOW),
 
     ],
@@ -34,6 +31,16 @@ plan = sequential(
 )
 
 with simulated_robot:
+    plan.perform()
+    print(plan.status)
+    plan.plan.remove_node(plan.plan.root.children[1])
+
+    plan.resume()
+    print(plan.status)
+    child = plan.children
+    for c in child:
+        print(c.status)
+        print(c.plan)
     plan.perform()
     print(plan.status)
         # print(e)

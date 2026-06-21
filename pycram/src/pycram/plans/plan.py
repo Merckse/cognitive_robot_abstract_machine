@@ -145,17 +145,27 @@ class Plan:
         self.remove_node(node2)
 
     def remove_node(self, node_for_removal: PlanNode):
-        """
-        Removes a node from the plan. If the node is not in the plan, it will be ignored.
-
-        :param node_for_removal: Node to be removed
-        """
         if node_for_removal.plan is self:
             self.plan_graph.remove_node(node_for_removal.index)
             node_for_removal.index = None
             node_for_removal.layer_index = None
             node_for_removal.plan = None
             node_for_removal.world = None
+
+    def remove_node_and_repair(self, node_for_removal: PlanNode):
+        if node_for_removal.plan is not self:
+            return
+        parent = node_for_removal.parent
+        children = node_for_removal.children
+        self.plan_graph.remove_node(node_for_removal.index)
+        node_for_removal.index = None
+        node_for_removal.layer_index = None
+        node_for_removal.plan = None
+        node_for_removal.world = None
+        if parent is not None:  # don't reparent if root
+            # reconnect children, so no accidental roots appear
+            for child in children:
+                self.add_edge(parent, child)
 
     def add_node(self, node: PlanNode):
         """

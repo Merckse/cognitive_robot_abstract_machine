@@ -143,7 +143,12 @@ class SelectionAssembler:
 
     def _folded(self, variables: List[SymbolicExpression]) -> List[Fragment]:
         """:return: the rendered selections, with each maximal run of plain attributes sharing one
-        owner folded into a single coordinated genitive, and every other selection rendered alone."""
+        owner folded into a single coordinated genitive, and every other selection rendered alone.
+
+        >>> employee = variable(Employee, [])
+        >>> verbalize_expression(the(set_of(employee.department, employee.salary)))
+        'Find the department and salary of an Employee'
+        """
         fragments: List[Fragment] = []
         for item in group_consecutive_by_owner(variables, self._foldable_attribute):
             if isinstance(item, OwnerGroup):
@@ -162,7 +167,12 @@ class SelectionAssembler:
     ) -> Optional[Tuple[SymbolicExpression, PathStep]]:
         """:return: ``(owner, terminal_step)`` when *selection* is a plain genitive attribute that
         can share an owner with siblings, else ``None`` — a relational terminal (*"the Robot to
-        which …"*) does not coordinate cleanly, so it is left alone."""
+        which …"*) does not coordinate cleanly, so it is left alone.
+
+        >>> employee = variable(Employee, [])
+        >>> verbalize_expression(the(set_of(employee.department, employee.salary)))
+        'Find the department and salary of an Employee'
+        """
         if not isinstance(selection, Attribute):
             return None
         plan = self.context.microplan.plan_for(selection, ChainPlanner)

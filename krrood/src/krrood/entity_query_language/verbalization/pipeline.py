@@ -104,6 +104,9 @@ class VerbalizationPipeline:
         :param services: Shared verbalization state; created automatically when omitted.  Pass the
             same services across calls so repeated mentions corefer (a Robot … the Robot).
         :return: Formatted natural-language string (plain, ANSI, or HTML, per the renderer).
+
+        >>> VerbalizationPipeline.plain().verbalize(a(entity(variable(Robot, []))))
+        'Find a Robot'
         """
         if isinstance(expression, Match):
             expression.expression.build()
@@ -124,6 +127,10 @@ class VerbalizationPipeline:
 
         :param fragment: Root of the fragment tree to render.
         :return: Formatted string.
+
+        >>> tree = EQLVerbalizer().build(a(entity(variable(Robot, []))))
+        >>> VerbalizationPipeline.plain().verbalize_fragment(tree)
+        'Find a Robot'
         """
         result = self.renderer.render(fragment)
         if self._is_html_renderer():

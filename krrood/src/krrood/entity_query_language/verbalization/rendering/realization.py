@@ -56,6 +56,11 @@ def realize_tree(
     :param numbered_labels: Disambiguation numbers for referents the rules cannot label themselves
         (relational referents) — applied by the coreference pass.
     :return: The fully realised fragment tree.
+
+    >>> from krrood.entity_query_language.verbalization.verbalizer import EQLVerbalizer
+    >>> tree = EQLVerbalizer().build(a(entity(variable(Robot, []))))
+    >>> flatten_fragment_to_plain_text(realize_tree(tree))
+    'Find a Robot'
     """
     pipeline: List[RealizationPass] = [
         CoreferenceProcessor(
@@ -80,5 +85,9 @@ def realize_subtree(fragment: Fragment) -> str:
 
     :param fragment: Root of the sub-tree.
     :return: The realised plain-text string.
+
+    >>> from krrood.entity_query_language.verbalization.verbalizer import EQLVerbalizer
+    >>> realize_subtree(EQLVerbalizer().build(a(entity(variable(Robot, [])))))
+    'Find a Robot'
     """
     return flatten_fragment_to_plain_text(realize_tree(fragment))

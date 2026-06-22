@@ -281,7 +281,7 @@ class PlanNode(PlanEntity):
 
         except UnreachableException as e:
             self.status = TaskStatus.FAILED
-            self.reason = "unreachable"
+            self.reason = e
             logger.info(f"Failed node: {e}")
             return
         # broad error catch, since anything else doesnt seem to work

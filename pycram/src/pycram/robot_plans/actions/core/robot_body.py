@@ -107,8 +107,6 @@ class ParkArmsAction(ActionDescription):
         self.add_subplan(
             execute_single(MoveJointsMotion(names=joint_names, positions=joint_poses))
         ).perform()
-        raise Exception
-
 
     def get_joint_poses(self) -> Tuple[List[str], List[float]]:
         """

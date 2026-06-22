@@ -158,10 +158,9 @@ while task_list != []:
             # plan.add_child(make_node(action))
 
 
-            try:
-                plan.perform()
-            except Exception as e:
-                stabilizer.stabilize(plan, current_task, e, scoretime_monitor)
+        plan.perform()
+        if plan.status == TaskStatus.INTERRUPTED or plan.status == TaskStatus.FAILED:
+            stabilizer.stabilize(plan, current_task, plan.reason, scoretime_monitor)
 
             # TODO: reimplement scoretime_monitor
             # scoretime_monitor.record_score(task_step=task_step, plan=plan)

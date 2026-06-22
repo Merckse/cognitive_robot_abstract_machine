@@ -15,7 +15,7 @@ from pycram.robot_plans.actions.base import ActionDescription
 from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.pick_up import PickUpAction
 from pycram.robot_plans.actions.core.placing import PlaceAction
-from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
+from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
 from demos.pycram_score_aware_planning.common.types import Task, ActionType, SurfaceSpace, TaskStep
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import WorldEntityNotFoundError
@@ -546,3 +546,12 @@ def get_remaining_task_steps(task: Task) -> list[TaskStep]:
 
     return failed_taskstep
 
+
+def plan_to_TaskSteps(plan: SequentialNode) -> list[TaskStep]:
+    sub_nodes = plan.plan.root.children
+    return []
+    # task_steps = []
+    # for sub_node in sub_nodes:
+    #     match sub_node.action_type:
+    #         case ActionType.NAVIGATE:
+    #     isinstance(sub_node.action, MoveTorsoAction)

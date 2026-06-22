@@ -22,6 +22,7 @@ from typing_extensions import (
 from probabilistic_model.probabilistic_circuit.rx.probabilistic_circuit import (
     PlotAlignment,
 )
+from pycram.datastructures.enums import TaskStatus
 from pycram.plans.plan_entity import PlanEntity
 from pycram.plans.plan_node import (
     PlanNode,
@@ -119,6 +120,12 @@ class Plan:
         All nodes that are part of this plan
         """
         return self.plan_graph.nodes()
+
+    def unfinished_node(self) -> PlanNode | None:
+        for c in self.root.children:
+            if c.status == (TaskStatus.INTERRUPTED or TaskStatus.FAILED):
+                return c
+        return None
 
     @property
     def edges(self):

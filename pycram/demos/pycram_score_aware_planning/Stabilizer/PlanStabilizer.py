@@ -40,8 +40,10 @@ class PlanStabilizer:
         """
         remaining_task_steps : list[TaskStep]= get_remaining_task_steps(task)
         candidate_operators : list[PlanTransformationOperator] = []
-        remaining_plan_nodes : list[PlanNode]= get_unfinished_nodes(plan.children)
-        plan.children
+        unfinished_node : PlanNode | None= plan.plan.unfinished_node()
+        if unfinished_node is None:
+            return None
+        remaining_plan_nodes : list[PlanNode] = [unfinished_node] + unfinished_node.children
 
         # Pickup-Motion issues
         if isinstance(exception,ObjectNotReachableException):
@@ -66,8 +68,9 @@ class PlanStabilizer:
             candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
             candidate_operators.insert(0, PlanTransformationOperator.SKIP)
 
-        score : list[list[PlanTransformationOperator, float, list[TaskStep]]]= []
+        score : list[list[PlanTransformationOperator, float, list[PlanNode]]]= []
 
+        # TO CHECK IF CORRECT, DO SOMETHING, THAT NEEDS A MOVETORSOHIGH, BUT RESULTS IN FAILURE; SINCE NOT REACHABLE
         for op in candidate_operators:
             repaired_plan : list[PlanNode] = self._build_stabilized_task_list(remaining_task_steps, op)
             expected_value = self._expected_value(task, repaired_task_list, scoretime_monitor)
@@ -91,6 +94,24 @@ class PlanStabilizer:
         else:
             transformed_task_list = task_list
         return transformed_task_list
+
+    def _build_stabilized_plan(self, plan_nodes: list[PlanNode], operator: PlanTransformationOperator) -> list[
+        TaskStep]:
+        if operator == PlanTransformationOperator.SKIP:
+            transformed_task_list = self.skip()
+        elif operator == PlanTransformationOperator.RETRY:
+            transformed_task_list = self.retry(plan_nodes)
+        elif operator == PlanTransformationOperator.REPLAN:
+            transformed_task_list = self.replan(plan_nodes)
+        elif operator == PlanTransformationOperator.REPLAN_WITH_ASSISTANCE:
+            transformed_task_list = self.replan_with_asstistance(plan_nodes)
+        elif operator == PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE:
+            transformed_task_list = self.substitute_with_assistance(plan_nodes)
+        else:
+            transformed_task_list = plan_nodes
+        return transformed_task_list
+
+
     def replan_with_asstistance(self, task_list : list[TaskStep]):
         # TODO
         return task_list
@@ -128,6 +149,16 @@ class PlanStabilizer:
         """
         task_list.insert(0, TaskStep(ActionType.PARK))
         task_list.insert(0, TaskStep(ActionType.DETECT))
+        return task_list
+
+
+    def addition(self, task_list: list[TaskStep]):
+        """
+        The substitution, by requesting assistance.
+        If the system expects that the task still earns enough points or that the rest of the plan is still
+        executeable, then it can be assisted and continue its´ task. This is mostly useful, since execution time of new plans and navigation times
+        can strongly vary.
+        """
         return task_list
 
     def _evaluate_operators(self, task:Task,

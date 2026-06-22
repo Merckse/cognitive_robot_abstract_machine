@@ -20,6 +20,7 @@ from semantic_digital_twin.world_description.world_entity import SemanticAnnotat
 class ActionType(str, Enum):
     PICKUP = "pickup"
     PLACE = "place"
+    MOVE_TORSO = "move_torso"
     OPEN = "open"
     CLOSE = "close"
     NAVIGATE = "navigate"

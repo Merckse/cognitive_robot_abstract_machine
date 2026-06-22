@@ -3,7 +3,7 @@ import time
 from common.hsrb_testing import setup_world
 from helper_methods import generic_object_spawner
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import Arms
+from pycram.datastructures.enums import Arms, TaskStatus
 from pycram.motion_executor import simulated_robot
 from pycram.plans.factories import sequential
 from pycram.robot_plans.actions.core.navigation import NavigateAction
@@ -32,17 +32,19 @@ plan = sequential(
 
 with simulated_robot:
     plan.perform()
-    print(plan.status)
-    plan.plan.remove_node(plan.plan.root.children[1])
+    plan.perform()
 
-    plan.resume()
-    print(plan.status)
     child = plan.children
     for c in child:
+        print(c)
         print(c.status)
-        print(c.plan)
-    plan.perform()
-    print(plan.status)
+    #     if c.status == TaskStatus.INTERRUPTED:
+    #         print(c)
+    #         print("interrupted")
+    # plan.resume()
+    # plan.perform()
+    # print(plan.status)
+
         # print(e)
         # print("status",plan.status)
         # print(plan.plan)

@@ -401,7 +401,9 @@ def test_qp_data_symbolic(prismatic_bot2):
     qp_data_symbolic = QPDataSymbolic(
         degrees_of_freedom=prismatic_bot2.active_degrees_of_freedom,
         constraint_collection=constraints,
-        config=QPControllerConfig(target_frequency=20, prediction_horizon=10),
+        qp_controller_config=QPControllerConfig(
+            target_frequency=20, prediction_horizon=10
+        ),
     )
     adapter = QPDataExplicitFactory(qp_data_symbolic)
     adapter.compile(
@@ -447,7 +449,9 @@ def _build_qp_data_symbolic(prismatic_bot2) -> QPDataSymbolic:
     return QPDataSymbolic(
         degrees_of_freedom=prismatic_bot2.active_degrees_of_freedom,
         constraint_collection=constraints,
-        config=QPControllerConfig(target_frequency=20, prediction_horizon=10),
+        qp_controller_config=QPControllerConfig(
+            target_frequency=20, prediction_horizon=10
+        ),
     )
 
 

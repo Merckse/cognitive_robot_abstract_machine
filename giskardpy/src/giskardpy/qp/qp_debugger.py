@@ -83,9 +83,9 @@ class QuadraticProgramDebugger:
         quadratic_weight_filter = np.ones(
             self.qp_data_symbolic.quadratic_weights.shape[0]
         )
-        quadratic_weight_filter[self.qp_data_symbolic.num_non_slack_variables :] = (
+        quadratic_weight_filter[self.qp_data_symbolic.number_non_slack_variables :] = (
             self.qp_data_symbolic.quadratic_weights.evaluate()[
-                self.qp_data_symbolic.num_non_slack_variables :
+                self.qp_data_symbolic.number_non_slack_variables :
             ]
             != 0
         )
@@ -111,11 +111,13 @@ class QuadraticProgramDebugger:
         """
         Creates panda arrays for equality constraint insights.
         """
-        eq_matrix_dofs_np = self.qp_data_symbolic.eq_matrix_dofs.evaluate()
+        eq_matrix_dofs_np = (
+            self.qp_data_symbolic.equality_matrix_degrees_of_freedom.evaluate()
+        )
         constraint_value_without_slack = (
             eq_matrix_dofs_np @ self.padded_solution[: eq_matrix_dofs_np.shape[1]]
         )
-        bounds = self.qp_data_symbolic.eq_bounds.evaluate()
+        bounds = self.qp_data_symbolic.equality_bounds.evaluate()
         self.equality_constraints = pd.DataFrame(
             {
                 "constraint value w/o slack": constraint_value_without_slack,
@@ -136,12 +138,14 @@ class QuadraticProgramDebugger:
         """
         Creates panda arrays for inequality constraint insights.
         """
-        neq_matrix_dofs_np = self.qp_data_symbolic.neq_matrix_dofs.evaluate()
+        neq_matrix_dofs_np = (
+            self.qp_data_symbolic.inequality_matrix_degrees_of_freedom.evaluate()
+        )
         constraint_value_without_slack = (
             neq_matrix_dofs_np @ self.padded_solution[: neq_matrix_dofs_np.shape[1]]
         )
-        lower_bounds = self.qp_data_symbolic.neq_lower_bounds.evaluate()
-        upper_bounds = self.qp_data_symbolic.neq_upper_bounds.evaluate()
+        lower_bounds = self.qp_data_symbolic.inequality_lower_bounds.evaluate()
+        upper_bounds = self.qp_data_symbolic.inequality_upper_bounds.evaluate()
         if len(self.inequality_constr_names) > 0:
             self.inequality_constraints = pd.DataFrame(
                 {
@@ -175,18 +179,20 @@ class QuadraticProgramDebugger:
         Returns the names of the degree-of-freedom decision variables, excluding slack variables, in
         the same column order that :class:`DofLimits` uses to build the QP matrices.
         """
-        return self.free_variable_names[: self.qp_data_symbolic.num_non_slack_variables]
+        return self.free_variable_names[
+            : self.qp_data_symbolic.number_non_slack_variables
+        ]
 
     @property
     def equality_constr_names(self) -> list[str]:
         """
         Returns the names of all equality constraints.
         """
-        return self.qp_data_symbolic.eq_constraint_names
+        return self.qp_data_symbolic.equality_constraint_names
 
     @property
     def inequality_constr_names(self) -> list[str]:
         """
         Returns the names of all inequality constraints.
         """
-        return self.qp_data_symbolic.neq_constraint_names
+        return self.qp_data_symbolic.inequality_constraint_names

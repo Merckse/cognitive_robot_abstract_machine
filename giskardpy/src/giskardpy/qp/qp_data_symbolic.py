@@ -55,11 +55,9 @@ class QPDataSymbolic:
     Takes free variables and constraints and converts them to a QP problem in the following format, depending on the
     class attributes:
     min_x 0.5 x^T H x + g^T x
-    s.t.  lb <= x <= ub     (box constraints)
-          Edof x <= bE_dof          (equality constraints)
-          Eslack x <= bE_slack        (equality constraints)
-          lbA <= Adof x <= ubA_dof  (lower/upper inequality constraints)
-          lbA <= Aslack x <= ubA_slack  (lower/upper inequality constraints)
+    s.t.  box_lower_constraints <= x <= box_upper_constraints     (box constraints)
+          equality_matrix x <= equality_bounds          (equality constraints)
+          inequality_lower_bounds <= inequality_matrix x <= inequality_upper_bounds  (lower/upper inequality constraints)
     """
 
     degrees_of_freedom: list[DegreeOfFreedom]
@@ -70,7 +68,7 @@ class QPDataSymbolic:
     """
     The equality and inequality constraints to encode into the QP.
     """
-    config: QPControllerConfig
+    qp_controller_config: QPControllerConfig
     """
     Controller configuration, e.g. prediction horizon and time step.
     """
@@ -98,40 +96,40 @@ class QPDataSymbolic:
     Names of all decision and slack variables, in column order.
     """
 
-    eq_matrix_dofs: Matrix = field(init=False)
+    equality_matrix_degrees_of_freedom: Matrix = field(init=False)
     """
     Equality constraint matrix block acting on the degree-of-freedom variables.
     """
-    eq_matrix_slack: Matrix = field(init=False)
+    equality_matrix_slack: Matrix = field(init=False)
     """
     Equality constraint matrix block acting on the equality slack variables.
     """
-    eq_bounds: Vector = field(init=False)
+    equality_bounds: Vector = field(init=False)
     """
     Right-hand side bounds of the equality constraints.
     """
-    eq_constraint_names: list[str] = field(init=False)
+    equality_constraint_names: list[str] = field(init=False)
     """
     Names of the equality constraints, in row order.
     """
 
-    neq_matrix_dofs: Matrix = field(init=False)
+    inequality_matrix_degrees_of_freedom: Matrix = field(init=False)
     """
     Inequality constraint matrix block acting on the degree-of-freedom variables.
     """
-    neq_matrix_slack: Matrix = field(init=False)
+    inequality_matrix_slack: Matrix = field(init=False)
     """
     Inequality constraint matrix block acting on the inequality slack variables.
     """
-    neq_lower_bounds: Vector = field(init=False)
+    inequality_lower_bounds: Vector = field(init=False)
     """
     Lower bounds of the inequality constraints.
     """
-    neq_upper_bounds: Vector = field(init=False)
+    inequality_upper_bounds: Vector = field(init=False)
     """
     Upper bounds of the inequality constraints.
     """
-    neq_constraint_names: list[str] = field(init=False)
+    inequality_constraint_names: list[str] = field(init=False)
     """
     Names of the inequality constraints, in row order.
     """
@@ -156,7 +154,9 @@ class QPDataSymbolic:
         return strategy.create_matrix(), strategy.create_slack_matrix()
 
     def __post_init__(self):
-        direct_limits = DofLimits.create(self.degrees_of_freedom, self.config)
+        direct_limits = DofLimits.create(
+            self.degrees_of_freedom, self.qp_controller_config
+        )
         accumulator = QPVariableAccumulator(
             quadratic_weights=[direct_limits.quadratic_weights],
             linear_weights=[direct_limits.linear_weights],
@@ -165,26 +165,28 @@ class QPDataSymbolic:
             free_variable_names=list(direct_limits.names),
         )
 
-        ineq_matrix_dofs = []
-        ineq_matrix_slack = []
-        lower_bounds = []
-        upper_bounds = []
-        self.neq_constraint_names = []
+        inequality_matrix_degrees_of_freedom = []
+        inequality_matrix_slack = []
+        inequality_lower_bounds = []
+        inequality_upper_bounds = []
+        self.inequality_constraint_names = []
 
-        eq_matrix_dofs = []
-        eq_matrix_slack = []
-        eq_bounds = []
-        self.eq_constraint_names = []
+        equality_matrix_degrees_of_freedom = []
+        equality_matrix_slack = []
+        equality_bounds = []
+        self.equality_constraint_names = []
 
         system_dynamics_strategy = SystemDynamicsStrategy(
             degrees_of_freedom=self.degrees_of_freedom,
-            config=self.config,
+            config=self.qp_controller_config,
             constraints=[],
         )
-        eq_matrix_dofs.append(system_dynamics_strategy.create_matrix())
-        eq_matrix_slack.append(system_dynamics_strategy.create_slack_matrix())
-        eq_bounds.append(system_dynamics_strategy.create_equality_bounds())
-        self.eq_constraint_names.extend(system_dynamics_strategy.create_names())
+        equality_matrix_degrees_of_freedom.append(
+            system_dynamics_strategy.create_matrix()
+        )
+        equality_matrix_slack.append(system_dynamics_strategy.create_slack_matrix())
+        equality_bounds.append(system_dynamics_strategy.create_equality_bounds())
+        self.equality_constraint_names.extend(system_dynamics_strategy.create_names())
 
         for (
             enforcement_strategy,
@@ -192,15 +194,15 @@ class QPDataSymbolic:
         ) in self.constraint_collection.get_equality_constraint_blocks().items():
             strategy = enforcement_strategy(
                 degrees_of_freedom=self.degrees_of_freedom,
-                config=self.config,
+                config=self.qp_controller_config,
                 constraints=constraints,
             )
             matrix, slack_matrix = self._append_slack_block(
-                strategy, self.eq_constraint_names, accumulator
+                strategy, self.equality_constraint_names, accumulator
             )
-            eq_matrix_dofs.append(matrix)
-            eq_matrix_slack.append(slack_matrix)
-            eq_bounds.append(strategy.create_equality_bounds())
+            equality_matrix_degrees_of_freedom.append(matrix)
+            equality_matrix_slack.append(slack_matrix)
+            equality_bounds.append(strategy.create_equality_bounds())
 
         for (
             enforcement_strategy,
@@ -208,80 +210,87 @@ class QPDataSymbolic:
         ) in self.constraint_collection.get_inequality_constraint_blocks().items():
             strategy = enforcement_strategy(
                 degrees_of_freedom=self.degrees_of_freedom,
-                config=self.config,
+                config=self.qp_controller_config,
                 constraints=constraints,
             )
             matrix, slack_matrix = self._append_slack_block(
-                strategy, self.neq_constraint_names, accumulator
+                strategy, self.inequality_constraint_names, accumulator
             )
-            ineq_matrix_dofs.append(matrix)
-            ineq_matrix_slack.append(slack_matrix)
-            lower_bounds.append(strategy.create_lower_bounds())
-            upper_bounds.append(strategy.create_upper_bounds())
+            inequality_matrix_degrees_of_freedom.append(matrix)
+            inequality_matrix_slack.append(slack_matrix)
+            inequality_lower_bounds.append(strategy.create_lower_bounds())
+            inequality_upper_bounds.append(strategy.create_upper_bounds())
 
         self.free_variable_names = accumulator.free_variable_names
         self.quadratic_weights = sm.concatenate(*accumulator.quadratic_weights)
         self.linear_weights = sm.concatenate(*accumulator.linear_weights)
         self.box_lower_constraints = sm.concatenate(*accumulator.box_lower_constraints)
         self.box_upper_constraints = sm.concatenate(*accumulator.box_upper_constraints)
-        self.eq_matrix_dofs = sm.vstack(eq_matrix_dofs)
-        self.eq_matrix_slack = sm.diag_stack(eq_matrix_slack)
-        self.eq_bounds = sm.concatenate(*eq_bounds)
+        self.equality_matrix_degrees_of_freedom = sm.vstack(
+            equality_matrix_degrees_of_freedom
+        )
+        self.equality_matrix_slack = sm.diag_stack(equality_matrix_slack)
+        self.equality_bounds = sm.concatenate(*equality_bounds)
 
-        if ineq_matrix_dofs:
-            self.neq_matrix_dofs = sm.vstack(ineq_matrix_dofs)
+        if inequality_matrix_degrees_of_freedom:
+            self.inequality_matrix_degrees_of_freedom = sm.vstack(
+                inequality_matrix_degrees_of_freedom
+            )
         else:
-            self.neq_matrix_dofs = sm.Matrix()
+            self.inequality_matrix_degrees_of_freedom = sm.Matrix()
 
-        if ineq_matrix_slack:
-            self.neq_matrix_slack = sm.diag_stack(ineq_matrix_slack)
+        if inequality_matrix_slack:
+            self.inequality_matrix_slack = sm.diag_stack(inequality_matrix_slack)
         else:
-            self.neq_matrix_slack = sm.Matrix()
+            self.inequality_matrix_slack = sm.Matrix()
 
-        if lower_bounds:
-            self.neq_lower_bounds = sm.concatenate(*lower_bounds)
+        if inequality_lower_bounds:
+            self.inequality_lower_bounds = sm.concatenate(*inequality_lower_bounds)
         else:
-            self.neq_lower_bounds = sm.Vector()
+            self.inequality_lower_bounds = sm.Vector()
 
-        if upper_bounds:
-            self.neq_upper_bounds = sm.concatenate(*upper_bounds)
+        if inequality_upper_bounds:
+            self.inequality_upper_bounds = sm.concatenate(*inequality_upper_bounds)
         else:
-            self.neq_upper_bounds = sm.Vector()
+            self.inequality_upper_bounds = sm.Vector()
 
     def __hash__(self):
         return hash(id(self))
 
     @property
-    def num_degrees_of_freedom(self) -> int:
+    def number_degrees_of_freedom(self) -> int:
         """
         The number of degrees of freedom.
         """
         return len(self.degrees_of_freedom)
 
     @property
-    def num_eq_slack_variables(self) -> int:
+    def number_equality_slack_variables(self) -> int:
         """
         The number of slack columns introduced by the equality constraints.
         """
-        return self.eq_matrix_slack.shape[1]
+        return self.equality_matrix_slack.shape[1]
 
     @property
-    def num_neq_slack_variables(self) -> int:
+    def number_inequality_slack_variables(self) -> int:
         """
         The number of slack columns introduced by the inequality constraints.
         """
-        return self.neq_matrix_slack.shape[1]
+        return self.inequality_matrix_slack.shape[1]
 
     @property
-    def num_slack_variables(self) -> int:
+    def number_slack_variables(self) -> int:
         """
         The total number of slack columns.
         """
-        return self.num_eq_slack_variables + self.num_neq_slack_variables
+        return (
+            self.number_equality_slack_variables
+            + self.number_inequality_slack_variables
+        )
 
     @property
-    def num_non_slack_variables(self) -> int:
+    def number_non_slack_variables(self) -> int:
         """
         The number of degree-of-freedom decision variable columns, i.e. all non-slack columns.
         """
-        return self.quadratic_weights.shape[0] - self.num_slack_variables
+        return self.quadratic_weights.shape[0] - self.number_slack_variables

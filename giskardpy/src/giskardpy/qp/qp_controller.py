@@ -53,7 +53,7 @@ class QPController:
         generic_qp_data_symbolic = QPDataSymbolic(
             degrees_of_freedom=self.active_dofs,
             constraint_collection=self.constraint_collection,
-            config=self.config,
+            qp_controller_config=self.config,
         )
 
         qp_data_factory_class = QPDataFactory.get_factory_from_qp_data_type(

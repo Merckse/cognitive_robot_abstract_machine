@@ -3,7 +3,7 @@ import math
 from Evaluate.CompositeEvaluator import CompositeEvaluator
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from Stabilizer.PlanStabilizer import PlanStabilizer
-from common.types import Task, TaskStep, Status
+from common.cram_types import Task, TaskStep, Status
 from common.values import CHALLENGE_TASKS
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from helper_methods import generate_plan_task, perceive_and_spawn_all_objects
@@ -15,7 +15,7 @@ from pycram.plans.factories import sequential, make_node
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction
 
 from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
-from demos.pycram_score_aware_planning.common.types import ChallengeMode
+from demos.pycram_score_aware_planning.common.cram_types import ChallengeMode
 from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.semantic_annotations.mixins import HasSupportingSurface

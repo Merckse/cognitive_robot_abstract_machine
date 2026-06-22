@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 from dataclasses import dataclass
 
-from demos.pycram_score_aware_planning.common.types import ActionType, Status, ChallengeMode, TaskStep, Task
+from demos.pycram_score_aware_planning.common.cram_types import ActionType, Status, ChallengeMode, TaskStep, Task
 from pycram.datastructures.enums import TaskStatus
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Plate, Knife, Fork, Spoon, Bowl, Milk, Cereal
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation

@@ -1,4 +1,4 @@
-from demos.pycram_score_aware_planning.common.types import Task
+from demos.pycram_score_aware_planning.common.cram_types import Task
 
 """
 Structurizer there to create a plan and sequence, as the building block,

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 from numpy.ma.core import product
 
-from common.types import Task, TaskStep
+from common.cram_types import Task, TaskStep
 from demos.pycram_score_aware_planning.Evaluate.ProbabilityEvaluator import RobotProbability
 from demos.pycram_score_aware_planning.Evaluate.ScoreEvaluator import RobotScorer, ScoreEvent
 from helper_methods import normalize_task_estimation

@@ -4,11 +4,11 @@ from dataclasses import dataclass, field
 
 from numpy.ma.core import product
 
-from common.types import TaskStep
+from common.cram_types import TaskStep
 from helper_methods import NAVIGATION_POSES
 from pycram.datastructures.dataclasses import Context
 from pycram.locations.costmaps import OccupancyCostmap
-from demos.pycram_score_aware_planning.common.types import Task, Status
+from demos.pycram_score_aware_planning.common.cram_types import Task, Status
 from demos.pycram_score_aware_planning.common.values import evaluation
 from demos.pycram_score_aware_planning.helper_methods import find_surface_of_object
 

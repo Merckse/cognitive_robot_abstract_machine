@@ -5,6 +5,7 @@ from abc import abstractmethod
 from dataclasses import dataclass
 
 from typing_extensions import (
+    TYPE_CHECKING,
     ClassVar,
     Dict,
     FrozenSet,
@@ -30,6 +31,11 @@ from krrood.entity_query_language.query.aggregation_structure import (
     aggregation_leaf_attribute,
 )
 
+if TYPE_CHECKING:
+    from krrood.entity_query_language.verbalization.microplanning.coordination import (
+        FoldNode,
+    )
+
 
 @runtime_checkable
 class DiscourseView(Protocol):
@@ -39,9 +45,9 @@ class DiscourseView(Protocol):
     whether a fragment's source node opens a discourse scope, and who its focus referent is.
     """
 
-    def is_scope(self, source: Optional[SymbolicExpression]) -> bool: ...
+    def is_scope(self, source: Optional[FoldNode]) -> bool: ...
 
-    def focus_of(self, source: Optional[SymbolicExpression]) -> Optional[uuid.UUID]: ...
+    def focus_of(self, source: Optional[FoldNode]) -> Optional[uuid.UUID]: ...
 
     def is_selected_quantity(self, node_id: Optional[uuid.UUID]) -> bool: ...
 
@@ -207,10 +213,9 @@ class DiscourseModel:
         focus: Dict[uuid.UUID, Optional[uuid.UUID]] = {}
         selected_quantities: set[uuid.UUID] = set()
         for node in expression._all_expressions_:
-            node_id = getattr(node, "_id_", None)
             scope_rule = DiscourseScopeRule.most_applicable(node, microplan)
-            if scope_rule is not None and node_id is not None:
-                focus[node_id] = scope_rule.focus(node, microplan)
+            if scope_rule is not None:
+                focus[node._id_] = scope_rule.focus(node, microplan)
             leaf = (
                 aggregation_leaf_attribute(node) if isinstance(node, Entity) else None
             )
@@ -218,21 +223,28 @@ class DiscourseModel:
                 selected_quantities.add(leaf._id_)
         return cls(focus, frozenset(selected_quantities))
 
-    def is_scope(self, source: Optional[SymbolicExpression]) -> bool:
+    def is_scope(self, source: Optional[FoldNode]) -> bool:
         """:return: ``True`` when *source* is a query node that opens a discourse scope.
+
+        Only a real expression carries an ``_id_``; a synthetic coordination artifact (or ``None``)
+        is never a scope.
 
         >>> EMPTY_DISCOURSE.is_scope(None)
         False
         """
-        return getattr(source, "_id_", None) in self._focus_by_scope
+        if not isinstance(source, SymbolicExpression):
+            return False
+        return source._id_ in self._focus_by_scope
 
-    def focus_of(self, source: Optional[SymbolicExpression]) -> Optional[uuid.UUID]:
+    def focus_of(self, source: Optional[FoldNode]) -> Optional[uuid.UUID]:
         """:return: The focus referent of *source*'s scope, or ``None``.
 
         >>> EMPTY_DISCOURSE.focus_of(None) is None
         True
         """
-        return self._focus_by_scope.get(getattr(source, "_id_", None))
+        if not isinstance(source, SymbolicExpression):
+            return None
+        return self._focus_by_scope.get(source._id_)
 
     def is_selected_quantity(self, node_id: Optional[uuid.UUID]) -> bool:
         """:return: ``True`` when *node_id* is a quantity the query selects (e.g. an aggregation's

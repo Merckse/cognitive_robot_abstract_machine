@@ -123,7 +123,7 @@ def build_path_parts(
             verb = relation_verb(name) if relation_verb is not None else None
             relation = (
                 RelationStep(
-                    getattr(node, "_type_", None),
+                    node._type_,
                     owner,
                     verb.participle,
                     verb.preposition,

@@ -174,15 +174,13 @@ class ReferringExpressions:
         """
         if isinstance(node, Variable) and not isinstance(node, Literal):
             return (
-                node._type_.__name__
-                if getattr(node, "_type_", None)
-                else node.__class__.__name__
+                node._type_.__name__ if node._type_ else node.__class__.__name__
             )
         if (
             isinstance(node, Attribute)
             and relational_verb(node._attribute_name_) is not None
         ):
-            value_type = getattr(node, "_type_", None)
+            value_type = node._type_
             return value_type.__name__ if isinstance(value_type, type) else None
         return None
 
@@ -202,7 +200,7 @@ class ReferringExpressions:
         """
         type_name = (
             variable._type_.__name__
-            if getattr(variable, "_type_", None)
+            if variable._type_
             else variable.__class__.__name__
         )
         label = self.disambiguation_map.get(variable._id_, type_name)

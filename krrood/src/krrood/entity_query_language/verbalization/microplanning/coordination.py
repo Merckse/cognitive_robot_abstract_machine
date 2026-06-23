@@ -124,7 +124,11 @@ class CoindexedNaturalParts:
 
 # ── the conjunct-reduction pass (high-level entry) ──────────────────────────
 
-ConjunctList = List[Union["SymbolicExpression", RangeFold, CoindexedFold]]
+FoldNode = Union["SymbolicExpression", RangeFold, CoindexedFold]
+"""A node the verbalization fold dispatches over: either a real EQL expression or a synthetic
+coordination artifact (:class:`RangeFold` / :class:`CoindexedFold`) produced by conjunct reduction."""
+
+ConjunctList = List[FoldNode]
 
 
 class ConjunctFold(ABC):

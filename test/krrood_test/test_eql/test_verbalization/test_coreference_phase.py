@@ -40,18 +40,16 @@ from krrood.entity_query_language.verbalization.rendering.discourse import (
     EMPTY_DISCOURSE,
 )
 
-
-class _ScopeNode:
-    """A minimal query-node stand-in carrying an ``_id_`` (what the discourse model keys on)."""
-
-    def __init__(self) -> None:
-        self._id_ = uuid.uuid4()
+from ...dataset.minimal_symbolic_expression import MinimalSymbolicExpression
 
 
 def _scope(child: Fragment, focus_id):
     """Make *child* a discourse scope with focus *focus_id* — a query-sourced fragment plus the
-    matching discourse model (``focus_id=None`` for a scope with no single subject)."""
-    node = _ScopeNode()
+    matching discourse model (``focus_id=None`` for a scope with no single subject).
+
+    The source is a real query-node stand-in carrying an ``_id_`` (what the discourse model keys
+    on)."""
+    node = MinimalSymbolicExpression()
     return replace(child, source=node), DiscourseModel({node._id_: focus_id})
 
 

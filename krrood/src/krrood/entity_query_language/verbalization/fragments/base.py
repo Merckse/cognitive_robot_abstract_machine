@@ -2,9 +2,19 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field, replace
-from typing_extensions import Any, Callable, List, Optional, TypeVar
+from typing_extensions import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    List,
+    Optional,
+    TypeVar,
+)
 
-from krrood.entity_query_language.core.base_expressions import SymbolicExpression
+from krrood.entity_query_language.core.base_expressions import (
+    Selectable,
+    SymbolicExpression,
+)
 from krrood.entity_query_language.verbalization.fragments.features import (
     Definiteness,
     Spacing,
@@ -19,6 +29,11 @@ from krrood.entity_query_language.verbalization.navigation_path import PathStep
 from krrood.entity_query_language.verbalization.exceptions import UnloweredFragmentError
 from krrood.entity_query_language.verbalization.value_lexicon import value_phrase
 
+if TYPE_CHECKING:
+    from krrood.entity_query_language.verbalization.microplanning.coordination import (
+        FoldNode,
+    )
+
 _T = TypeVar("_T")
 
 
@@ -31,10 +46,11 @@ class Fragment:
     composition (``PhraseFragment``), and block structure (``BlockFragment``).
     """
 
-    source: Optional[SymbolicExpression] = field(
+    source: Optional[FoldNode] = field(
         default=None, kw_only=True, compare=False, repr=False
     )
-    """Provenance: the EQL node this fragment was built from, stamped by the fold. A lossless
+    """Provenance: the EQL node (or synthetic coordination artifact) this fragment was built from,
+    stamped by the fold. A lossless
     side-channel a later pass can follow back to the read model (e.g. coreference reads the focus
     of a query-sourced fragment). Never participates in equality or rendering."""
 
@@ -103,7 +119,7 @@ class RoleFragment(HasText, HasNumber, Fragment):
             text=label,
             role=SemanticRole.VARIABLE,
             source_reference=SourceReference.for_type(
-                getattr(expression, "_type_", None)
+                expression._type_ if isinstance(expression, Selectable) else None
             ),
             number=number,
         )

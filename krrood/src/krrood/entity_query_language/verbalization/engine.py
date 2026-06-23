@@ -19,6 +19,9 @@ from krrood.entity_query_language.verbalization.exceptions import (
 
 if TYPE_CHECKING:
     from krrood.entity_query_language.verbalization.context import MicroplanningServices
+    from krrood.entity_query_language.verbalization.microplanning.coordination import (
+        FoldNode,
+    )
 
 
 def root_context(
@@ -52,7 +55,7 @@ def root_context(
 
 
 def fold(
-    node: SymbolicExpression,
+    node: FoldNode,
     services: MicroplanningServices,
     rules: Optional[Sequence[PhraseRule]] = None,
     options: Optional[RenderOptions] = None,
@@ -69,7 +72,8 @@ def fold(
     (Meijer, Fokkinga & Paterson 1991, "Functional Programming with Bananas, Lenses, Envelopes
     and Barbed Wire"; Bird & de Moor 1997, "Algebra of Programming").
 
-    :param node: Any EQL expression.
+    :param node: Any EQL expression, or a synthetic coordination artifact produced by conjunct
+        reduction (:class:`RangeFold` / :class:`CoindexedFold`).
     :param services: The pass-wide microplanning services (and render configuration).
     :param rules: Grammar to dispatch over; defaults to the standard rule set.
     :param options: The render flags to build *node* under (defaults to all reset).
@@ -85,9 +89,8 @@ def fold(
     """
     rules = RULES if rules is None else rules
 
-    node_id = getattr(node, "_id_", None)
-    if node_id is not None:
-        override = services.binding.binding_overrides.get(node_id)
+    if isinstance(node, SymbolicExpression):
+        override = services.binding.binding_overrides.get(node._id_)
         if override is not None:
             return override
 
@@ -105,7 +108,7 @@ def fold(
     return _with_source(rule.build(node, context), node)
 
 
-def _with_source(fragment: Fragment, node: SymbolicExpression) -> Fragment:
+def _with_source(fragment: Fragment, node: FoldNode) -> Fragment:
     """
     Stamp *node* as the fragment's provenance, so later passes can follow it back to the read
     model. The innermost producer wins: a transparent wrapper (``An(Entity)``) returns its child's

@@ -100,7 +100,7 @@ class VariableRule(PhraseRule):
         >>> verbalize_expression(a(entity(employee).where(employee.department == variable(str, ["Sales", "Eng"]))))
         "Find an Employee whose department is one of 'Sales' or 'Eng'"
         """
-        type_ = getattr(node, "_type_", None)
+        type_ = node._type_
         is_enum = isinstance(type_, type) and issubclass(type_, enum.Enum)
         if not (is_enum or type_ in _PRIMITIVE_VALUE_TYPES):
             return None

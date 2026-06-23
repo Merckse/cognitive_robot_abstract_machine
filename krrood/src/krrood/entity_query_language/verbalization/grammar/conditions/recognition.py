@@ -143,7 +143,7 @@ def references(expression: SymbolicExpression, subject_variable: Variable) -> bo
     """
     try:
         return any(
-            getattr(variable, "_id_", None) == subject_variable._id_
+            variable._id_ == subject_variable._id_
             for variable in expression._unique_variables_
         )
     except AttributeError:
@@ -204,7 +204,7 @@ def superlative_aggregation(
     if comparator.operation is not operator.eq:
         return None
     left_root = chain_root(comparator.left)
-    if getattr(left_root, "_id_", None) != getattr(subject, "_id_", object()):
+    if left_root._id_ != subject._id_:
         return None
 
     inner = unwrap_result_quantifiers(comparator.right)
@@ -217,7 +217,7 @@ def superlative_aggregation(
     source = aggregation_source_root(inner)
     if source is None or source is subject:
         return None  # the population must be a distinct variable of the same type
-    if getattr(source, "_type_", None) is not getattr(subject, "_type_", None):
+    if source._type_ is not subject._type_:
         return None
     if attribute_names(comparator.left) != attribute_names(aggregator._child_):
         return None

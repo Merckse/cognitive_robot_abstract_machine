@@ -457,7 +457,7 @@ def _relation_target(attribute: Attribute) -> List[Fragment]:
     >>> [flatten_fragment_to_plain_text(part) for part in _relation_target(attribute)]
     ['any', 'Robot']
     """
-    related_type = getattr(attribute, "_type_", None)
+    related_type = attribute._type_
     if isinstance(related_type, type) and related_type.__module__ != "builtins":
         return [Quantifiers.ANY.as_fragment(), RoleFragment.for_type(related_type)]
     return [Quantifiers.ANYTHING.as_fragment()]
@@ -475,7 +475,7 @@ def _boolean_constraint(right: SymbolicExpression) -> Optional[Set[bool]]:
     """
     if isinstance(right, Literal) and isinstance(right._value_, bool):
         return {right._value_}
-    if isinstance(right, Variable) and getattr(right, "_type_", None) is bool:
+    if isinstance(right, Variable) and right._type_ is bool:
         values = list(islice(right._re_enterable_domain_generator_, 3))
         if values and len(values) <= 2 and all(isinstance(v, bool) for v in values):
             return set(values)

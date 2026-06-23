@@ -7,6 +7,7 @@ from enum import Enum
 
 from typing_extensions import Callable, Dict, List, Optional
 
+from krrood.entity_query_language.core.base_expressions import Selectable
 from krrood.entity_query_language.operators.comparator import not_contains
 
 from krrood.entity_query_language.verbalization import morphology
@@ -645,7 +646,7 @@ class FallbackNouns(VocabEnum):
         >>> FallbackNouns.ENTITY.name_of(None)
         'entity'
         """
-        node_type = getattr(node, "_type_", None)
+        node_type = node._type_ if isinstance(node, Selectable) else None
         return node_type.__name__ if node_type is not None else self.text
 
 

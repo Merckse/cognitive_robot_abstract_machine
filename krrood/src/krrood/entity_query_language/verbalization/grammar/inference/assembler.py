@@ -198,8 +198,9 @@ class InferenceAssembler(Assembler[Entity, RuleStructure]):
         root = antecedent.root
         if isinstance(root, Entity):
             root.build()
-            return getattr(root.selected_variable, "_id_", None)
-        return getattr(root, "_id_", None)
+            selected_variable = root.selected_variable
+            return selected_variable._id_ if selected_variable is not None else None
+        return root._id_
 
     # ── THEN clause ───────────────────────────────────────────────────────────
 

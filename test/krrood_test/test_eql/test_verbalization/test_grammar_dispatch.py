@@ -24,6 +24,8 @@ from krrood.entity_query_language.verbalization.grammar.framework.phrase_rule im
     select,
 )
 
+from ...dataset.minimal_symbolic_expression import MinimalSymbolicExpression
+
 
 # Synthetic construct hierarchy (deeper class == more specific).
 class Base:
@@ -136,10 +138,10 @@ def test_fold_child_re_enters_the_fold():
 
 
 def test_fold_binding_override_short_circuits_before_dispatch():
-    node = Mid()
-    node._id_ = "k"
+    # Only a real expression carries an _id_ the override map is keyed on.
+    node = MinimalSymbolicExpression()
     context = MicroplanningServices()
-    context.binding.binding_overrides["k"] = WordFragment("OVERRIDE")
+    context.binding.binding_overrides[node._id_] = WordFragment("OVERRIDE")
     # No rules at all — the override must still win.
     assert flatten_fragment_to_plain_text(fold(node, context, [])) == "OVERRIDE"
 

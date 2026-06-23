@@ -4,7 +4,6 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing_extensions import TYPE_CHECKING, Callable, ClassVar, Optional, Sequence
 
-from krrood.entity_query_language.core.base_expressions import SymbolicExpression
 from krrood.entity_query_language.verbalization.fragments.base import Fragment
 from krrood.entity_query_language.verbalization.fragments.features import Number
 from krrood.entity_query_language.verbalization.grammar.framework.specificity import (
@@ -14,6 +13,9 @@ from krrood.entity_query_language.verbalization.grammar.framework.specificity im
 
 if TYPE_CHECKING:
     from krrood.entity_query_language.verbalization.context import MicroplanningServices
+    from krrood.entity_query_language.verbalization.microplanning.coordination import (
+        FoldNode,
+    )
     from krrood.entity_query_language.verbalization.microplanning.binding_scope import (
         BindingScope,
     )
@@ -62,7 +64,7 @@ class RuleContext:
     for cross-cutting state directly.
     """
 
-    recurse: Callable[[SymbolicExpression, "RenderOptions"], Fragment]
+    recurse: Callable[["FoldNode", "RenderOptions"], Fragment]
     """The fold continuation — given a sub-expression and its render options, returns its fragment.
     Rules do not call this directly; they call :meth:`child`."""
 
@@ -74,7 +76,7 @@ class RuleContext:
 
     def child(
         self,
-        node: SymbolicExpression,
+        node: FoldNode,
         *,
         number: Number = Number.SINGULAR,
         inline: bool = False,
@@ -159,7 +161,7 @@ class PhraseRule(ABC):
     """``True`` on a rule whose construct is itself a query body, so an entity found anywhere
     within it renders as a nested noun phrase."""
 
-    def when(self, node: SymbolicExpression, context: RuleContext) -> bool:
+    def when(self, node: FoldNode, context: RuleContext) -> bool:
         """
         Extra precondition beyond ``isinstance(node, construct)``.
 
@@ -173,7 +175,7 @@ class PhraseRule(ABC):
         return True
 
     @abstractmethod
-    def build(self, node: SymbolicExpression, context: RuleContext) -> Fragment:
+    def build(self, node: FoldNode, context: RuleContext) -> Fragment:
         """
         Build the fragment for *node*.
 
@@ -199,7 +201,7 @@ def _is_guarded(rule: PhraseRule) -> bool:
 
 
 def select(
-    node: SymbolicExpression, rules: Sequence[PhraseRule], context: RuleContext
+    node: FoldNode, rules: Sequence[PhraseRule], context: RuleContext
 ) -> Optional[PhraseRule]:
     """
     Specificity key, highest wins: ``(construct MRO depth, guarded over unguarded, rule-class MRO

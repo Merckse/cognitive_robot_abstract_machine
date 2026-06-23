@@ -416,8 +416,8 @@ class QueryPlanner(Planner[Query, QueryPlan]):
         """:return: How *order_key* relates to the selected variable — ``SELF`` (the key is the
         selection), ``ATTRIBUTE`` (a chain on it), or ``OTHER`` (a different root)."""
         chain, root = walk_chain(order_key)
-        selected_id = getattr(self._selected, "_id_", None)
-        if selected_id is None or getattr(root, "_id_", None) != selected_id:
+        selected = self._selected
+        if selected is None or root._id_ != selected._id_:
             return RankingKeyRelation.OTHER
         return RankingKeyRelation.ATTRIBUTE if chain else RankingKeyRelation.SELF
 

@@ -352,8 +352,9 @@ class InferencePlanner(Planner[Entity, RuleStructure]):
         root = antecedent.root
         if isinstance(root, Entity):
             root.build()
-            return getattr(root.selected_variable, "_id_", None)
-        return getattr(root, "_id_", None)
+            selected_variable = root.selected_variable
+            return selected_variable._id_ if selected_variable is not None else None
+        return root._id_
 
     def _condition_left_owner_id(
         self, condition: SymbolicExpression
@@ -371,7 +372,7 @@ class InferencePlanner(Planner[Entity, RuleStructure]):
         ):
             return None
         current = unwrap_result_quantifiers(chain_root(condition.left))
-        return getattr(current, "_id_", None)
+        return current._id_
 
     def _find_root(
         self, expression: SymbolicExpression

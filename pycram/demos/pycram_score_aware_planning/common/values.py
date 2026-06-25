@@ -4,7 +4,13 @@
 from dataclasses import dataclass
 
 from demos.pycram_score_aware_planning.common.types import ActionType, Status, ChallengeMode, TaskStep, Task
-from pycram.datastructures.enums import TaskStatus
+from giskardpy.middleware.ros2.exceptions import ExecutionAbortedException
+from giskardpy.motion_statechart.exceptions import CollisionViolatedError
+from giskardpy.motion_statechart.goals.pick_up import ObjectDoesntFitException, ObjectNotReachableException
+from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator
+from pycram.exceptions import MotionDidNotFinish
+from pycram.plans.failures import ObjectNotGrasped
+from semantic_digital_twin.exceptions import WorldEntityNotFoundError
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Plate, Knife, Fork, Spoon, Bowl, Milk, Cereal
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation
 
@@ -101,16 +107,6 @@ ACTIONS: dict[tuple[ActionType, SemanticAnnotation, str], ActionEvaluation] = {
     # ------------------ NAVIGATE (points/penalty always 0; ~20s)
     # NOTE: the old duplicate (NAVIGATE,"","") keys (20 then 30) collapse into the
     # single catch-all below.
-    (ActionType.NAVIGATE, ANY, "table"):
-        ActionEvaluation(score=0, penalty=0, time=20, probability=1.0),
-    (ActionType.NAVIGATE, ANY, "cooking_table"):
-        ActionEvaluation(score=0, penalty=0, time=20, probability=0.98),
-    (ActionType.NAVIGATE, ANY, "desk"):
-        ActionEvaluation(score=0, penalty=0, time=20, probability=0.98),
-    (ActionType.NAVIGATE, ANY, "counterTop"):
-        ActionEvaluation(score=0, penalty=0, time=20, probability=0.98),
-    (ActionType.NAVIGATE, ANY, "shelf_1"):
-        ActionEvaluation(score=0, penalty=0, time=20, probability=0.98),
     (ActionType.NAVIGATE, ANY, ANY):
         ActionEvaluation(score=0, penalty=0, time=20, probability=0.98),
 
@@ -131,6 +127,8 @@ ACTIONS: dict[tuple[ActionType, SemanticAnnotation, str], ActionEvaluation] = {
         ActionEvaluation(score=0, penalty=0, time=8, probability=0.0),
     (ActionType.DETECT, ANY, ANY):
         ActionEvaluation(score=5, penalty=-5, time=5, probability=0.8),
+    (ActionType.EXPLORE, ANY, ANY):
+        ActionEvaluation(score=0, penalty=0, time=20, probability=0.7),
     (ActionType.CUSTOM, ANY, ANY):
         ActionEvaluation(score=0, penalty=0, time=0, probability=0.0),
 }
@@ -153,6 +151,49 @@ def evaluation(action_type: ActionType, semantic_annotation: SemanticAnnotation 
                 return hit
     return action_evaluation
 
+
+
+# Module-level: failure type -> candidate repair operators
+CANDIDATE_OPERATORS: dict[type[Exception],
+list[PlanTransformationOperator]] = {
+    ObjectNotReachableException:
+        [PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE],
+    ObjectDoesntFitException:
+        [PlanTransformationOperator.REPLAN_WITH_ASSISTANCE,
+         PlanTransformationOperator.SKIP],
+    TimeoutError: [PlanTransformationOperator.SKIP,
+                   PlanTransformationOperator.REPLAN,
+                   PlanTransformationOperator.RETRY],
+    MotionDidNotFinish: [PlanTransformationOperator.SKIP,
+                         PlanTransformationOperator.REPLAN,
+                         PlanTransformationOperator.RETRY],
+    ObjectNotGrasped: [PlanTransformationOperator.SKIP,
+                       PlanTransformationOperator.REPLAN,
+                       PlanTransformationOperator.RETRY],
+    CollisionViolatedError:
+        [PlanTransformationOperator.REPLAN],
+    WorldEntityNotFoundError:
+    [PlanTransformationOperator.REPLAN,
+     PlanTransformationOperator.SKIP],
+    ExecutionAbortedException:
+    [PlanTransformationOperator.SKIP,
+                         PlanTransformationOperator.REPLAN,
+                         PlanTransformationOperator.RETRY]
+    # TODO: add other errors, that I want to handle
+    #
+}
+
+DEFAULT_OPERATORS: list[PlanTransformationOperator] = [
+    PlanTransformationOperator.SKIP,
+    PlanTransformationOperator.REPLAN,
+]
+
+# keep in mind to potentially add MRO
+def lookup_operators(exception: Exception) -> list[PlanTransformationOperator]:
+    if type(exception) in CANDIDATE_OPERATORS:
+        return CANDIDATE_OPERATORS.get(exception)
+    else: return DEFAULT_OPERATORS
+
 # Penalties applied on top of (or instead of) base points
 OUTCOME_MODIFIERS: dict[Status | TaskStatus, float] = {
     TaskStatus.SUCCEEDED:                 1.0,
@@ -171,34 +212,37 @@ CHALLENGE_DURATION: dict[ChallengeMode, int] = {
     ChallengeMode.FD: 50,
 }
 
+# Rooms as the coarse navigable unit: each room contains the surfaces (tables) that can be
+# scanned within it. Single source of truth -- the surface names must match NAVIGATION_POSES.
+ROOM_SURFACES: dict[str, list[str]] = {
+    "kitchen":    ["table", "counterTop"],
+    "livingroom": ["lowerTable", "dining_table", "shelf_1", "shelf_2"],
+    "office":     ["desk"],
+    "some_room":  ["cooking_table"],
+}
+# Derived inverse: surface -> room, so a known location always resolves to its room.
+SURFACE_ROOM: dict[str, str] = {s: r for r, surfaces in ROOM_SURFACES.items() for s in surfaces}
+
 # All possible tasks for PP
 # TODO: implement navigationTimeOut, for unexpected length
-TASKSTEP_PP: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.NAVIGATE, location="cooking_table"),
-                                                   TaskStep(ActionType.PICKUP, object_annotations=Bowl),
+TASKSTEP_PP: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Bowl, room="some_room", uncertain=True),
                                                    TaskStep(ActionType.PARK),
-                                                   TaskStep(ActionType.NAVIGATE, location="counterTop"),
                                                    TaskStep(ActionType.PLACE, object_annotations=Bowl, location="counterTop"),
                                                    TaskStep(ActionType.PARK)]),
 
-                           Task(id= 1, task_steps=[TaskStep(ActionType.NAVIGATE, location="desk"),
-                                                   TaskStep(ActionType.PICKUP, object_annotations=Plate),
+                           Task(id= 1, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Plate, room="office", uncertain=True),
                                                    TaskStep(ActionType.PARK),
-                                                   TaskStep(ActionType.NAVIGATE, location="table"),
                                                    TaskStep(ActionType.PLACE, object_annotations=Plate, location="table"),
                                                    TaskStep(ActionType.PARK)]),
 
-                           Task(id= 2, task_steps=[TaskStep(ActionType.NAVIGATE, location="counterTop"),
-                                                   TaskStep(ActionType.PICKUP, object_annotations=Milk),
+                           Task(id= 2, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Milk, room="kitchen", uncertain=True),
                                                    TaskStep(ActionType.PARK),
-                                                   TaskStep(ActionType.NAVIGATE, location="shelf_1"),
                                                    TaskStep(ActionType.PLACE, object_annotations=Milk, location="shelf_1"),
                                                    TaskStep(ActionType.PARK)]),
 
-                           Task(id= 3, task_steps=[TaskStep(ActionType.NAVIGATE, location="shelf_1"),
-                                                   TaskStep(ActionType.PICKUP, object_annotations=Cereal),
+                           Task(id= 3, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Cereal, room="kitchen", uncertain=True),
                                                    TaskStep(ActionType.PARK),
-                                                   TaskStep(ActionType.NAVIGATE, location="shelf_2"),
-                                                   TaskStep(ActionType.PLACE, object_annotations=Cereal, location="shelf_2"),
+                                                   TaskStep(ActionType.PLACE, object_annotations=Cereal, location="table"),
                                                    TaskStep(ActionType.PARK)]), ]
 
 # All possible tasks for GPSR

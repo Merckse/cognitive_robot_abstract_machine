@@ -30,6 +30,7 @@ class ActionType(str, Enum):
     DETECT = "detect"
     PARK = "park"
     CUSTOM = "custom"
+    EXPLORE = "explore"
 
 
 class Status(str, Enum):
@@ -72,7 +73,9 @@ class TaskStep:
     action_penatly: int = 0
     action_time : float = 0
     action_assisted: bool = False
+    action_failures : int = 0.5
     uncertain: bool = False # Meaning, if not all informations to a task are known, then there has to be something done
+    room : str = ""
     location : str = ""
     object_annotations: SemanticAnnotation = None # SemanticAnnotations for the actions, that are used for, with action_type: Pick_Up
     object_pickup: str = None # Possible: cooking_table, shelf, lowerTable, table, desk, dining_table, shelf_1, shelf_2
@@ -84,7 +87,7 @@ class Task:
     id: int
     task_steps: list[TaskStep]
     action_list: list[ActionDescription] = field(default_factory=list)
-    uncertain: bool = False # Meaning, if not all informations to a task are known, then there has to be something done
+    uncertain: bool = True # Meaning, if not all informations to a task are known, then there has to be something done
     status : Status = Status.NOT_ASSIGNED
     score: int = 0
     normalized_score : float = 0

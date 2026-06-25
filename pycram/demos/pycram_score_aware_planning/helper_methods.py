@@ -3,7 +3,7 @@ import math
 from time import sleep
 from typing import Optional
 
-from common.types import Status
+from common.cram_types import Status
 from common.values import evaluation
 from probabilistic_model.bayesian_network.bayesian_network import Root
 from pycram.datastructures.dataclasses import Context
@@ -17,7 +17,7 @@ from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.pick_up import PickUpAction
 from pycram.robot_plans.actions.core.placing import PlaceAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
-from demos.pycram_score_aware_planning.common.types import Task, ActionType, SurfaceSpace, TaskStep
+from demos.pycram_score_aware_planning.common.cram_types import Task, ActionType, SurfaceSpace, TaskStep
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import WorldEntityNotFoundError
 from semantic_digital_twin.reasoning.predicates import is_supported_by

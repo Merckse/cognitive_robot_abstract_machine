@@ -8,7 +8,7 @@ from Evaluate.CompositeEvaluator import CompositeEvaluator
 from Execution.clean_the_table import scoretime_monitor
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from Stabilizer.PlanStabilizer import PlanStabilizer
-from common.types import Task, TaskStep
+from common.cram_types import Task, TaskStep
 from common.values import CHALLENGE_TASKS
 from helper_methods import generate_plan_task, perceive_and_spawn_all_objects
 from pycram.datastructures.dataclasses import Context
@@ -18,7 +18,7 @@ from pycram.plans.factories import make_node, sequential
 from semantic_digital_twin.robots.abstract_robot import AbstractRobot, Arm
 
 from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
-from demos.pycram_score_aware_planning.common.types import ChallengeMode
+from demos.pycram_score_aware_planning.common.cram_types import ChallengeMode
 
 logger = logging.getLogger(__name__)
 

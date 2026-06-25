@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from common.types import Task
+from common.cram_types import Task
 
 
 # TODO: implement RobotPlanStability

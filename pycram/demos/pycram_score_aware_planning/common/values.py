@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 from dataclasses import dataclass
 
-from demos.pycram_score_aware_planning.common.types import ActionType, Status, ChallengeMode, TaskStep, Task
+from demos.pycram_score_aware_planning.common.cram_types import ActionType, Status, ChallengeMode, TaskStep, Task
 from giskardpy.middleware.ros2.exceptions import ExecutionAbortedException
 from giskardpy.motion_statechart.exceptions import CollisionViolatedError
 from giskardpy.motion_statechart.goals.pick_up import ObjectDoesntFitException, ObjectNotReachableException

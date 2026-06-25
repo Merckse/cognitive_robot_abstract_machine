@@ -4,7 +4,7 @@ from unittest import skip
 
 from Evaluate.CompositeEvaluator import CompositeEvaluator
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
-from common.types import Task, Status, TaskStep, ActionType
+from common.cram_types import Task, Status, TaskStep, ActionType
 from common.values import evaluation, lookup_operators
 from giskardpy.motion_statechart.exceptions import CollisionViolatedError
 from giskardpy.motion_statechart.goals.pick_up import ObjectNotReachableException, ObjectDoesntFitException

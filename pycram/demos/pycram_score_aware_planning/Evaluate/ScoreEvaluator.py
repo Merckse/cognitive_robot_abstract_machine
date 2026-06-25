@@ -3,8 +3,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from common.types import Status, TaskStep
-from demos.pycram_score_aware_planning.common.types import (
+from common.cram_types import Status, TaskStep
+from demos.pycram_score_aware_planning.common.cram_types import (
     Task, ScoreEvent,
 )
 from demos.pycram_score_aware_planning.common.values import (

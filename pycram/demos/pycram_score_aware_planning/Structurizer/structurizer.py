@@ -1,5 +1,5 @@
-from common.types import Status
-from demos.pycram_score_aware_planning.common.types import Task
+from common.cram_types import Status
+from demos.pycram_score_aware_planning.common.cram_types import Task
 
 """
 Structurizer there to create a plan and sequence, as the building block,

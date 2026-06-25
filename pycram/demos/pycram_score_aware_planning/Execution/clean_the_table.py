@@ -1,21 +1,23 @@
 import math
 
+import rclpy
+
 from Evaluate.CompositeEvaluator import CompositeEvaluator
 from SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.actions.simulate_perception import simulate_perception
 from SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.events.event_handler import EventDispatcher
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from Stabilizer.PlanStabilizer import PlanStabilizer
-from common.types import Task, TaskStep, ActionType, Status
+from common.cram_types import Task, TaskStep, ActionType, Status
 from common.values import CHALLENGE_TASKS, ROOM_SURFACES
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
-from helper_methods import generate_plan_task, generate_plan_taskstep_list, \
+from helper_methods import generate_plan_taskstep_list, \
     NAVIGATION_POSES
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator
 from pycram.motion_executor import simulated_robot
 
 from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
-from demos.pycram_score_aware_planning.common.types import ChallengeMode
+from demos.pycram_score_aware_planning.common.cram_types import ChallengeMode
 from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
 from semantic_digital_twin.robots.abstract_robot import Manipulator, AbstractRobot
 from semantic_digital_twin.robots.hsrb import HSRB
@@ -246,7 +248,8 @@ def main():
                 exec_steps.append(TaskStep(action_type=ActionType.NAVIGATE, location=ts.location))
             exec_steps.append(ts)
 
-        plan = generate_plan_task(task=replace(current_task, task_steps=exec_steps), context=context)
+
+        plan = generate_plan_taskstep_list(taskstep_list=exec_steps, context=context)
         print("going for", target)
 
         with (simulated_robot):

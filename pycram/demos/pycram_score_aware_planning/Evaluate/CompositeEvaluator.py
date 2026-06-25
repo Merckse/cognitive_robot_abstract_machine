@@ -18,9 +18,9 @@ class CompositeEvaluator:
         self.probability_evaluator = RobotProbability()
         # self.plan_stability_evaluator = RobotPlanStability()
 
-    def estimate(self, context : Context, task_list : list[Task]) -> list[Task]:
+    def estimate(self, context : Context, task_list : list[Task], found_objects: dict) -> list[Task]:
         # estimating score and probability, with score relying on probability
-        task_list_probability_evaluated = self.probability_evaluator.estimate(task_list=task_list, context=context)
+        task_list_probability_evaluated = self.probability_evaluator.estimate(task_list=task_list, context=context, found_objects=found_objects)
         task_list_score_evaluated = self.score_evaluator.estimate(task_list=task_list_probability_evaluated)
 
         self.summary(task_list_score_evaluated)

@@ -1,19 +1,25 @@
+import time
 from dataclasses import dataclass
 from unittest import skip
 
 from Evaluate.CompositeEvaluator import CompositeEvaluator
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from common.types import Task, Status, TaskStep, ActionType
-from common.values import evaluation
+from common.values import evaluation, lookup_operators
 from giskardpy.motion_statechart.exceptions import CollisionViolatedError
 from giskardpy.motion_statechart.goals.pick_up import ObjectNotReachableException, ObjectDoesntFitException
-from helper_methods import get_remaining_task_steps
+from helper_methods import get_remaining_task_steps, navigation_subplan, pickup_subplan, place_subplan
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator
+from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, Arms
 from pycram.exceptions import MotionDidNotFinish
 from pycram.language import SequentialNode
+from pycram.plans.factories import make_node, sequential
 from pycram.plans.failures import ObjectNotGrasped
 from pycram.plans.plan_node import PlanNode
+from pycram.robot_plans.actions.core.navigation import NavigateAction
+from pycram.robot_plans.actions.core.pick_up import PickUpAction
+from pycram.robot_plans.actions.core.placing import PlaceAction
+from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
 
 
 @dataclass(kw_only=True)
@@ -25,7 +31,17 @@ class PlanStabilizer:
         - then try to fix error
         - then go on
     """
-    def stabilize(self, plan: SequentialNode, task: Task, exception: Exception, scoretime_monitor : ScoreTimeMonitor):
+
+    context : Context = None
+    """
+    Context is needed for robots state as well as world state. It is updated on method calls
+    """
+
+
+    """
+    del-relaxation to check if action is possible at all?
+    """
+    def stabilize(self, context : Context, plan: SequentialNode, task: Task, exception: Exception, scoretime_monitor : ScoreTimeMonitor):
         """
         Stabilize works by taking the task and the exception and using it to match it to candidate solutions.
         These solutions are hardcoded by the developers. Since there is (at least not expected to be) a unified way of
@@ -38,43 +54,37 @@ class PlanStabilizer:
 
         # TOOD: add a constant probability decrease, on actually failed task, so the "hope", becomes less
         """
-        remaining_task_steps : list[TaskStep]= get_remaining_task_steps(task)
-        candidate_operators : list[PlanTransformationOperator] = []
+        self.context = context
+        candidate_operators : list[PlanTransformationOperator] = [PlanTransformationOperator.SKIP]
+
+        # sorting out all Nodes, that have already succeeded, expecting, to not doing them again
+        for i, child in enumerate(plan.plan.root.children):
+            task_step = task.task_steps[i]
+            if child.status == TaskStatus.SUCCEEDED:
+                task_step.action_outcome = Status.SUCCESS
+            else:
+                task_step.action_outcome = Status.FAILURE
+                task_step.action_failures += 1
+                break
+
         unfinished_node : PlanNode | None= plan.plan.unfinished_node()
         if unfinished_node is None:
             return None
-        remaining_plan_nodes : list[PlanNode] = [unfinished_node] + unfinished_node.children
+
+        remaining_plan_nodes : list[PlanNode] = [unfinished_node] + unfinished_node.right_siblings
+
+        remaining_task_steps : list[TaskStep]= get_remaining_task_steps(task)
 
         # Pickup-Motion issues
-        if isinstance(exception,ObjectNotReachableException):
-            # TODO: implement Bring closer action or reposition action (more difficult)
-            candidate_operators.insert(0, PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE)
-        elif isinstance(exception, ObjectDoesntFitException):
-            # TODO: Implement is graspable in any position function
-            candidate_operators.insert(0, PlanTransformationOperator.REPLAN_WITH_ASSISTANCE)
-        elif isinstance(exception, TimeoutError):
-            candidate_operators.insert(0, PlanTransformationOperator.RETRY)
-            candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
-            candidate_operators.insert(0, PlanTransformationOperator.SKIP)
-        # Any-Motion issues
-        elif isinstance(exception, MotionDidNotFinish) or isinstance(exception, ObjectNotGrasped):
-            candidate_operators.insert(0, PlanTransformationOperator.RETRY)
-            candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
-            candidate_operators.insert(0, PlanTransformationOperator.SKIP)
-        # Navigate, Place, Pickup motion issues
-        elif isinstance(exception, CollisionViolatedError):
-            candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
-        else:
-            candidate_operators.insert(0, PlanTransformationOperator.REPLAN)
-            candidate_operators.insert(0, PlanTransformationOperator.SKIP)
-
-        score : list[list[PlanTransformationOperator, float, list[PlanNode]]]= []
+        score : list[list[PlanTransformationOperator, float, list[PlanNode], list[TaskStep]]]= []
 
         # TO CHECK IF CORRECT, DO SOMETHING, THAT NEEDS A MOVETORSOHIGH, BUT RESULTS IN FAILURE; SINCE NOT REACHABLE
         for op in candidate_operators:
-            repaired_plan : list[PlanNode] = self._build_stabilized_task_list(remaining_task_steps, op)
-            expected_value = self._expected_value(task, repaired_task_list, scoretime_monitor)
-            score.append([op, expected_value, repaired_task_list])
+            repaired_task_list : list[TaskStep] = self._build_stabilized_task_list(list(remaining_task_steps), op)
+            expected_value : float= self._expected_value(task, repaired_task_list, scoretime_monitor)
+            repaired_plan : list[PlanNode]= self._build_stabilized_plan(remaining_plan_nodes, repaired_task_list, plan.plan.context)
+
+            score.append([op, expected_value, repaired_plan, repaired_task_list])
 
         maxed_task_list = max(score, key=lambda row: row[1])
 
@@ -95,22 +105,113 @@ class PlanStabilizer:
             transformed_task_list = task_list
         return transformed_task_list
 
-    def _build_stabilized_plan(self, plan_nodes: list[PlanNode], operator: PlanTransformationOperator) -> list[
-        TaskStep]:
-        if operator == PlanTransformationOperator.SKIP:
-            transformed_task_list = self.skip()
-        elif operator == PlanTransformationOperator.RETRY:
-            transformed_task_list = self.retry(plan_nodes)
-        elif operator == PlanTransformationOperator.REPLAN:
-            transformed_task_list = self.replan(plan_nodes)
-        elif operator == PlanTransformationOperator.REPLAN_WITH_ASSISTANCE:
-            transformed_task_list = self.replan_with_asstistance(plan_nodes)
-        elif operator == PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE:
-            transformed_task_list = self.substitute_with_assistance(plan_nodes)
-        else:
-            transformed_task_list = plan_nodes
-        return transformed_task_list
+    def _build_stabilized_plan(self, plan_nodes: list[PlanNode], task_list: list[TaskStep],
+                               context: Context) -> list[PlanNode]:
+        """
+        Reconciles a repaired task_list against the plan nodes that are still pending.
 
+        The repaired task_list is the source of truth: it is the remaining TaskSteps after a
+        transformation operator has been applied (e.g. RETRY prepends a PARK, REPLAN prepends
+        DETECT + PARK). This walks the task_list in order against the existing plan_nodes and:
+
+          - reuses the existing node when the next pending node already represents the step
+            (same ActionType) -- it keeps its already-built ActionDescription / world bindings,
+            so nothing already resolved gets thrown away,
+          - builds a fresh node from the TaskStep when the step has no counterpart, i.e. it was
+            inserted by the operator.
+
+        Steps that resolve to no executable node (e.g. DETECT today) are skipped, mirroring
+        generate_plan_task.
+
+        :param plan_nodes: The still-pending plan nodes (failed node onward).
+        :param task_list: The repaired remaining TaskSteps to realise as a plan.
+        :param context: Context providing the world used to build inserted nodes.
+        :return: An ordered list of PlanNodes matching the repaired task_list.
+        """
+        stabilized_plan: list[PlanNode] = []
+        node_cursor: int = 0
+
+        for step in task_list:
+            head_node = plan_nodes[node_cursor] if node_cursor < len(plan_nodes) else None
+            if head_node is not None and self._node_action_type(head_node) == step.action_type:
+                # already represented by an existing, already-built node -> reuse it
+                stabilized_plan.append(head_node)
+                node_cursor += 1
+            else:
+                # not represented -> inserted by the repair operator, build it from the TaskStep
+                built_node = self._build_node_for_step(step, context)
+                if built_node is not None:
+                    stabilized_plan.append(built_node)
+
+        return stabilized_plan
+
+    def _node_action_type(self, node: PlanNode) -> ActionType | None:
+        """
+        Maps an existing plan node back to its ActionType so it can be compared against a TaskStep.
+        Only ActionNodes carry an action; anything else returns None and is treated as a mismatch.
+        """
+        action = getattr(node, "action", None)
+        if isinstance(action, NavigateAction):
+            return ActionType.NAVIGATE
+        if isinstance(action, PickUpAction):
+            return ActionType.PICKUP
+        if isinstance(action, PlaceAction):
+            return ActionType.PLACE
+        if isinstance(action, ParkArmsAction):
+            return ActionType.PARK
+        if isinstance(action, MoveTorsoAction):
+            return ActionType.MOVE_TORSO
+        return None
+
+    def _build_node_for_step(self, step: TaskStep, context: Context) -> PlanNode | None:
+        """
+        Builds a single executable plan node from a TaskStep, mirroring generate_plan_task.
+        Returns None for steps that have no executable node (e.g. DETECT).
+        """
+        arm = Arms.LEFT
+        match step.action_type:
+            case ActionType.NAVIGATE:
+                action = navigation_subplan(target_location=step.location, world=context.world)
+            case ActionType.PICKUP:
+                action = pickup_subplan(object_annotation=step.object_annotations, arm=arm, world=context.world)
+            case ActionType.PLACE:
+                action = place_subplan(object_annotation=step.object_annotations, arm=arm,
+                                       target_location=step.location, world=context.world)
+            case ActionType.PARK:
+                action = ParkArmsAction(Arms.LEFT)
+            case ActionType.DETECT:
+                return None
+            case _:
+                raise NotImplementedError(f"Action type not implemented: {step.action_type}")
+        if action is None:
+            return None
+        return make_node(action)
+
+    def build_recovery_plan(self, task_list: list[TaskStep], context: Context) -> SequentialNode:
+        """
+        Realises the winning repaired task_list as a fresh, executable plan and returns it.
+
+        This is the "splice + re-perform" step: the original plan's root SequentialNode was
+        interrupted on failure and re-performing it would re-run the already-succeeded steps
+        (SequentialNode._perform performs *all* children unconditionally). So instead of
+        re-attaching to the interrupted root, we build a brand-new sequential containing only
+        the repaired remaining steps, with freshly built nodes (no cross-plan node membership
+        and no lingering interrupt flag). Performing it continues execution from the point of
+        failure onward.
+
+        An empty task_list (e.g. the SKIP operator) yields a childless plan whose perform()
+        is a no-op -- the task is simply abandoned, which is the intended SKIP behaviour.
+
+        :param task_list: The winning repaired remaining TaskSteps (maxed_task_list row entry).
+        :param context: Context providing the world used to build the nodes.
+        :return: A fresh SequentialNode ready to perform.
+        """
+        recovery_plan = sequential(children=[], context=context)
+        for step in task_list:
+            node = self._build_node_for_step(step, context)
+            if node is not None:
+                recovery_plan.add_child(node)
+        return recovery_plan
 
     def replan_with_asstistance(self, task_list : list[TaskStep]):
         # TODO
@@ -129,36 +230,19 @@ class PlanStabilizer:
         Potentially cutting TaskSteps, like the Navigation in order of minimizing failure.
         """
         task_list.insert(0, TaskStep(ActionType.PARK)) # defaulting to parked arms, before doing so.
+        task_list.insert(0, TaskStep(ActionType.DETECT))
         return task_list
 
     def substitute_with_assistance(self, task_list: list[TaskStep]):
-        """
-        Rawly replaning the entire task.
-        But with assistance, meaning a object gets moved, so the action works.
-
-        """
         # TODO
         return task_list
 
     def replan(self, task_list: list[TaskStep]):
-        """
-        The substitution, by requesting assistance.
-        If the system expects that the task still earns enough points or that the rest of the plan is still
-        executeable, then it can be assisted and continue its´ task. This is mostly useful, since execution time of new plans and navigation times
-        can strongly vary.
-        """
         task_list.insert(0, TaskStep(ActionType.PARK))
-        task_list.insert(0, TaskStep(ActionType.DETECT))
         return task_list
 
 
     def addition(self, task_list: list[TaskStep]):
-        """
-        The substitution, by requesting assistance.
-        If the system expects that the task still earns enough points or that the rest of the plan is still
-        executeable, then it can be assisted and continue its´ task. This is mostly useful, since execution time of new plans and navigation times
-        can strongly vary.
-        """
         return task_list
 
     def _evaluate_operators(self, task:Task,
@@ -270,12 +354,12 @@ class PlanStabilizer:
 
         return expected_value
 
-    def _stability_evaluation(self):
+    def _stability_evaluation_distance(self, original_plan : list[TaskStep], repaired_plan : list[TaskStep]):
         """
         The method is intended to compare two plans and tell the stability difference, with facotrs like:
         - distance (look paper)
         - expected time
         - probability
         """
-        #TODO
+
         pass

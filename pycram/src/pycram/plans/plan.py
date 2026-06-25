@@ -123,7 +123,7 @@ class Plan:
 
     def unfinished_node(self) -> PlanNode | None:
         for c in self.root.children:
-            if c.status == (TaskStatus.INTERRUPTED or TaskStatus.FAILED):
+            if c.status in (TaskStatus.INTERRUPTED, TaskStatus.FAILED):
                 return c
         return None
 

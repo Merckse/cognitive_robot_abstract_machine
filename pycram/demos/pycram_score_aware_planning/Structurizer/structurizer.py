@@ -1,3 +1,4 @@
+from common.types import Status
 from demos.pycram_score_aware_planning.common.types import Task
 
 """
@@ -9,11 +10,24 @@ between the probability and the possible score, to structurize all needed and kn
 class PlanStructurizer:
     def structurize(self, task_list: list[Task]) -> list[Task]:
         # sort by normalized score_per_seconds + probability (set by normalize_task_estimation)
+        skipped_tasks: list[Task] = []
+        for t in task_list:
+            for ts in t.task_steps:
+                if ts.action_outcome == Status.SKIPPED:
+                    skipped_tasks.append(t)
+                    task_list.remove(t)
+
         sorted_task_list = sorted(
             task_list,
-            key=lambda t: t.score_per_seconds *  t.probability,
+            key=lambda t: (t.score_per_seconds) *  (t.probability**2),
             reverse=True,
         )
+        sorted_skipped_tasks = sorted(
+            skipped_tasks,
+            key=lambda t: (t.score_per_seconds) *  (t.probability**2),
+            reverse=True,
+        )
+        sorted_task_list.extend(sorted_skipped_tasks)
         self.summary(sorted_task_list)
         return sorted_task_list
 
@@ -34,7 +48,7 @@ class PlanStructurizer:
             sps = getattr(task, "task_score_per_seconds", task.score_per_seconds)
             prob = getattr(task, "task_probability", task.probability)
             score = getattr(task, "task_score", task.score)
-            combined = round(sps + prob, 3)
+            combined = round(sps * (prob ** 2), 3)  # same key the sort uses, so the column matches the order
             lines.append(
                 f"{rank:<6} {task.id:<10} {score:>8} "
                 f"{sps:>8.3f} {prob:>9.3f} {combined:>10.3f}"
@@ -45,7 +59,7 @@ class PlanStructurizer:
             "=" * 60,
             "  Execute: " + " → ".join(f"Task {t.id}" for t in task_list),
             f"  Top pick: Task {best.id}  "
-            f"(score/s={best_sps:.3f}  p={best_prob:.3f}  combined={best_sps + best_prob:.3f})",
+            f"(score/s={best_sps:.3f}  p={best_prob:.3f}  combined={best_sps * (best_prob**2):.3f})",
         ]
         print("\n".join(lines))
 

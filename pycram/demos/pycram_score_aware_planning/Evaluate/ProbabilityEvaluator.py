@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 
 from numpy.ma.core import product
 
-from common.types import TaskStep
+from common.types import TaskStep, ActionType
 from helper_methods import NAVIGATION_POSES
 from pycram.datastructures.dataclasses import Context
 from pycram.locations.costmaps import OccupancyCostmap
@@ -85,75 +85,121 @@ class RobotProbability:
     def record(self, **kwargs):
         pass
 
-    # noinspection D
-    def estimate(self, context : Context, task_list: list[Task], probability_threshold: float = 0.2) -> list[Task]:
+    def estimate(self, context : Context, task_list: list[Task], found_objects: dict | None = None,
+                 probability_threshold: float = 0.2) -> list[Task]:
         """
-        Multiplies per-action base probabilities across each task's steps, then
-        returns the resulting list sorted descending by expected probability.
+        Multiplies per-action base probabilities across each task's steps and stores the joint
+        probability on every task.
 
-        :param task_list: list of tasks
-        :return: ExpectedProbabilityModel list sorted best-first.
+        Uncertainty is driven by *belief* (`found_objects`), not the ground-truth world: a step
+        whose object has not been perceived anywhere yet is charged an EXPLORE -- its probability
+        is discounted (multiplied) by the explore find-probability, and the step is flagged
+        `uncertain` so the score/time side can charge the search cost. Spatial penalties (distance,
+        clutter) are only folded in once the object is actually known.
+
+        :param context: world + robot context.
+        :param task_list: tasks to evaluate.
+        :param found_objects: perceived-object belief (annotation instance -> location). Empty/None = nothing perceived yet.
+        :param probability_threshold: below this, the step is marked assisted and reset to 1.
+        :return: the same tasks with probability fields filled in.
         """
         world = context.world
         robot = context.robot
+        found = found_objects or {}
 
         for task in task_list:
             temp_robot = deepcopy(robot)
-            # setting probability for evaluation of single task
             joint_probability = 1
             for step in task.task_steps:
-                # Base probabilities for later re-assertion.
-                step_probability: float = 1
-                default_probability : float= 0.95 # reevaluate on known data
                 object_annotation: SemanticAnnotation = step.object_annotations
                 location: str = step.location
                 action_type = step.action_type
 
-
                 if step.action_outcome == Status.SUCCESS:
                     step_probability = 1
-                # print(task.task_steps)
-                # Retrieving values
-                elif location not in ("", None):
-                    step_probability = evaluation(action_type, object_annotation, location).probability
-                    if location in NAVIGATION_POSES:
-                        x, y, _ = NAVIGATION_POSES[location]
-                        temp_robot.root.global_pose.x = x
-                        temp_robot.root.global_pose.y = y
-
-                elif object_annotation not in ("", None):
-                    # evaluating the concatination of these actions into a wholeistic task
-                    step_probability = evaluation(action_type, object_annotation, location).probability
-
-                    try:
-                        object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
-                    except:
-                        step.probability = step_probability
-                        joint_probability = round(joint_probability * step_probability, 2)
-                        continue
-
-                    step_probability = step_probability * self.p_robot_distance(target_body=object_body, robot_body=temp_robot.bodies[0])
-
-                    # TODO: add finding close-by objects of all kinds - not just by on the table ornot
-                    # Only can find cluttered objects that are near by, if they are on same surface
-                    if find_surface_of_object(body=object_body, context=context) is not None:
-                        step_probability = step_probability * self.p_clutter_count(target_body=object_body)
-                       # self.p_clutter_proximity() TODO: retrieve list of closest objects
                 else:
-                    step_probability = evaluation(action_type, object_annotation, location).probability
+                    step_probability = evaluation(action_type, object_annotation, location).probability * (0.5/step.action_failures)
+
+                    # belief-driven uncertainty: object not perceived anywhere yet -> charge an EXPLORE
+                    step.uncertain = (object_annotation is not None
+                                      and not any(isinstance(seen, object_annotation) for seen in found))
+                    if step.uncertain:
+                        # discount by the explore find-probability (multiplicative, not additive)
+                        step_probability *= evaluation(ActionType.EXPLORE).probability
+                    else:
+                        # location known -> place the robot at the approach pose so distance is measured from there
+                        if location in NAVIGATION_POSES:
+                            x, y, _ = NAVIGATION_POSES[location]
+                            temp_robot.root.global_pose.x = x
+                            temp_robot.root.global_pose.y = y
+                        # fold in spatial penalties (distance, clutter) only when we can actually locate the body
+                        if object_annotation is not None:
+                            try:
+                                object_body: Body | None = world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
+                            except Exception:
+                                object_body = None
+                            if object_body is not None:
+                                step_probability *= self.p_robot_distance(target_body=object_body, robot_body=temp_robot.bodies[0])
+                                # clutter only matters for objects sharing a surface
+                                if find_surface_of_object(body=object_body, context=context) is not None:
+                                    step_probability *= self.p_clutter_count(target_body=object_body)
 
                 if step_probability < probability_threshold:
                     step.action_assisted = True
                     step_probability = 1
 
-                # Asserting step values
                 step.action_probability = step_probability
                 joint_probability = round(joint_probability * step_probability, 2)
 
-            # asserting values
             task.probability = joint_probability
 
         return task_list
+
+    # --- old_estimate kept for reference; superseded by the belief-driven estimate above ---
+    # def old_estimate(self, context: Context, task_list: list[Task], probability_threshold: float = 0.2) -> list[Task]:
+    #     world = context.world
+    #     robot = context.robot
+    #     for task in task_list:
+    #         temp_robot = deepcopy(robot)
+    #         joint_probability = 1
+    #         for step in task.task_steps:
+    #             step_probability: float = 1
+    #             object_annotation = step.object_annotations
+    #             location = step.location
+    #             action_type = step.action_type
+    #             if step.action_outcome == Status.SUCCESS:
+    #                 step_probability = 1
+    #             elif location not in ("", None):
+    #                 step_probability = evaluation(action_type, object_annotation, location).probability
+    #                 if location in NAVIGATION_POSES:
+    #                     x, y, _ = NAVIGATION_POSES[location]
+    #                     temp_robot.root.global_pose.x = x
+    #                     temp_robot.root.global_pose.y = y
+    #             elif object_annotation not in ("", None):
+    #                 step_probability = evaluation(action_type, object_annotation, location).probability
+    #                 # spatial penalties / explore fallback (object body lookup against ground-truth world)
+    #                 try:
+    #                     object_body = world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
+    #                 except Exception:
+    #                     object_body = None
+    #                     step.uncertain = True
+    #                     evaluation_explore = evaluation(ActionType.EXPLORE)
+    #                 if object_body is None:
+    #                     step.probability = step_probability + evaluation_explore.probability
+    #                     joint_probability = round(joint_probability * step_probability, 2)
+    #                     continue
+    #                 step_probability *= self.p_robot_distance(target_body=object_body, robot_body=temp_robot.bodies[0])
+    #                 if find_surface_of_object(body=object_body, context=context) is not None:
+    #                     step_probability *= self.p_clutter_count(target_body=object_body)
+    #             else:
+    #                 step_probability = evaluation(action_type, object_annotation, location).probability
+    #             if step_probability < probability_threshold:
+    #                 step.action_assisted = True
+    #                 step_probability = 1
+    #             step.action_probability = step_probability
+    #             joint_probability = round(joint_probability * step_probability, 2)
+    #         task.probability = joint_probability
+    #     return task_list
 
     def get_probability_task_list(self, task_list : list[TaskStep]) -> float:
         return product(t.action_probability for t in task_list)

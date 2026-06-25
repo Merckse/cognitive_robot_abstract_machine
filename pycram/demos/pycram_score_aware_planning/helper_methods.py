@@ -5,6 +5,7 @@ from typing import Optional
 
 from common.types import Status
 from common.values import evaluation
+from probabilistic_model.bayesian_network.bayesian_network import Root
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
 from pycram.datastructures.grasp import GraspDescription
@@ -114,7 +115,7 @@ def generic_object_spawner(
         names: list[str] ,
         pose : list[tuple[float,float,float]] ,
         world : World,
-        color: Optional[Color] = None,
+        color: Optional[Color] = Color.WHITE(),
 ):
     i = 0
     for name in names:
@@ -126,7 +127,6 @@ def generic_object_spawner(
 
         object_to_spawn = spawn_semantic_with_body(semantic_type=name,name=name.lower(),pose=pose_, scale=scale_,world=world, color = color)
         i+=1
-    return object_to_spawn
 
 
 def perceive_and_spawn_all_objects(world: World):
@@ -384,9 +384,10 @@ def place_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_locat
         # TODO: add human assisted place
         return None
 
-
+    object = world.get_semantic_annotations_by_type(object_annotation)[0]
+    object_z_half = world.get_semantic_annotations_by_type(object_annotation)[0].scale.z/2
     x, y = free_spot
-    z = matched_surface.z_surface
+    z = matched_surface.z_surface + (object_z_half + 0.002)
     if z > 1:
         z = 1
 
@@ -506,6 +507,52 @@ def generate_plan_task(task: Task, context: Context) -> PlanNode:
 
     return plan
 
+def generate_plan_taskstep_list(taskstep_list: list[TaskStep], context: Context) -> PlanNode:
+    from pycram.plans.factories import make_node
+    plan = sequential(children=[], context=context)
+    arm = Arms.LEFT
+    action = None
+    last_pickup_object: Optional[SemanticAnnotation] = None
+    action_list : list[ActionDescription] = []
+    for task_step in taskstep_list:
+        # TODO: add assisted tasks
+        if task_step.action_assisted:
+            match task_step.action_type:
+                case ActionType.NAVIGATE:
+                    action = navigation_subplan(target_location=task_step.location, world=context.world)
+                case ActionType.PICKUP:
+                    last_pickup_object = task_step.object_annotations
+                    action = pickup_subplan(object_annotation=task_step.object_annotations, arm=arm, world=context.world)
+                case ActionType.PLACE:
+                    action = place_subplan(object_annotation=last_pickup_object, arm=arm,
+                                           target_location=task_step.location, world=context.world)
+                case ActionType.PARK:
+                    action = ParkArmsAction(Arms.LEFT)
+                case ActionType.DETECT:
+                    pass
+                case _:
+                    raise NotImplementedError(f"Action type not implemented: {task_step.action_type}")
+        else:
+            match task_step.action_type:
+                case ActionType.NAVIGATE:
+                    action = navigation_subplan(target_location=task_step.location, world=context.world)
+                case ActionType.PICKUP:
+                    last_pickup_object : SemanticAnnotation= task_step.object_annotations
+                    action = pickup_subplan(object_annotation=last_pickup_object, arm=arm, world=context.world)
+                case ActionType.PLACE:
+                    action = place_subplan(object_annotation=last_pickup_object, arm=arm, target_location=task_step.location, world=context.world)
+                case ActionType.PARK:
+                    action = ParkArmsAction(Arms.LEFT)
+                case ActionType.DETECT:
+                    pass
+                case _:
+                    raise NotImplementedError(f"Action type not implemented: {task_step.action_type}")
+        if action is not None:
+            # action_list.append(action)
+            plan.add_child(make_node(action))
+
+    return plan
+
 def _quat(yaw: float) -> tuple[float, float, float, float]:
     return (0.0, 0.0, math.sin(yaw / 2), math.cos(yaw / 2))
 
@@ -517,8 +564,10 @@ def find_surface_of_object(context:Context, body: Body) -> HasSupportingSurface 
             return surface
     return None
 
-# name → (x, y, quaternion(x,y,z,w))
-NAVIGATION_POSES: dict[str, tuple[float, float, tuple[float, float, float, float]]] = {
+# TODO : TO POSE
+NAVIGATION_POSES: dict[str,
+tuple[float, float,
+tuple[float, float, float, float]]] = {
     "cooking_table": (1.3, 4.6, _quat( math.pi / 2)),   # south of table, facing north
     "dining_table":  (2.6, 4.1, _quat( math.pi / 2)),   # south of table, facing north
     "table":         (3.5, 1.8, _quat(-math.pi / 2)),   # north of table, facing south
@@ -546,12 +595,7 @@ def get_remaining_task_steps(task: Task) -> list[TaskStep]:
 
     return failed_taskstep
 
-
-def plan_to_TaskSteps(plan: SequentialNode) -> list[TaskStep]:
-    sub_nodes = plan.plan.root.children
-    return []
-    # task_steps = []
-    # for sub_node in sub_nodes:
-    #     match sub_node.action_type:
-    #         case ActionType.NAVIGATE:
-    #     isinstance(sub_node.action, MoveTorsoAction)
+def nav_time(robot_pose: Point3, to_loc: str, speed: float = 0.5) -> float:
+    (x1, y1) = robot_pose.x, robot_pose.y
+    (x2, y2) = NAVIGATION_POSES[to_loc][:2]
+    return math.dist((x1, y1), (x2, y2)) / speed

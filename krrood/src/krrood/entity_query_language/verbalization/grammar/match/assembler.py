@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing_extensions import List, Optional
 
+from krrood.entity_query_language.core.base_expressions import SymbolicExpression
 from krrood.entity_query_language.core.mapped_variable import Attribute
 from krrood.entity_query_language.query.match import Match
 from krrood.entity_query_language.verbalization.fragments.base import (
@@ -29,6 +30,7 @@ from krrood.entity_query_language.verbalization.grammar.match.planner import (
 )
 from krrood.entity_query_language.verbalization.vocabulary.english import (
     Absence,
+    Articles,
     Conjunctions,
     Copulas,
     Directive,
@@ -55,7 +57,7 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
     Reference: Gatt & Reiter (2009), SimpleNLG — surface realisation.
 
     >>> verbalize_expression(underspecified(Robot)(name="R2", battery=80))
-    "Generate a Robot given that name and battery of the Robot are 'R2' and 80 respectively"
+    "Generate a Robot given that the name and battery of the Robot are 'R2' and 80 respectively"
     """
 
     planner = MatchPlanner
@@ -68,7 +70,7 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
             selection as the discourse subject (*"its …"*).
 
         >>> verbalize_expression(underspecified(Mission)(assigned_to=underspecified(Robot)(name="R2")))
-        "Generate a Mission given that name of the Robot to which it is assigned is 'R2'"
+        "Generate a Mission given that the name of the Robot to which it is assigned is 'R2'"
         """
         predict_groups = [group for group in plan.groups if group.predicted]
         inline_predict = self._inline_predict(predict_groups, plan)
@@ -106,7 +108,7 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         block is used instead — see :meth:`_predict_block`).
 
         >>> verbalize_expression(underspecified(Robot)(name="R2", battery=...))
-        "Generate a Robot and predict its battery value given that name of the Robot is 'R2'"
+        "Generate a Robot and predict its battery value given that its name is 'R2'"
         """
         if len(predict_groups) != 1:
             return None
@@ -132,7 +134,7 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         (*"x, y, and z of its position"*, or *"its <attrs>"* for the selection's own).
 
         >>> verbalize_expression(underspecified(Mission)(assigned_to=underspecified(Robot)(battery=...)))
-        'Generate a Mission and predict battery of the Robot to which it is assigned'
+        'Generate a Mission and predict the battery of the Robot to which it is assigned'
         """
         points = [self._predict_point(group, plan) for group in predict_groups]
         return BlockFragment(
@@ -152,20 +154,14 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         wraps these points under the shared *"and predict"* header.
 
         >>> verbalize_expression(underspecified(Mission)(assigned_to=underspecified(Robot)(battery=...)))
-        'Generate a Mission and predict battery of the Robot to which it is assigned'
+        'Generate a Mission and predict the battery of the Robot to which it is assigned'
         """
-        attribute_list = self._attribute_list(
-            [assignment.attribute for assignment in group.predicted]
-        )
+        attributes = [assignment.attribute for assignment in group.predicted]
         if group.object._id_ == plan.selection._id_:
-            return PhraseFragment(parts=[Pronouns.ITS.as_fragment(), attribute_list])
-        return PhraseFragment(
-            parts=[
-                attribute_list,
-                Prepositions.OF.as_fragment(),
-                self.context.child(group.object),
-            ]
-        )
+            return PhraseFragment(
+                parts=[Pronouns.ITS.as_fragment(), self._attribute_list(attributes)]
+            )
+        return self._genitive_attribute_phrase(attributes, group.object)
 
     # ── given that ───────────────────────────────────────────────────────────
 
@@ -178,7 +174,7 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         of the Robot are 'R2' and 80 respectively"* point) and any free-condition statements.
 
         >>> verbalize_expression(underspecified(Robot)(name="R2", battery=80))
-        "Generate a Robot given that name and battery of the Robot are 'R2' and 80 respectively"
+        "Generate a Robot given that the name and battery of the Robot are 'R2' and 80 respectively"
         """
         points: List[Fragment] = []
         for group in plan.groups:
@@ -187,7 +183,11 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         points += ConditionAssembler(self.context).as_statements(plan.other_conditions)
         if not points:
             return None
-        return BlockFragment(header=Keywords.GIVEN_THAT.as_fragment(), items=points)
+        return BlockFragment(
+            header=Keywords.GIVEN_THAT.as_fragment(),
+            items=points,
+            conjunction=Conjunctions.AND.as_fragment(),
+        )
 
     def _concrete_points(self, group: AttributeGroup) -> List[Fragment]:
         """:return: The given-that points for a group's concrete assignments. Atomic scalar values
@@ -199,7 +199,7 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         subject/object and cannot fold into the coordination).
 
         >>> verbalize_expression(underspecified(Robot)(name="R2", battery=None))
-        "Generate a Robot given that name of the Robot is 'R2', the Robot has no battery"
+        "Generate a Robot given that its name is 'R2', and the Robot has no battery"
         """
         present = [a for a in group.concrete if not is_none_literal(a.value)]
         absent = [a for a in group.concrete if is_none_literal(a.value)]
@@ -207,7 +207,9 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         points: List[Fragment] = []
         if grouped:
             points.append(self._group_point(group, grouped))
-        points += [self._group_point(group, [a]) for a in singles]
+        points += ConditionAssembler(self.context).as_statements(
+            [a.comparator for a in singles]
+        )
         if absent:
             points.append(self._absence_point(group, absent))
         return points
@@ -220,7 +222,7 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         alone (a lone value needs no *"respectively"*, and too many would be unreadable to zip).
 
         >>> verbalize_expression(underspecified(Robot)(name="R2", battery=80, operational=True))
-        "Generate a Robot given that name, battery, and operational of the Robot are 'R2', 80, and True respectively"
+        "Generate a Robot given that the name, battery, and operational of the Robot are 'R2', 80, and True respectively"
         """
         atomic = [a for a in present if is_atomic_value(a.value)]
         if 2 <= len(atomic) <= _MAX_RESPECTIVELY:
@@ -242,39 +244,50 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         )
 
     def _group_point(self, group: AttributeGroup, concrete: List) -> Fragment:
-        """:return: *"x, y, and z of the <object> are 1, 2, and 3 respectively"* for several
-        attributes, or *"x of the <object> is 1"* for one.
+        """:return: *"x, y, and z of the <object> are 1, 2, and 3 respectively"* for the several
+        atomic-valued attributes coordinated under one point.
 
-        Its contribution is the single given-that point and its copula agreement: with one attribute
-        it takes the *"x of the <object> is 1"* branch (singular *"is"*, no *"respectively"*), which
-        is why this lone-attribute example reads *"name of the Robot is 'R2'"*.
+        Its contribution is the single coordinated given-that point and its plural copula agreement —
+        the *"the name and battery of the Robot are 'R2' and 80 respectively"* span. Ungrouped singles do
+        not pass through here: they are said via the shared comparator-predicate path (see
+        :meth:`_concrete_points`), so a lone assignment reads *"its name is 'R2'"*.
 
-        >>> verbalize_expression(underspecified(Robot)(name="R2"))
-        "Generate a Robot given that name of the Robot is 'R2'"
+        >>> verbalize_expression(underspecified(Robot)(name="R2", battery=80))
+        "Generate a Robot given that the name and battery of the Robot are 'R2' and 80 respectively"
         """
-        attribute_list = self._attribute_list([a.attribute for a in concrete])
-        object_phrase = self.context.child(group.object)
-        parts: List[Fragment] = [
-            attribute_list,
-            Prepositions.OF.as_fragment(),
-            object_phrase,
-        ]
-        if len(concrete) == 1:
-            parts += [
-                Copulas.IS.as_fragment(),
-                self.context.child(concrete[0].value, as_value=True),
-            ]
-        else:
-            value_list = oxford_comma(
-                [self.context.child(a.value, as_value=True) for a in concrete],
-                Conjunctions.AND.as_fragment(),
-            )
-            parts += [
+        value_list = oxford_comma(
+            [self.context.child(a.value, as_value=True) for a in concrete],
+            Conjunctions.AND.as_fragment(),
+        )
+        return PhraseFragment(
+            parts=[
+                self._genitive_attribute_phrase(
+                    [a.attribute for a in concrete], group.object
+                ),
                 Copulas.ARE.as_fragment(),
                 value_list,
                 Keywords.RESPECTIVELY.as_fragment(),
             ]
-        return PhraseFragment(parts=parts)
+        )
+
+    def _genitive_attribute_phrase(
+        self, attributes: List[Attribute], owner: SymbolicExpression
+    ) -> Fragment:
+        """:return: the definite genitive *"the <attrs> of <owner>"* an object's attributes take when
+        not pronominalised (*"the name and battery of the Robot"*) — the shared form of the grouped
+        *"respectively"* point and a non-selection predict point.
+
+        >>> verbalize_expression(underspecified(Robot)(name="R2", battery=80))
+        "Generate a Robot given that the name and battery of the Robot are 'R2' and 80 respectively"
+        """
+        return PhraseFragment(
+            parts=[
+                Articles.THE.as_fragment(),
+                self._attribute_list(attributes),
+                Prepositions.OF.as_fragment(),
+                self.context.child(owner),
+            ]
+        )
 
     # ── where ────────────────────────────────────────────────────────────────
 
@@ -286,12 +299,16 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         bound pair into a *between* is the verbalizer's concern, not this one's.
 
         >>> verbalize_expression(underspecified(Robot)(name="R2").where(variable(Robot, []).battery > 50))
-        "Generate Robot 1 given that name of Robot 1 is 'R2', where the battery of Robot 2 is greater than 50"
+        "Generate Robot 1 given that the name of Robot 1 is 'R2', where the battery of Robot 2 is greater than 50"
         """
         if not plan.where_conditions:
             return None
         points = ConditionAssembler(self.context).as_statements(plan.where_conditions)
-        return BlockFragment(header=Keywords.WHERE.as_fragment(), items=points)
+        return BlockFragment(
+            header=Keywords.WHERE.as_fragment(),
+            items=points,
+            conjunction=Conjunctions.AND.as_fragment(),
+        )
 
     # ── shared ───────────────────────────────────────────────────────────────
 
@@ -303,7 +320,7 @@ class MatchAssembler(Assembler[Match, MatchPlan]):
         it by :meth:`_group_point`.
 
         >>> verbalize_expression(underspecified(Robot)(name="R2", battery=80))
-        "Generate a Robot given that name and battery of the Robot are 'R2' and 80 respectively"
+        "Generate a Robot given that the name and battery of the Robot are 'R2' and 80 respectively"
         """
         fragments = [
             RoleFragment.for_attribute(

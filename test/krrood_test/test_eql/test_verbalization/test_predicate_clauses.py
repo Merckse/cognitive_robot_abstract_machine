@@ -34,6 +34,9 @@ from krrood.entity_query_language.verbalization.fragments.base import (
 )
 from krrood.entity_query_language.verbalization.fragments.features import Number
 from krrood.entity_query_language.verbalization.fragments.roles import SemanticRole
+from krrood.entity_query_language.verbalization.rendering.realization import (
+    realize_tree,
+)
 from krrood.entity_query_language.verbalization.grammar.conditions.predication import (
     negate_clause,
 )
@@ -49,7 +52,6 @@ from krrood.entity_query_language.verbalization.vocabulary.parts_of_speech impor
     Preposition,
     Verb,
 )
-
 
 # ── verb morphology ──────────────────────────────────────────────────────────────
 
@@ -79,9 +81,12 @@ def test_morphology_realizes_verb_do_support_negation():
     assert MorphologyProcessor().rewrite(_verb_leaf("work", negated=True)).text == (
         "does not work"
     )
-    assert MorphologyProcessor().rewrite(
-        _verb_leaf("work", number=Number.PLURAL, negated=True)
-    ).text == "do not work"
+    assert (
+        MorphologyProcessor()
+        .rewrite(_verb_leaf("work", number=Number.PLURAL, negated=True))
+        .text
+        == "do not work"
+    )
 
 
 def test_morphology_realizes_negated_copula():
@@ -103,22 +108,25 @@ def test_verb_element_is_a_verb_role_leaf_carrying_the_lemma():
 
 
 def test_clause_joins_constituents_in_order():
-    built = clause(Noun("an Employee"), Verb("work"), Preposition.IN, Noun("a Department"))
-    # Pre-morphology the verb leaf still holds the lemma.
-    assert flatten_fragment_to_plain_text(built) == "an Employee work in a Department"
+    built = clause(Noun("Employee"), Verb("work"), Preposition.IN, Noun("Department"))
+    # Realization lowers the noun phrases (articles) and inflects the verb for agreement.
+    assert (
+        flatten_fragment_to_plain_text(realize_tree(built))
+        == "an Employee works in a Department"
+    )
 
 
 # ── negate_clause (feature marking) ──────────────────────────────────────────────
 
 
 def test_negate_clause_marks_the_verb_head():
-    built = clause(Noun("an Employee"), Verb("work"), Preposition.IN, Noun("a Department"))
+    built = clause(Noun("Employee"), Verb("work"), Preposition.IN, Noun("Department"))
     negated = negate_clause(built)
     assert negated.parts[1].negated is True
 
 
 def test_negate_clause_returns_none_without_a_verb_or_copula():
-    built = clause(Noun("an Employee"), Noun("a Department"))
+    built = clause(Noun("Employee"), Noun("Department"))
     assert negate_clause(built) is None
 
 

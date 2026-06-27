@@ -166,9 +166,9 @@ class CoindexedNaturalParts:
 
 # ── the conjunct-reduction pass (high-level entry) ──────────────────────────
 
-#: One node of a reduced conjunct list: an un-folded expression (e.g. a comparison) or a fold
-#: artifact the reducer produced.
 FoldNode: TypeAlias = Union[SymbolicExpression, RangeFold, CoindexedFold]
+"""A node the verbalization fold dispatches over: either a real EQL expression or a synthetic
+coordination artifact (:class:`RangeFold` / :class:`CoindexedFold`) produced by conjunct reduction."""
 
 ConjunctList: TypeAlias = List[FoldNode]
 

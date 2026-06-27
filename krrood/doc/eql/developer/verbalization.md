@@ -19,6 +19,8 @@ This guide explains the architecture of the EQL verbalization subsystem for deve
 
 The verbalization subsystem translates any EQL symbolic expression into a human-readable English string (or a structured fragment tree that can be rendered in plain text, ANSI colour, or HTML).
 
+The class and attribute names that appear in the generated text keep a reference to where they came from, so the ANSI and HTML renderers can turn them into hyperlinks back to the API documentation — clicking a name in a verbalization jumps to that class's or attribute's Sphinx AutoAPI page. This means the generated English is not just prose but a navigable index into the API docs (see {py:class}`~krrood.entity_query_language.verbalization.rendering.source_link_resolver.SourceLinkResolver`).
+
 The single entry point is {py:class}`~krrood.entity_query_language.verbalization.pipeline.VerbalizationPipeline`, with {py:func}`~krrood.entity_query_language.verbalization.pipeline.verbalize_expression` as the plain-text shortcut:
 
 ```python

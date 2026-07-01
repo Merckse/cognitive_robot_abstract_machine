@@ -22,6 +22,7 @@ from typing_extensions import (
     Type,
     TYPE_CHECKING,
     Optional,
+    TypeVar,
     Union,
 )
 
@@ -244,6 +245,14 @@ class WrappedField:
 
     @cached_property
     def type_endpoint(self) -> Type:
+        """
+        The type this field ultimately points to: the contained type for containers and optionals,
+        the lowest common ancestor for unions, otherwise the resolved type.
+
+        A surviving ``TypeVar`` is returned as-is so generic-classification predicates such as
+        :attr:`is_underspecified_generic` keep seeing the type variable. Use
+        :attr:`resolved_type_endpoint` when a concrete class is required.
+        """
         if self.is_container or self.is_optional:
             return self.contained_type
         resolved = self.resolved_type
@@ -253,6 +262,20 @@ class WrappedField:
             if lowest_common_ancestor is not None:
                 return lowest_common_ancestor
         return resolved
+
+    @cached_property
+    def resolved_type_endpoint(self) -> Type:
+        """
+        The :attr:`type_endpoint` with a bounded ``TypeVar`` reduced to its bound.
+
+        This is the concrete class a type variable stands for, needed wherever a real type is
+        required rather than the variable itself (e.g. ORM column and relationship generation). An
+        unbounded ``TypeVar`` is returned unchanged.
+        """
+        endpoint = self.type_endpoint
+        if isinstance(endpoint, TypeVar) and endpoint.__bound__ is not None:
+            return endpoint.__bound__
+        return endpoint
 
     @cached_property
     def is_role_taker(self) -> bool:

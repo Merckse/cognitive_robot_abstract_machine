@@ -99,6 +99,8 @@ class RobotScorer:
                         base_score : int = 0
 
 
+
+
                 # calculation of total scores
                 total_score += base_score
                 total_time += expected_time

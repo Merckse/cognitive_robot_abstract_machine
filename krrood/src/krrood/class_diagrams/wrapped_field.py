@@ -97,7 +97,7 @@ class WrappedField:
     def __eq__(self, other):
         return (self.clazz.clazz, self.field) == (
             other.clazz.clazz,
-            other.field,
+            other.wrapped_field,
         )
 
     def __repr__(self):

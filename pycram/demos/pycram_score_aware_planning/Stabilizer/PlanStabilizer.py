@@ -309,18 +309,19 @@ class PlanStabilizer:
         Estimates the value of continuing a given task plan from the current point forward.
 
         The formula is:
-            expected_value = expected_score * time_ratio
+            expected_value = expected_reward * time_ratio - expected_penalty
 
         where:
-            expected_score = Σ (probability * score) - (|penalty| * (1 - probability))
-                             summed over all remaining task steps. This is the classic
-                             probability-weighted reward minus the expected penalty for failure.
+            expected_reward  = Σ (probability * score)           over all remaining task steps
+            expected_penalty = Σ (|penalty| * (1 - probability)) over all remaining task steps
 
-            time_ratio     = clamp(task_time_remaining / expected_time, 0, ∞)
-                             Scales the score down the more overdue the task is. A ratio of 1
-                             means the task is exactly on schedule; below 1 means we are running
-                             behind and the achievable score shrinks proportionally; 0 means the
-                             task budget is fully exhausted and no further value can be realised.
+            time_ratio       = clamp(task_time_remaining / expected_time, 0, ∞)
+                               Discounts only the achievable REWARD the more overdue the task is:
+                               ratio 1 = on schedule, below 1 = running behind (reward shrinks
+                               proportionally), 0 = budget exhausted. The penalty is charged in full
+                               regardless of time -- so an overdue, penalty-heavy plan converges to
+                               -expected_penalty (genuinely negative) instead of being "forgiven"
+                               toward 0 as time is wasted.
 
         A negative expected_value means the plan is more likely to incur penalties than to earn
         points — the stabilizer should prefer SKIP or operator alternatives in that case.
@@ -330,7 +331,6 @@ class PlanStabilizer:
         :param scoretime_monitor: Provides task-level and global time-budget queries.
         :return: Scalar expected value — positive is profitable, negative means cut losses.
         """
-        expected_score: float = 0
         # Evaluate the possible score, that can be gained and how much time has been spent so far.
 
         # retrieving the time it took and we are already overdue, to see if it is worth it
@@ -346,11 +346,14 @@ class PlanStabilizer:
         # possible_task_score = composite_evaluator.get_score_task_list(task_list=task_list)
         # possible_task_possibility = composite_evaluator.get_probability_task_list(task_list=task_list)
 
+        expected_reward: float = 0
+        expected_penalty: float = 0
         for t in task_list:
             profile = evaluation(t.action_type, t.object_annotations, t.location)
-            expected_score += ((profile.probability * profile.score) -
-                               (abs(profile.penalty) * (1 - profile.probability)))
-        expected_value : float= expected_score * time_ratio # expected_Score multiplied, by
+            expected_reward += profile.probability * profile.score
+            expected_penalty += abs(profile.penalty) * (1 - profile.probability)
+
+        expected_value: float = expected_reward * time_ratio - expected_penalty
 
         return expected_value
 

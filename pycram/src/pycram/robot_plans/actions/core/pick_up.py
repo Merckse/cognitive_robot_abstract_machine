@@ -159,13 +159,13 @@ class PickUpAction(ActionDescription):
     """
 
     def execute(self) -> None:
-        errors = [ObjectNotGrasped, CollisionViolatedError, ObjectDoesntFitException]
-        n = 100
-        failure = random.randint(0,n)
-        error_type = random.randint(0,3)
-        failure_range = n * self.probability
-        if failure < failure_range:
-            raise errors[error_type]
+        # errors = [ObjectNotGrasped, CollisionViolatedError, ObjectDoesntFitException]
+        # n = 100
+        # failure = random.randint(0,n)
+        # error_type = random.randint(0,3)
+        # failure_range = n * self.probability
+        # if failure < failure_range:
+        #     raise errors[error_type]
 
         self.add_subplan(
             sequential(

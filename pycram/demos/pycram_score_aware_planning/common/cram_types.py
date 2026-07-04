@@ -70,6 +70,8 @@ class TaskStep:
     action_outcome : Status = Status.NOT_ASSIGNED
     action_probability : float= 1
     action_score : float = 0
+    action_expected_score : float = 0
+    action_expected_score_per_seconds : float = 0
     action_penatly: int = 0
     action_time : float = 0
     action_assisted: bool = False
@@ -89,6 +91,7 @@ class Task:
     action_list: list[ActionDescription] = field(default_factory=list)
     uncertain: bool = True # Meaning, if not all informations to a task are known, then there has to be something done
     status : Status = Status.NOT_ASSIGNED
+    cum_expected_score : float = 0
     score: int = 0
     normalized_score : float = 0
     penatly: int = 0

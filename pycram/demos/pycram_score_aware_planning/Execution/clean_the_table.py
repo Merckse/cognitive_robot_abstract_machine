@@ -208,7 +208,7 @@ def main():
     generic_object_spawner(["Cup"], [(2.33475, 5.215, 0.83)], world, color=Color.BEIGE())
 
     while task_list != []:
-        evaluated_tasks: list[Task] = evaluator.estimate(context=context, task_list=task_list, found_objects=found_objects)
+        evaluated_tasks: list[Task] = evaluator.estimate(context=context, task_list=task_list, found_objects=found_objects, risk_aversion=1)
         task_list: list[Task] = structurizer.structurize(task_list=evaluated_tasks)
 
         current_task = task_list[0]

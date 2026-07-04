@@ -3,7 +3,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from common.cram_types import Status, TaskStep
+from common.cram_types import Status, TaskStep, ActionType
 from demos.pycram_score_aware_planning.common.cram_types import (
     Task, ScoreEvent,
 )
@@ -88,13 +88,15 @@ class RobotScorer:
                     step.action_type, step.object_annotations, step.location
                     )
                     base_score = step_profile.score
+                    penalty = step_profile.penalty
                     expected_time = step_profile.time
+
+                    if step.uncertain:
+                        expected_time += evaluation(ActionType.EXPLORE).time
 
                     if step.action_assisted:
                         outcome = Status.SUCCESS_WITH_ASSIST
                         base_score : int = 0
-
-
 
 
                 # calculation of total scores

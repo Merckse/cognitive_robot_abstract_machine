@@ -1,5 +1,6 @@
 import logging
 import math
+import os
 from time import sleep
 from typing import Optional
 
@@ -18,6 +19,7 @@ from pycram.robot_plans.actions.core.pick_up import PickUpAction
 from pycram.robot_plans.actions.core.placing import PlaceAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
 from demos.pycram_score_aware_planning.common.cram_types import Task, ActionType, SurfaceSpace, TaskStep
+from semantic_digital_twin.adapters.mesh import STLParser
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import WorldEntityNotFoundError
 from semantic_digital_twin.reasoning.predicates import is_supported_by
@@ -120,12 +122,28 @@ def generic_object_spawner(
     i = 0
     for name in names:
         pose_xyz = pose[i]
-        pose_point3_ : Point3= Point3(x=pose_xyz[0], y=pose_xyz[1], z=pose_xyz[2], reference_frame=world.root)
-        orientation_quaternion_ : Quaternion = Quaternion(x=0, y=0, z=0, w=1, reference_frame=world.root)
-        pose_ : Pose= Pose(position=pose_point3_, orientation=orientation_quaternion_, reference_frame=world.root)
-        scale_ : Scale= Scale(x=0.2, y=0.2, z=0.2)
+        pose_point3_: Point3 = Point3(x=pose_xyz[0], y=pose_xyz[1], z=pose_xyz[2], reference_frame=world.root)
+        orientation_quaternion_: Quaternion = Quaternion(x=0, y=0, z=0, w=1, reference_frame=world.root)
+        pose_: Pose = Pose(position=pose_point3_, orientation=orientation_quaternion_, reference_frame=world.root)
+        scale_: Scale = Scale(x=0.2, y=0.2, z=0.2)
+        try:
+            object = STLParser(
+                os.path.join(
+                    os.path.dirname(__file__), "..", "..", "resources", "objects", name.lower()+".stl"
+                )
+            ).parse()
 
-        object_to_spawn = spawn_semantic_with_body(semantic_type=name,name=name.lower(),pose=pose_, scale=scale_,world=world, color = color)
+            with world.modify_world():
+                world.merge_world_at_pose(
+                    object,
+                    HomogeneousTransformationMatrix.from_xyz_quaternion(
+                        pose[i][0], pose[i][1], pose[i][2], reference_frame=world.root
+                    ),
+                )
+        except:
+
+
+            object_to_spawn = spawn_semantic_with_body(semantic_type=name,name=name.lower(),pose=pose_, scale=scale_,world=world, color = color)
         i+=1
 
 

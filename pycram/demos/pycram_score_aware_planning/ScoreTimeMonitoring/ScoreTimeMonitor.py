@@ -9,7 +9,7 @@ from dataclasses import asdict, dataclass, field
 
 from fontTools.merge.util import avg_int
 
-from common.cram_types import ScoreEvent, TaskStep, Task, ChallengeMode
+from common.cram_types import ScoreEvent, TaskStep, Task, ChallengeMode, Status
 from common.values import CHALLENGE_DURATION, CHALLENGE_TASKS
 from helper_methods import get_values
 from pycram.datastructures.enums import TaskStatus
@@ -93,7 +93,6 @@ class ScoreTimeMonitor:
         self._score_events.append(event)
         self._log(event=event, start_time=self._start_time)
 
-
     def record_task_start(self, task: Task):
         """
         Call at the start of each task execution so elapsed and overtime
@@ -101,6 +100,13 @@ class ScoreTimeMonitor:
         """
         task.task_begin = datetime.datetime.now()
 
+    def record_task_end(self, task: Task):
+        """
+        Call at the start of each task execution so elapsed and overtime
+        can be computed mid-task by the stabilizer.
+        """
+        task.status = Status.SUCCESS
+        task.duration = round((datetime.datetime.now() - task.task_begin).total_seconds())
     def task_elapsed_seconds(self, task: Task) -> float:
         """Seconds since this task started executing."""
         if task.task_begin is None:

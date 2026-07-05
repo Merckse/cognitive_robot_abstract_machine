@@ -216,16 +216,17 @@ CHALLENGE_DURATION: dict[ChallengeMode, int] = {
 # scanned within it. Single source of truth -- the surface names must match NAVIGATION_POSES.
 ROOM_SURFACES: dict[str, list[str]] = {
     "kitchen":    ["table", "counterTop"],
-    "livingroom": ["lowerTable", "dining_table", "shelf_1", "shelf_2"],
+    "livingroom": ["lowerTable", ],
     "office":     ["desk"],
-    "some_room":  ["cooking_table"],
+    "dining_room": ["dining_table", "shelf_1", "shelf_2"],
+    "preperation_room": ["cooking_table"],
 }
 # Derived inverse: surface -> room, so a known location always resolves to its room.
 SURFACE_ROOM: dict[str, str] = {s: r for r, surfaces in ROOM_SURFACES.items() for s in surfaces}
 
 # All possible tasks for PP
 # TODO: implement navigationTimeOut, for unexpected length
-TASKSTEP_PP: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Bowl, room="some_room", uncertain=True),
+TASKSTEP_PP: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Bowl, room="preperation_room", uncertain=True),
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.PLACE, object_annotations=Bowl, location="counterTop"),
                                                    TaskStep(ActionType.PARK)]),

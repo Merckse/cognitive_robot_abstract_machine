@@ -1,4 +1,5 @@
 import math
+import time
 
 import rclpy
 
@@ -206,6 +207,7 @@ def main():
     # generic_object_spawner(["Cereal"], [(1.037, -2.31, 0.645)], world, color=Color.BLUE())
     generic_object_spawner(["Cereal"], [(2.42, 0.128, 0.945)], world, color=Color.BLUE())
     generic_object_spawner(["Cup"], [(2.33475, 5.215, 0.83)], world, color=Color.BEIGE())
+
 
     while task_list != []:
         evaluated_tasks: list[Task] = evaluator.estimate(context=context, task_list=task_list, found_objects=found_objects, risk_aversion=1)

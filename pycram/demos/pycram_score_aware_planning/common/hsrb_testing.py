@@ -62,7 +62,7 @@ def setup_world():
             parent=apartment_root, child=hsrb_root, world=apartment_world
         )
         apartment_world.merge_world(hsrb_sem_world, c_root_bf)
-        c_root_bf.origin = HomogeneousTransformationMatrix.from_xyz_rpy(1.5, 2.5, 0)
+        c_root_bf.origin = HomogeneousTransformationMatrix.from_xyz_rpy(0, 0, 0)
 
     print(apartment_world.bodies)
     dispatcher = EventDispatcher()

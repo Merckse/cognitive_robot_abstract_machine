@@ -4,7 +4,7 @@ import os
 from time import sleep
 from typing import Optional
 
-from common.cram_types import Status
+from common.cram_types import Status, ChallengeMode
 from common.values import evaluation
 from probabilistic_model.bayesian_network.bayesian_network import Root
 from pycram.datastructures.dataclasses import Context
@@ -617,3 +617,26 @@ def nav_time(robot_pose: Point3, to_loc: str, speed: float = 0.5) -> float:
     (x1, y1) = robot_pose.x, robot_pose.y
     (x2, y2) = NAVIGATION_POSES[to_loc][:2]
     return math.dist((x1, y1), (x2, y2)) / speed
+
+def challenge_setup(challenge_mode : ChallengeMode):
+    match challenge_mode:
+        case ChallengeMode.PP:
+            setup_pp()
+        case ChallengeMode.GPSR:
+            setup_gpsr()
+        case ChallengeMode.FD:
+            setup_fd()
+
+
+def setup_pp():
+    task_list : list[Task] = []
+
+    pass
+
+def setup_gpsr():
+    # TODO
+    pass
+
+def setup_fd():
+    # TODO
+    pass

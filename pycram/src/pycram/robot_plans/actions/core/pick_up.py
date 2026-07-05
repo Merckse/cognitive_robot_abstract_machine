@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing_extensions import Any, Dict
 
 from giskardpy.motion_statechart.exceptions import CollisionViolatedError
-from giskardpy.motion_statechart.goals.pick_up import ObjectDoesntFitException
+from giskardpy.motion_statechart.goals.pick_up import ObjectDoesntFitException, ObjectNotReachableException
 from krrood.entity_query_language.core.base_expressions import SymbolicExpression
 from krrood.entity_query_language.factories import and_, or_, not_, variable_from
 from pycram.datastructures.dataclasses import Context
@@ -153,19 +153,25 @@ class PickUpAction(ActionDescription):
     The GraspDescription that should be used for picking up the object
     """
 
-    probability : float= 0.8
+    probability : float= 0.5
     """
     The simulated probability of a event failing
     """
 
+    assisted : bool = False
+    """
+    If there is a need the object will be placed in the robots hand at price of penalty
+    """
+
     def execute(self) -> None:
-        # errors = [ObjectNotGrasped, CollisionViolatedError, ObjectDoesntFitException]
-        # n = 100
-        # failure = random.randint(0,n)
-        # error_type = random.randint(0,3)
-        # failure_range = n * self.probability
-        # if failure < failure_range:
-        #     raise errors[error_type]
+        if not self.assisted:
+            errors = [ObjectNotGrasped, CollisionViolatedError, ObjectDoesntFitException, TimeoutError, ObjectNotReachableException]
+            n = 100
+            failure = random.randint(0,n)
+            error_type = random.randint(0,3)
+            failure_range = n * self.probability
+            if failure < failure_range:
+                raise errors[error_type]
 
         self.add_subplan(
             sequential(

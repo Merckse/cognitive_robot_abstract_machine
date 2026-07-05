@@ -5,7 +5,7 @@ from unittest import skip
 from Evaluate.CompositeEvaluator import CompositeEvaluator
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from common.cram_types import Task, Status, TaskStep, ActionType
-from common.values import evaluation, lookup_operators
+from common.values import evaluation, lookup_operators, CANDIDATE_OPERATORS
 from giskardpy.motion_statechart.exceptions import CollisionViolatedError
 from giskardpy.motion_statechart.goals.pick_up import ObjectNotReachableException, ObjectDoesntFitException
 from helper_methods import get_remaining_task_steps, navigation_subplan, pickup_subplan, place_subplan
@@ -78,10 +78,13 @@ class PlanStabilizer:
         # Pickup-Motion issues
         score : list[list[PlanTransformationOperator, float, list[PlanNode], list[TaskStep]]]= []
 
+        candidate_operators = lookup_operators(exception=exception)
+
         # TO CHECK IF CORRECT, DO SOMETHING, THAT NEEDS A MOVETORSOHIGH, BUT RESULTS IN FAILURE; SINCE NOT REACHABLE
         for op in candidate_operators:
             repaired_task_list : list[TaskStep] = self._build_stabilized_task_list(list(remaining_task_steps), op)
             expected_value : float= self._expected_value(task, repaired_task_list, scoretime_monitor)
+
             repaired_plan : list[PlanNode]= self._build_stabilized_plan(remaining_plan_nodes, repaired_task_list, plan.plan.context)
 
             score.append([op, expected_value, repaired_plan, repaired_task_list])

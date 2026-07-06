@@ -65,7 +65,10 @@ qtcreator-*
 
 # Catkin custom files
 CATKIN_IGNORE
+
+# Package Managers
 poetry.lock
+uv.lock
 
 # Created during tests
 file::memory:
@@ -92,3 +95,64 @@ test/**/*.pdf
 test/krrood_test/test_ripple_down_rules/test_generated_rdrs
 
 !semantic_digital_twin/resources/ply/chair_texture.png
+
+
+### CPP IGNORES
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+doc/doc_out
+
+# Bazel
+/bazel-*
+
+# Directories for the Bazel IntelliJ plugin containing the generated
+# IntelliJ project files and plugin configuration. Seperate directories are
+# for the IntelliJ, Android Studio and CLion versions of the plugin.
+/.ijwb/
+/.aswb/
+/.clwb/
+
+# Generated visualization artifacts: graph / class-diagram renders and RDR rule
+# trees written into the working tree by visualize(), render_tree() and
+# render_evaluated_rule_tree() during tests and doc builds. None are committed.
+pdf_graph.pdf
+query_graph.pdf
+class_diagram.pdf
+*_explanation.pdf
+*_read_tree.dot
+*_read_tree.svg
+*_evaluated_tree.dot
+*_evaluated_tree.svg
+*_rdr.dot
+*_rdr.svg

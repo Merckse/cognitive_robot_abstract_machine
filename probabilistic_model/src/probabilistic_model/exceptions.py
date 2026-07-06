@@ -1,7 +1,8 @@
 from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
-from krrood.utils import DataclassException
+from krrood.exceptions import DataclassException
+
 if TYPE_CHECKING:
     from probabilistic_model.probabilistic_model import ProbabilisticModel
 
@@ -15,8 +16,11 @@ class IntractableError(DataclassException):
 
     model: ProbabilisticModel
 
-    def __post_init__(self):
-        self.message = f"Inference is intractable for {self.model}."
+    def error_message(self) -> str:
+        return f"Inference is intractable for {self.model}."
+
+    def suggest_correction(self) -> str:
+        return ""
 
 
 @dataclass
@@ -28,8 +32,11 @@ class UndefinedOperationError(DataclassException):
 
     model: ProbabilisticModel
 
-    def __post_init__(self):
-        self.message = f"Operation is not defined for {self.model}."
+    def error_message(self) -> str:
+        return f"Operation is not defined for {self.model}."
+
+    def suggest_correction(self) -> str:
+        return ""
 
 @dataclass
 class ShapeMismatchError(DataclassException, ValueError):
@@ -47,5 +54,8 @@ class ShapeMismatchError(DataclassException, ValueError):
     The second object to compare.
     """
 
-    def __post_init__(self):
-        self.message = f"Expected shape {self.expected_shape}, received shape {self.received_shape}"
+    def error_message(self) -> str:
+        return f"Expected shape {self.expected_shape}, received shape {self.received_shape}"
+
+    def suggest_correction(self) -> str:
+        return ""

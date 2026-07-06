@@ -1,16 +1,47 @@
+import time
+
 import numpy as np
+import os
+import pytest
+from requests import HTTPError
 
 from semantic_digital_twin.adapters.ros.visualization.viz_marker import (
     VizMarkerPublisher,
     ShapeSource,
 )
-from semantic_digital_twin.adapters.sage_10k_dataset.loader import Sage10kDatasetLoader
+from semantic_digital_twin.adapters.sage_10k_dataset.loader import (
+    Sage10kDatasetLoader,
+)
 from semantic_digital_twin.adapters.sage_10k_dataset.schema import Sage10kScene
 from semantic_digital_twin.pipeline.mesh_decomposition.box_decomposer import (
     BoxDecomposer,
 )
 from semantic_digital_twin.pipeline.pipeline import Pipeline
+from semantic_digital_twin.semantic_annotations.natural_language import (
+    NaturalLanguageWithTypeDescription,
+)
 from semantic_digital_twin.world import World
+
+from semantic_digital_twin.adapters.mesh import STLParser
+
+from semantic_digital_twin.spatial_types.spatial_types import (
+    HomogeneousTransformationMatrix,
+    Pose,
+)
+
+from coraplex.motion_executor import simulated_robot
+
+from coraplex.plans.factories import execute_single, sequential
+
+from coraplex.robot_plans.actions.core.navigation import NavigateAction
+
+from coraplex.datastructures.dataclasses import Context
+
+from coraplex.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
+
+from coraplex.robot_plans.actions.core.pick_up import PickUpAction
+
+from semantic_digital_twin.datastructures.definitions import TorsoState
 
 
 def verify_scene(world: World, scene: Sage10kScene):
@@ -36,9 +67,37 @@ def verify_scene(world: World, scene: Sage10kScene):
             assert np.isclose(global_position.z, obj.position.z)
 
 
-def test_loader(rclpy_node):
-    loader = Sage10kDatasetLoader()
-    scene = loader.create_scene(scene_url=Sage10kDatasetLoader.available_scenes()[0])
+def get_body_height(body) -> float:
+    return body.global_pose.z
+
+
+def has_book_in_prefix(body) -> bool:
+    return body.name.prefix is not None and "_book_" in body.name.prefix.lower()
+
+
+def get_sage10k_scene():
+    try:
+        loader = Sage10kDatasetLoader()
+        return loader.create_scene(scene_url=Sage10kDatasetLoader.available_scenes()[0])
+    except HTTPError:
+        return None
+
+
+@pytest.fixture(scope="session")
+def sage10k_scene():
+    worker = os.environ.get("PYTEST_XDIST_WORKER")
+    if worker:
+        worker_num = int(worker.removeprefix("gw"))
+        time.sleep(worker_num)
+    scene = get_sage10k_scene()
+    if scene is None:
+        pytest.skip("Sage10k dataset not available")
+
+    return scene
+
+
+def test_loader(rclpy_node, sage10k_scene):
+    scene = sage10k_scene
     world = scene.create_world()
     pub = VizMarkerPublisher(
         _world=world,
@@ -46,14 +105,14 @@ def test_loader(rclpy_node):
     )
     pub.with_tf_publisher()
     verify_scene(world, scene)
+    assert (
+        len(world.get_semantic_annotations_by_type(NaturalLanguageWithTypeDescription))
+        > 0
+    )
 
 
-def test_different_decomposition_methods(
-    rclpy_node,
-):
-    loader = Sage10kDatasetLoader()
-    scene = loader.create_scene(scene_url=Sage10kDatasetLoader.available_scenes()[0])
-
+def test_different_decomposition_methods(rclpy_node, sage10k_scene):
+    scene = sage10k_scene
     for room in scene.rooms:
         new_objects = []
         for obj in room.objects:

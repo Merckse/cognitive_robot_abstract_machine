@@ -5,6 +5,7 @@ import re
 import threading
 from abc import ABC
 from dataclasses import field, dataclass, fields
+from functools import cached_property
 
 import numpy as np
 from typing_extensions import (
@@ -25,6 +26,7 @@ from krrood.adapters.json_serializer import (
     to_json,
 )
 from krrood.symbolic_math.symbolic_math import FloatVariable, Scalar, trinary_logic_not
+from krrood.exceptions import DataclassException
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.spatial_types import (
     Point3,
@@ -32,6 +34,7 @@ from semantic_digital_twin.spatial_types import (
     Quaternion,
     RotationMatrix,
     HomogeneousTransformationMatrix,
+    Pose,
 )
 from semantic_digital_twin.world_description.geometry import Color
 from giskardpy.motion_statechart.context import MotionStatechartContext
@@ -50,6 +53,7 @@ from giskardpy.motion_statechart.exceptions import (
     NodeAlreadyBelongsToDifferentNodeError,
 )
 from giskardpy.motion_statechart.plotters.plot_specs import NodePlotSpec
+from giskardpy.motion_statechart.constraint_builders import GeometricConstraintBuilder
 from giskardpy.qp.constraint_collection import ConstraintCollection
 from giskardpy.utils.utils import string_shortener
 
@@ -318,7 +322,9 @@ class DebugExpression:
         | Quaternion
         | RotationMatrix
         | HomogeneousTransformationMatrix
+        | Pose
     )
+    """The tracked expression; spatial types are additionally rendered as RViz markers."""
 
     color: Color = field(default_factory=lambda: Color(1, 0, 0, 1))
     """
@@ -356,6 +362,14 @@ class NodeArtifacts:
     A list of symbolic expressions used for debugging only.
     While in debug mode, you can call .evaluate() on them to get their current value.
     """
+
+    @cached_property
+    def geometry(self) -> GeometricConstraintBuilder:
+        """
+        Builder for high-level geometric constraints (point, vector, and rotation goals, and
+        Cartesian velocity limits) that writes into :attr:`constraints`.
+        """
+        return GeometricConstraintBuilder(self.constraints)
 
 
 @dataclass(repr=False, eq=False)
@@ -455,6 +469,13 @@ class MotionStatechartNode(SubclassJSONSerializer):
         if self.parent_node_index is None:
             return None
         return self._motion_statechart.get_node_by_index(self.parent_node_index)
+
+    @property
+    def debug_expressions(self) -> List[DebugExpression]:
+        """
+        :return: The debug expressions registered by this node during build.
+        """
+        return self._debug_expressions
 
     @property
     def depth(self) -> int:
@@ -887,7 +908,7 @@ class Task(MotionStatechartNode):
     Tasks are MotionStatechartNodes that add motion constraints.
     """
 
-    weight: float = field(default=DefaultWeights.WEIGHT_BELOW_CA, kw_only=True)
+    weight: float = field(default=DefaultWeights.WEIGHT_BELOW_CA.value, kw_only=True)
     """Task priority relative to other tasks."""
 
     plot_specs: NodePlotSpec = field(
@@ -1050,7 +1071,7 @@ class EndMotion(MotionStatechartNode):
 
 @dataclass(eq=False, repr=False)
 class CancelMotion(MotionStatechartNode):
-    exception: Exception = field(kw_only=True)
+    exception: DataclassException = field(kw_only=True)
     observation_expression: Scalar = field(
         default_factory=Scalar.const_true, init=False
     )
@@ -1095,6 +1116,8 @@ class CancelMotion(MotionStatechartNode):
         """
         Factory method for creating an EndMotion node that activates when ALL of the given nodes have a true observation state.
         """
+        if len(nodes) == 1:
+            return cls.when_true(node=nodes[0], exception=exception)
         end = cls(exception=exception)
         end.start_condition = sm.trinary_logic_and(
             *[node.observation_variable for node in nodes]
@@ -1108,6 +1131,8 @@ class CancelMotion(MotionStatechartNode):
         """
         Factory method for creating an EndMotion node that activates when ANY of the given nodes have a true observation state.
         """
+        if len(nodes) == 1:
+            return cls.when_true(node=nodes[0], exception=exception)
         end = cls(exception=exception)
         end.start_condition = sm.trinary_logic_or(
             *[node.observation_variable for node in nodes]

@@ -1,10 +1,10 @@
 import uuid
 from abc import ABC
 from dataclasses import dataclass, field
-from functools import lru_cache
+from krrood.utils import memoize
 from uuid import UUID
 
-from typing_extensions import Dict, Any, Self, List
+from typing_extensions import Dict, Any, Self, List, Optional
 
 from krrood.adapters.json_serializer import SubclassJSONSerializer, to_json, from_json
 from semantic_digital_twin.world import World
@@ -29,7 +29,7 @@ class MetaData(SubclassJSONSerializer):
     world_id: UUID = field(default_factory=uuid.uuid4)
     """The id of the origin world. This is used to identify messages that were published by the same publisher."""
 
-    @lru_cache(maxsize=None)
+    @memoize
     def to_json(self) -> Dict[str, Any]:
         return {
             **super().to_json(),
@@ -104,6 +104,26 @@ class ModificationBlock(Message):
 
     modifications: WorldModelModificationBlock
     """The modifications done to a world."""
+
+
+@dataclass
+class WorldUpdate(Message):
+    """
+    Combined model and state update published on a single ordered ROS topic.
+
+    Sending both types of change on the same topic gives FIFO delivery guarantees:
+    a model update published before a state update is always received before that
+    state update, eliminating the cross-topic ordering race present when model and
+    state travel on separate topics.
+
+    Either field may be ``None`` when only one type of change is being communicated.
+    """
+
+    modification_block: Optional[ModificationBlock] = None
+    """The model modification to apply, if any."""
+
+    state_update: Optional[WorldStateUpdate] = None
+    """The state values to apply, if any."""
 
 
 @dataclass

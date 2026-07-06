@@ -4,6 +4,7 @@ import casadi as ca
 import numpy as np
 import pytest
 import scipy
+import scipy.sparse as sp
 
 import krrood.symbolic_math.symbolic_math as sm
 from krrood.symbolic_math.exceptions import (
@@ -11,7 +12,7 @@ from krrood.symbolic_math.exceptions import (
     NotSquareMatrixError,
 )
 from krrood.symbolic_math.symbolic_math import VariableParameters
-from test.krrood_test.test_symbolic_math.reference_implementations import (
+from .reference_implementations import (
     normalize_angle_positive,
     shortest_angular_distance,
     normalize_angle,
@@ -332,6 +333,19 @@ class TestFloatVariable:
         with pytest.raises(HasFreeVariablesError):
             bool(v)
 
+    def test_free_variables(self):
+        """
+        Use a method to create the variable to test if the weak ref dict cleans them up.
+        """
+
+        def create_variables(name: str) -> sm.FloatVariable:
+            return sm.FloatVariable(name=name)
+
+        expression = create_variables("muh") + create_variables("kikariki")
+        assert len(expression.free_variables()) == 2
+        assert expression.free_variables()[0].name == "muh"
+        assert expression.free_variables()[1].name == "kikariki"
+
     def test_create_with_resolver(self):
         v = sm.FloatVariable.create_with_resolver("v", lambda: 42)
         assert v.evaluate() == 42
@@ -414,7 +428,7 @@ class TestFloatVariable:
 class TestExpression:
 
     def test_free_variables(self):
-        m = sm.Vector(sm.create_float_variables(["a", "b", "c", "d"]))
+        m = sm.Vector(v := sm.create_float_variables(["a", "b", "c", "d"]))
         assert len(m.free_variables()) == 4
         a = sm.FloatVariable(name="a")
         assert a.equivalent(a.free_variables()[0])
@@ -906,7 +920,7 @@ class TestVector:
         assert v.to_list() == data.tolist()
 
     def test_to_list_raises_on_variables(self):
-        v = sm.Vector([sm.FloatVariable(name="a"), 2.0])
+        v = sm.Vector(vec := [sm.FloatVariable(name="a"), 2.0])
         with pytest.raises(HasFreeVariablesError):
             _ = v.to_list()
 
@@ -1166,6 +1180,13 @@ class TestMatrix:
         assert np.allclose(np.array(flat), np_flat)
         # Shape should be (n,1) like Vector
         assert flat.shape == (np_flat.size, 1)
+
+    @pytest.mark.parametrize("sparse_format", ["csc", "csr", "coo"])
+    def test_from_sparse_matrix(self, sparse_format):
+        dense = np.array([[1.0, 0.0, 2.0], [0.0, 3.0, 0.0], [4.0, 0.0, 5.0]])
+        matrix = sp.coo_matrix(dense).asformat(sparse_format)
+        sm_matrix = sm.Matrix(matrix)
+        assert np.allclose(sm_matrix.to_np(), dense)
 
     def test_flatten_empty(self):
         data = np.eye(0)

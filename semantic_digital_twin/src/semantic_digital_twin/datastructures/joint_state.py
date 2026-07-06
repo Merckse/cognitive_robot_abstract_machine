@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Type, Self
 
+import numpy as np
 from typing_extensions import Dict, List, TYPE_CHECKING, Optional
 
 from krrood.adapters.json_serializer import (
@@ -18,7 +19,7 @@ from semantic_digital_twin.datastructures.definitions import JointStateType
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 
 if TYPE_CHECKING:
-    from semantic_digital_twin.robots.abstract_robot import AbstractRobot
+    from semantic_digital_twin.robots.robot_parts import AbstractRobot
     from semantic_digital_twin.world import World
     from semantic_digital_twin.world_description.connections import ActiveConnection1DOF
 
@@ -76,6 +77,20 @@ class JointState(SubclassJSONSerializer):
 
     def items(self):
         return zip(self.connections, self.target_values)
+
+    def is_achieved(self) -> bool:
+        """
+        Checks if the defined joint state is achieved.
+        :return: True if all connections are in the specified target value, False otherwise
+        """
+        return all(
+            [
+                np.allclose(connection.position, target_value, atol=1e-2)
+                for connection, target_value in zip(
+                    self.connections, self.target_values
+                )
+            ]
+        )
 
     @classmethod
     def from_str_dict(cls, mapping: Dict[str, float], world: World):

@@ -1,42 +1,39 @@
 from __future__ import annotations
 
-import itertools
 from typing import Optional, List
 
 import trimesh.sample
+
 from krrood.entity_query_language.factories import (
     entity,
     variable,
-    and_,
-    not_,
     contains,
     an,
     the,
 )
-
+from krrood.entity_query_language.predicate import symbolic_function
 from semantic_digital_twin.collision_checking.collision_detector import (
     ClosestPoints,
-    CollisionCheck,
 )
-from semantic_digital_twin.collision_checking.collision_manager import CollisionManager
-from semantic_digital_twin.collision_checking.collision_matrix import CollisionMatrix
 from semantic_digital_twin.collision_checking.collision_rules import (
     AllowCollisionBetweenGroups,
     AvoidExternalCollisions,
     AllowSelfCollisions,
 )
-from semantic_digital_twin.collision_checking.pybullet_collision_detector import (
-    BulletCollisionDetector,
+from semantic_digital_twin.reasoning.predicates import is_place_occupied
+from semantic_digital_twin.robots.robot_part_mixins import HasTwoFingers
+from semantic_digital_twin.robots.robot_parts import (
+    AbstractRobot,
+    EndEffector,
 )
-from semantic_digital_twin.collision_checking.trimesh_collision_detector import (
-    FCLCollisionDetector,
-)
-from semantic_digital_twin.robots.abstract_robot import AbstractRobot, ParallelGripper
-from semantic_digital_twin.spatial_computations.raytracer import RayTracer
+from semantic_digital_twin.semantic_annotations.semantic_annotations import Floor
 from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix
+from semantic_digital_twin.spatial_types.spatial_types import Pose
+from semantic_digital_twin.world_description.geometry import BoundingBox
 from semantic_digital_twin.world_description.world_entity import Body
 
 
+@symbolic_function
 def robot_in_collision(
     robot: AbstractRobot,
     ignore_collision_with: Optional[List[Body]] = None,
@@ -77,6 +74,7 @@ def robot_in_collision(
     return collisions.contacts
 
 
+@symbolic_function
 def robot_holds_body(robot: AbstractRobot, body: Body) -> bool:
     """
     Check if a robot is holding an object.
@@ -85,7 +83,7 @@ def robot_holds_body(robot: AbstractRobot, body: Body) -> bool:
     :param body: The body to check if it is picked
     :return: True if the robot is holding the object, False otherwise
     """
-    g = variable(ParallelGripper, robot._world.semantic_annotations)
+    g = variable(EndEffector, robot._world.semantic_annotations)
     grippers = an(
         entity(g).where(
             g._robot == robot,
@@ -97,6 +95,7 @@ def robot_holds_body(robot: AbstractRobot, body: Body) -> bool:
     )
 
 
+@symbolic_function
 def blocking(
     pose: HomogeneousTransformationMatrix,
     root: Body,
@@ -127,8 +126,38 @@ def blocking(
     return robot_in_collision(robot.first(), [])
 
 
+@symbolic_function
+def bodies_in_gripper(gripper: HasTwoFingers, sample_size: int = 100) -> List[Body]:
+    """
+    Gets all bodies which are between the finger of the gripper.
+    This method uses samples of rays which are cast between the finger
+
+    :param gripper: The gripper for which the check should be done.
+    :param sample_size: The number of rays to sample.
+    """
+    # Retrieve meshes in local frames
+    thumb_mesh = gripper.thumb.tip.collision.combined_mesh.copy()
+    finger_mesh = gripper.finger.tip.collision.combined_mesh.copy()
+
+    # Transform copies of the meshes into the world frame
+    # body_mesh.apply_transform(body.global_transform.to_np())
+    thumb_mesh.apply_transform(gripper.thumb.tip.global_transform.to_np())
+    finger_mesh.apply_transform(gripper.finger.tip.global_transform.to_np())
+
+    # get random points from thumb mesh
+    finger_points = trimesh.sample.sample_surface(finger_mesh, sample_size)[0]
+    thumb_points = trimesh.sample.sample_surface(thumb_mesh, sample_size)[0]
+
+    rt = gripper._world.ray_tracer
+    rt.update_scene()
+
+    points, index_ray, bodies = rt.ray_test(finger_points, thumb_points)
+    return list(set(bodies) - set(gripper.finger.bodies) - set(gripper.thumb.bodies))
+
+
+@symbolic_function
 def is_body_in_gripper(
-    body: Body, gripper: ParallelGripper, sample_size: int = 100
+    body: Body, gripper: EndEffector, sample_size: int = 100
 ) -> float:
     """
     Check if the body in the gripper.
@@ -142,23 +171,36 @@ def is_body_in_gripper(
 
     :return: The percentage of rays between the fingers that hit the body.
     """
-
-    # Retrieve meshes in local frames
-    thumb_mesh = gripper.thumb.tip.collision.combined_mesh.copy()
-    finger_mesh = gripper.finger.tip.collision.combined_mesh.copy()
-    body_mesh = body.collision.combined_mesh.copy()
-
-    # Transform copies of the meshes into the world frame
-    body_mesh.apply_transform(body.global_transform.to_np())
-    thumb_mesh.apply_transform(gripper.thumb.tip.global_transform.to_np())
-    finger_mesh.apply_transform(gripper.finger.tip.global_transform.to_np())
-
-    # get random points from thumb mesh
-    finger_points = trimesh.sample.sample_surface(finger_mesh, sample_size)[0]
-    thumb_points = trimesh.sample.sample_surface(thumb_mesh, sample_size)[0]
-
-    rt = RayTracer(gripper._world)
-    rt.update_scene()
-
-    points, index_ray, bodies = rt.ray_test(finger_points, thumb_points)
+    bodies = bodies_in_gripper(gripper, sample_size)
     return len([b for b in bodies if b == body]) / sample_size
+
+
+@symbolic_function
+def is_gripper_holding_something(gripper: EndEffector) -> bool:
+    """
+    Check if the gripper is holding something.
+
+    :param gripper: The gripper for which the check should be done.
+    :return: True if there is a body mounted beneath the gripper in the kinematic chain.
+    """
+    bodies_under_tcp = gripper._world.get_kinematic_structure_entities_of_branch(
+        gripper.tool_frame
+    )
+    # the branch always contains the tool frame itself, so only additional
+    # entities below it count as something being held
+    return len(bodies_under_tcp) > 1
+
+
+@symbolic_function
+def is_pose_free_for_robot(robot: AbstractRobot, pose: Pose) -> bool:
+    return not is_place_occupied(
+        robot.mobile_base.bounding_box,
+        pose,
+        robot._world,
+        robot.bodies_with_collision
+        + [
+            kse
+            for annotation in robot._world.get_semantic_annotations_by_type(Floor)
+            for kse in annotation.kinematic_structure_entities
+        ],
+    )

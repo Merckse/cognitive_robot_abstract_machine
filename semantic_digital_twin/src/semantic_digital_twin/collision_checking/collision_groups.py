@@ -6,11 +6,17 @@ from dataclasses import dataclass, field
 from rustworkx import rustworkx
 from typing_extensions import TYPE_CHECKING
 
-from semantic_digital_twin.collision_checking.collision_manager import CollisionManager, CollisionConsumer
-from semantic_digital_twin.world_description.world_entity import Body, KinematicStructureEntity
+from semantic_digital_twin.collision_checking.collision_manager import (
+    CollisionManager,
+    CollisionConsumer,
+)
+from semantic_digital_twin.world_description.world_entity import (
+    Body,
+    KinematicStructureEntity,
+)
 
 if TYPE_CHECKING:
-    from ..world import World
+    from semantic_digital_twin.world import World
 
 
 @dataclass(repr=False, eq=False)
@@ -92,13 +98,17 @@ class CollisionGroupConsumer(CollisionConsumer, ABC):
         Updates the collision groups based on the kinematic structure of the world.
         :param world: Reference to the updated world.
         """
+        body_to_robot = world.robot_body_to_robot_mapping
+
         self.collision_groups = [CollisionGroup(world.root)]
         for parent, children in rustworkx.bfs_successors(
             world.kinematic_structure, world.root.index
         ):
             for child in children:
                 parent_C_child = world.get_connection(parent, child)
-                if parent_C_child.is_controlled:
+                if parent_C_child.is_controlled or body_to_robot.get(
+                    parent
+                ) != body_to_robot.get(child):
                     self.collision_groups.append(CollisionGroup(child))
                 else:
                     collision_group = self.get_collision_group(parent)

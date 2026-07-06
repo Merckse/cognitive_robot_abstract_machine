@@ -2,43 +2,43 @@ from __future__ import annotations
 
 from abc import ABC
 from dataclasses import dataclass, field
-from typing import Iterable, Optional, Self, Tuple
+from typing import Iterable, Optional, Self, Tuple, TYPE_CHECKING
 
-from random_events.interval import closed
-from random_events.product_algebra import SimpleEvent
 from typing_extensions import List, Type
 
 from krrood.ormatic.utils import classproperty
 from krrood.symbolic_math import symbolic_math
-from semantic_digital_twin.semantic_annotations.mixins import (
-    HasSupportingSurface,
-    HasRootRegion,
-    HasDrawers,
-    HasDoors,
-    HasShelfLayers,
-    HasHandle,
-    HasCaseAsRootBody,
-    HasHinge,
-    HasSlider,
-    HasApertures,
-    IsPerceivable,
-    HasRootBody,
-    HasStorageSpace,
-)
+from random_events.interval import closed
+from random_events.product_algebra import SimpleEvent
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.datastructures.variables import SpatialVariables
 from semantic_digital_twin.exceptions import (
     InvalidPlaneDimensions,
     InvalidHingeActiveAxis,
     MissingSemanticAnnotationError,
+    MechanicalJointAlreadyMounted,
 )
 from semantic_digital_twin.reasoning.predicates import InsideOf
+from semantic_digital_twin.semantic_annotations.mixins import (
+    HasSupportingSurface,
+    HasRootRegion,
+    HasDrawers,
+    HasDoors,
+    HasHandle,
+    HasCaseAsRootBody,
+    HasMechanicalJoint,
+    HasApertures,
+    IsPerceivable,
+    HasRootBody,
+    IsStorageSpace,
+    HasLegs,
+    HasSink,
+)
 from semantic_digital_twin.spatial_types import (
     Point3,
     HomogeneousTransformationMatrix,
     Vector3,
 )
-from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import (
     RevoluteConnection,
     PrismaticConnection,
@@ -52,20 +52,15 @@ from semantic_digital_twin.world_description.shape_collection import (
     BoundingBoxCollection,
     ShapeCollection,
 )
-from semantic_digital_twin.world_description.degree_of_freedom import (
-    DegreeOfFreedomLimits,
-)
-from semantic_digital_twin.world_description.geometry import Scale
-from semantic_digital_twin.world_description.shape_collection import (
-    BoundingBoxCollection,
-    ShapeCollection,
-)
 from semantic_digital_twin.world_description.world_entity import (
     SemanticAnnotation,
     Body,
     Region,
     Connection,
 )
+
+if TYPE_CHECKING:
+    from semantic_digital_twin.world import World
 
 
 @dataclass(eq=False)
@@ -124,13 +119,12 @@ class Handle(HasRootBody):
         :param thickness: The thickness of the handle walls.
         """
 
-        x_interval = closed(0, scale.x - thickness)
-        y_interval = closed(
-            -scale.y / 2 + thickness,
-            scale.y / 2 - thickness,
+        x_interval = closed(-scale.x + thickness, 0)
+        y_interval = closed(-scale.y / 2, scale.y / 2)
+        z_interval = closed(
+            -scale.z / 2 + thickness,
+            scale.z / 2 - thickness,
         )
-
-        z_interval = closed(-scale.z / 2, scale.z / 2)
 
         return SimpleEvent.from_data(
             {
@@ -146,6 +140,10 @@ class Dishwasher(HasCaseAsRootBody, HasDoors, HasDrawers):
     """
     A dishwasher is a kitchen appliance used for cleaning dishes, utensils, and cookware. It typically has a front door that opens to reveal racks for loading dirty items and a control panel for selecting wash cycles.
     """
+
+    @classproperty
+    def hole_direction(self) -> Vector3:
+        return Vector3.NEGATIVE_X()
 
 
 @dataclass(eq=False)
@@ -201,9 +199,71 @@ class Aperture(HasRootRegion):
             name, world, parent_T_self, scale=body_scale
         )
 
+    def _mount_strategy(self, main_has_root_body_annotation: HasRootBody) -> None:
+        # An aperture cuts its shape out of the whole's geometry, then mounts as a child.
+        self._remove_aperture_geometry_from_parent(main_has_root_body_annotation)
+        super()._mount_strategy(main_has_root_body_annotation)
+
+    def _remove_aperture_geometry_from_parent(self, parent: HasRootBody):
+        """
+        Remove the geometry of the aperture from the parent body's collision and visual geometry.
+
+        :param parent: The parent from which the aperture geometry is removed.
+        """
+
+        world = parent._world
+        world.update_forward_kinematics()
+        hole_event = self.root.area.as_bounding_box_collection_in_frame(
+            parent.root
+        ).event
+        wall_event = parent.root.collision.as_bounding_box_collection_in_frame(
+            parent.root
+        ).event
+        new_wall_event = wall_event - hole_event
+        new_bounding_box_collection = BoundingBoxCollection.from_event(
+            parent.root, new_wall_event
+        ).as_shapes()
+
+        parent.root.collision = new_bounding_box_collection
+        parent.root.visual = new_bounding_box_collection
+
 
 @dataclass(eq=False)
-class Hinge(HasRootBody):
+class MechanicalJoint(HasRootBody):
+    """
+    A mechanical joint is a physical entity that connects two bodies and allows one to move along or around a fixed axis
+    """
+
+    def _mount_strategy(self, main_has_root_body_annotation: HasRootBody) -> None:
+        """
+        Inserts the joint between the whole (``main_has_root_body_annotation``) and the whole's
+        current parent, preserving the whole's ancestry.
+        So
+        whole_parent -(fixed)-> whole
+        becomes
+        whole_parent -(active)-> joint -(fixed)-> whole. The joint keeps its active connection
+        (now anchored at the whole's parent); the whole hangs rigidly off the joint.
+        """
+        if (
+            main_has_root_body_annotation.root.parent_kinematic_structure_entity
+            == self.root
+        ):
+            return
+        # used instead of World.compute_child_kinematic_structure_entities because its memoized
+        if list(self._world.kinematic_structure.successors(self.root.index)):
+            raise MechanicalJointAlreadyMounted(self, main_has_root_body_annotation)
+
+        self._world.move_branch(
+            self.root,
+            main_has_root_body_annotation.root.parent_kinematic_structure_entity,
+        )
+        main_has_root_body_annotation._world.move_branch(
+            main_has_root_body_annotation.root, self.root
+        )
+
+
+@dataclass(eq=False)
+class Hinge(MechanicalJoint):
     """
     A hinge is a physical entity that connects two bodies and allows one to rotate around a fixed axis.
     """
@@ -214,7 +274,7 @@ class Hinge(HasRootBody):
 
 
 @dataclass(eq=False)
-class Slider(HasRootBody):
+class Slider(MechanicalJoint):
     """
     A Slider is a physical entity that connects two bodies and allows one to linearly translate along a fixed axis.
     """
@@ -229,7 +289,7 @@ class EntryWay(Aperture): ...
 
 
 @dataclass(eq=False)
-class Door(HasHandle, HasHinge):
+class Door(HasHandle, HasMechanicalJoint):
     """
     A door is a physical entity that has covers an opening, has a movable body and a handle.
     """
@@ -255,6 +315,7 @@ class Door(HasHandle, HasHinge):
         if not (scale.x < scale.y and scale.x < scale.z):
             raise InvalidPlaneDimensions(scale, clazz=Door)
 
+        # This creates an event around the scale, so if the scale is 1 the event will be from -0.5 to 0.5.
         door_event = scale.to_simple_event().as_composite_set()
         door_body = Body(name=name)
         bounding_box_collection = BoundingBoxCollection.from_event(
@@ -268,10 +329,12 @@ class Door(HasHandle, HasHinge):
         entry_way_region_name = PrefixedName(
             name.name + "entry_way_region", name.prefix
         )
+
         entry_way_region = Region(
             name=entry_way_region_name,
             area=ShapeCollection([Mesh.from_trimesh(mesh=door_body.combined_mesh)]),
         )
+        entry_way_region.area.dye_shapes(Color(R=1.0, G=1.0, B=1.0, A=0.2))
         entry_way = EntryWay(name=entry_way_name, root=entry_way_region)
         world.add_region(entry_way.root)
         world.add_connection(FixedConnection(door_body, entry_way.root))
@@ -364,7 +427,7 @@ class DoubleDoor(SemanticAnnotation):
 
 
 @dataclass(eq=False)
-class Drawer(Furniture, HasCaseAsRootBody, HasHandle, HasSlider, HasStorageSpace):
+class Drawer(Furniture, HasCaseAsRootBody, HasHandle, HasMechanicalJoint):
 
     @classproperty
     def hole_direction(self) -> Vector3:
@@ -389,33 +452,37 @@ class Table(Furniture, HasSupportingSurface):
 
 
 @dataclass(eq=False)
-class Counter_Top(Furniture, HasSupportingSurface):
+class CounterTop(Furniture, HasSupportingSurface, HasSink):
     """
     A semantic annotation that represents a counter top.
     """
 
 
 @dataclass(eq=False)
-class Cabinet(Furniture, HasCaseAsRootBody):
+class Cabinet(Furniture, HasCaseAsRootBody, HasHandle, HasDoors, HasDrawers):
     @classproperty
     def hole_direction(self) -> Vector3:
         return Vector3.NEGATIVE_X()
 
 
 @dataclass(eq=False)
-class Fridge(Cabinet, HasDoors, HasDrawers): ...
+class Fridge(Cabinet): ...
 
 
 @dataclass(eq=False)
-class Dresser(Cabinet, HasDrawers, HasDoors): ...
+class Oven(HasRootBody, HasDoors): ...
 
 
 @dataclass(eq=False)
-class Cupboard(Cabinet, HasDoors, HasShelfLayers): ...
+class Dresser(Cabinet): ...
 
 
 @dataclass(eq=False)
-class Wardrobe(Cabinet, HasDrawers, HasDoors): ...
+class Cupboard(Cabinet): ...
+
+
+@dataclass(eq=False)
+class Wardrobe(Cabinet): ...
 
 
 @dataclass(eq=False)
@@ -519,6 +586,7 @@ class Wall(HasApertures):
             raise InvalidPlaneDimensions(scale, clazz=Wall)
 
         wall_body = Body(name=name)
+        # This creates an event exactly as the scale, so if the scale is 1 the event will be from 0 to 1.
         wall_event = cls._create_wall_event(scale).as_composite_set()
         wall_collision = BoundingBoxCollection.from_event(
             wall_body, wall_event
@@ -661,7 +729,10 @@ class Bowl(HasSupportingSurface, IsPerceivable):
 
 # Food Items
 @dataclass(eq=False)
-class Food(HasRootBody): ...
+class Food(HasRootBody):
+    """
+    A Group class for Food.
+    """
 
 
 @dataclass(eq=False)
@@ -697,6 +768,13 @@ class CheezeIt(Food):
 class Pringles(Food):
     """
     Pringles chips
+    """
+
+
+@dataclass(eq=False)
+class GelatinBox(Food):
+    """
+    Gelatin box.
     """
 
 
@@ -747,8 +825,6 @@ class SaltContainer(HasRootBody, IsPerceivable):
     A container of salt.
     """
 
-    ...
-
 
 @dataclass(eq=False)
 class Produce(Food):
@@ -765,8 +841,6 @@ class Fruit(Produce):
     Fruit.
     """
 
-    ...
-
 
 @dataclass(eq=False)
 class Vegetable(Produce):
@@ -774,11 +848,9 @@ class Vegetable(Produce):
     Vegetable.
     """
 
-    ...
-
 
 @dataclass(eq=False)
-class Tomato(Vegetable):
+class Tomato(Fruit):
     """
     A tomato.
     """
@@ -813,6 +885,20 @@ class Banana(Fruit):
 
 
 @dataclass(eq=False)
+class Orange(Fruit):
+    """
+    An orange.
+    """
+
+
+@dataclass(eq=False)
+class Salt(Food):
+    """
+    A pack or container of salt (e.g., salt shaker or salt can).
+    """
+
+
+@dataclass(eq=False)
 class CoffeeTable(Table):
     """
     A coffee table.
@@ -820,7 +906,7 @@ class CoffeeTable(Table):
 
 
 @dataclass(eq=False)
-class DiningTable(Table):
+class DiningTable(Table, HasLegs):
     """
     A dining table.
     """
@@ -834,7 +920,7 @@ class SideTable(Table):
 
 
 @dataclass(eq=False)
-class Desk(Table):
+class Desk(Table, HasLegs):
     """
     A desk.
     """
@@ -888,79 +974,12 @@ class Sofa(Furniture, HasSupportingSurface):
     A sofa.
     """
 
-    @classmethod
-    def create_with_new_body_in_world(
-        cls,
-        name: PrefixedName,
-        world: World,
-        world_root_T_self: Optional[HomogeneousTransformationMatrix] = None,
-        connection_limits: Optional[DegreeOfFreedomLimits] = None,
-        active_axis: Optional[Vector3] = None,
-        connection_multiplier: float = 1.0,
-        connection_offset: float = 0.0,
-        scale: Scale = Scale(0.9, 2.0, 0.85),  # Default: x=depth, y=width, z=height
-        *,
-        color: Color = Color(0.5, 0.5, 0.5),  # Grey default
-        **kwargs,
-    ) -> Self:
-        """
-        Creates a sofa as a single body by subtracting the sitting area from the outer bounding box.
-        """
-        # Dimensions based on scale: x=depth, y=width, z=height
-        seat_height = scale.z * 0.45
-        backrest_depth = scale.x * 0.20
-        armrest_width = scale.y * 0.10
 
-        # 1. Create the outer bounding box event
-        outer_event = scale.to_simple_event()
-
-        # 2. Create the cutout event (the empty space where you sit)
-        # We extend the cutout slightly in the "open" directions (Top and Front)
-        # to ensure the subtraction cleanly breaks the surface.
-        # X (Depth): Opening at -X (front), backrest at +X
-        # Y (Width): Between armrests
-        # Z (Height): Above the seat
-        cutout_event = SimpleEvent.from_data(
-            {
-                SpatialVariables.x.value: closed(
-                    -scale.x / 2 - 0.001, scale.x / 2 - backrest_depth
-                ),
-                SpatialVariables.y.value: closed(
-                    -scale.y / 2 + armrest_width, scale.y / 2 - armrest_width
-                ),
-                SpatialVariables.z.value: closed(
-                    -scale.z / 2 + seat_height, scale.z / 2 + 0.001
-                ),
-            }
-        )
-
-        # 3. Subtract cutout from outer box
-        sofa_event = outer_event.as_composite_set() - cutout_event.as_composite_set()
-
-        sofa_body = Body(name=name)
-        shapes = BoundingBoxCollection.from_event(sofa_body, sofa_event).as_shapes()
-
-        # Apply color to the generated shapes
-        for shape in shapes:
-            shape.color = color
-
-        sofa_body.collision = shapes
-        sofa_body.visual = shapes
-
-        sofa = cls._create_with_connection_in_world(
-            name=name,
-            world=world,
-            kinematic_structure_entity=sofa_body,
-            world_root_T_self=world_root_T_self,
-            connection_limits=connection_limits,
-            active_axis=active_axis,
-            connection_multiplier=connection_multiplier,
-            connection_offset=connection_offset,
-        )
-
-        world.update_forward_kinematics()
-        sofa.calculate_supporting_surface()
-        return sofa
+@dataclass(eq=False)
+class Sink(HasRootBody):
+    """
+    A sink.
+    """
 
 
 @dataclass(eq=False)
@@ -1107,412 +1126,76 @@ class LiquidCap(HasRootBody):
 
 
 @dataclass(eq=False)
-class Drink(SemanticAnnotation):
+class Agent(HasRootBody):
     """
-    A Semantic annotation representing a drink item.
-    """
+    Represents an entity in the world that can act, move, or be controlled.
 
-    body: Body = field(kw_only=True)
+    Agents are dynamic bodies with semantic meaning — they may have intent,
+    behavior, or be controlled by external or internal logic. Examples include
+    robots, humans, or other autonomous actors.
 
-
-@dataclass(eq=False)
-class Cola(Drink): ...
-
-
-@dataclass(eq=False)
-class Fanta(Drink): ...
-
-
-@dataclass(eq=False)
-class Water(Drink): ...
-
-
-@dataclass(eq=False)
-class Beer(Drink): ...
-
-
-# Food Items (with HasRootBody)
-@dataclass(eq=False)
-class Chips(Food, IsPerceivable):
-    """
-    A bag or can of chips.
     """
 
 
 @dataclass(eq=False)
-class Crispbread(Food, IsPerceivable):
+class Human(Agent):
     """
-    A pack of crispbread.
-    """
+    Represents a human agent in the environment.
 
+    A Person is an Agent that is not robotically actuated and does not provide
+    kinematic chains, end_effectors, or robot-specific components.
 
-@dataclass(eq=False)
-class Sauce(Food, IsPerceivable):
-    """
-    A bottle or container of sauce.
-    """
-
-
-@dataclass(eq=False)
-class Soda(Food, IsPerceivable):
-    """
-    A can or bottle of soda.
+    This class exists primarily for semantic distinction, so that algorithms
+    can treat human agents differently from robots if needed.
     """
 
 
 @dataclass(eq=False)
-class SoyaDrink(Food, IsPerceivable):
+class SemanticEnvironmentAnnotation(HasRootBody):
     """
-    A carton of soya drink.
-    """
-
-
-@dataclass(eq=False)
-class Pudding(Food, IsPerceivable):
-    """
-    A box or container of pudding.
+    Represents a semantic annotation of the environment.
     """
 
 
 @dataclass(eq=False)
-class GelatinBox(Food, IsPerceivable):
+class RoomWithWallsAndDoors(Room):
     """
-    A box of gelatin.
-    """
-
-
-@dataclass(eq=False)
-class Sponge(Food, IsPerceivable):
-    """
-    A sponge (e.g., kitchen sponge).
+    A room with a type description (e.g., Ktichen) and walls and doors.
     """
 
-
-@dataclass(eq=False)
-class Spatula(Food, IsPerceivable):
+    room_type: Optional[str] = field(kw_only=True, default=None)
     """
-    A spatula (e.g., kitchen spatula).
+    Description of the type of the room in natural language.
     """
 
-
-@dataclass(eq=False)
-class Rice(Food, IsPerceivable):
+    walls: List[Wall] = field(kw_only=True, default_factory=list)
     """
-    A pack of rice.
+    The walls enclosing this room.
+    """
+
+    doors: List[Door] = field(kw_only=True, default_factory=list)
+    """
+    The doors of the room.
     """
 
 
 @dataclass(eq=False)
-class PancakeMix(Food, IsPerceivable):
+class DoorWithType(Door):
     """
-    A box of pancake mix.
+    A Door that has a type description, e.g. "main entrance"
+    """
+
+    type_description: Optional[str] = field(kw_only=True, default=None)
+
+@dataclass(eq=False)
+class Leg(HasRootBody):
+    """
+    A leg that supports a piece of furniture.
     """
 
 
 @dataclass(eq=False)
-class Oregano(Food, IsPerceivable):
+class Cooktop(HasRootBody):
     """
-    A shaker of oregano.
-    """
-
-
-@dataclass(eq=False)
-class Liquorice(Food, IsPerceivable):
-    """
-    A bag of liquorice.
-    """
-
-
-@dataclass(eq=False)
-class HoneyWafers(Food, IsPerceivable):
-    """
-    A pack of honey wafers.
-    """
-
-
-@dataclass(eq=False)
-class Grapes(Fruit, IsPerceivable):
-    """
-    A bunch of grapes.
-    """
-
-
-@dataclass(eq=False)
-class Peach(Fruit, IsPerceivable):
-    """
-    A peach.
-    """
-
-
-@dataclass(eq=False)
-class Plum(Fruit, IsPerceivable):
-    """
-    A plum.
-    """
-
-
-@dataclass(eq=False)
-class Strawberry(Fruit, IsPerceivable):
-    """
-    A strawberry.
-    """
-
-
-@dataclass(eq=False)
-class Lemon(Fruit, IsPerceivable):
-    """
-    A lemon.
-    """
-
-
-@dataclass(eq=False)
-class Orange(Fruit, IsPerceivable):
-    """
-    An orange.
-    """
-
-
-@dataclass(eq=False)
-class Cucumber(Vegetable, IsPerceivable):
-    """
-    A cucumber.
-    """
-
-
-@dataclass(eq=False)
-class Zucchini(Vegetable, IsPerceivable):
-    """
-    A zucchini.
-    """
-
-
-@dataclass(eq=False)
-class Salt(Food, IsPerceivable):
-    """
-    A pack or container of salt (e.g., salt shaker or salt can).
-    """
-
-
-@dataclass(eq=False)
-class Muesli(Food, IsPerceivable):
-    """
-    A pack of muesli (e.g., in a box or bag).
-    """
-
-
-@dataclass(eq=False)
-class Corn(Fruit, IsPerceivable):
-    """
-    A can of corn.
-    """
-
-
-@dataclass(eq=False)
-class DishwasherTab(Food, IsPerceivable):
-    """
-    A dishwasher tablet.
-    """
-
-
-@dataclass(eq=False)
-class GlassCleaner(Food, IsPerceivable):
-    """
-    A bottle of glass cleaner.
-    """
-
-
-@dataclass(eq=False)
-class GroundCoffee(Food, IsPerceivable):
-    """
-    A pack of ground coffee.
-    """
-
-
-@dataclass(eq=False)
-class Hammer(HasRootBody, IsPerceivable):
-    """
-    A hammer.
-    """
-
-
-@dataclass(eq=False)
-class IcedTea(Food, IsPerceivable):
-    """
-    A can or bottle of iced tea.
-    """
-
-
-@dataclass(eq=False)
-class Juice(Food, IsPerceivable):
-    """
-    A carton or bottle of juice.
-    """
-
-
-@dataclass(eq=False)
-class Ketchup(Food, IsPerceivable):
-    """
-    A bottle of ketchup.
-    """
-
-
-@dataclass(eq=False)
-class Mayonnaise(Food, IsPerceivable):
-    """
-    A bottle of mayonnaise.
-    """
-
-
-@dataclass(eq=False)
-class Mustard(Food, IsPerceivable):
-    """
-    A bottle of mustard.
-    """
-
-
-@dataclass(eq=False)
-class Pear(Food, IsPerceivable):
-    """
-    A pear.
-    """
-
-
-@dataclass(eq=False)
-class Pitcher(HasRootBody, IsPerceivable):
-    """
-    A pitcher (e.g., for water).
-    """
-
-
-@dataclass(eq=False)
-class PottedMeat(Food, IsPerceivable):
-    """
-    A can of potted meat.
-    """
-
-
-@dataclass(eq=False)
-class Sausage(HasRootBody, IsPerceivable):
-    """
-    A sausage (e.g., in a can).
-    """
-
-
-@dataclass(eq=False)
-class Scissors(HasRootBody, IsPerceivable):
-    """
-    A pair of scissors.
-    """
-
-
-@dataclass(eq=False)
-class Screwdriver(HasRootBody, IsPerceivable):
-    """
-    A screwdriver.
-    """
-
-
-@dataclass(eq=False)
-class Skillet(HasRootBody, IsPerceivable):
-    """
-    A skillet (frying pan).
-    """
-
-
-@dataclass(eq=False)
-class Soap(HasRootBody, IsPerceivable):
-    """
-    A bar or bottle of soap.
-    """
-
-
-@dataclass(eq=False)
-class SoccerBall(HasRootBody, IsPerceivable):
-    """
-    A soccer ball.
-    """
-
-
-@dataclass(eq=False)
-class Sprinkles(Food, IsPerceivable):
-    """
-    A pack of sprinkles.
-    """
-
-
-@dataclass(eq=False)
-class Sugar(Food, IsPerceivable):
-    """
-    A box or pack of sugar.
-    """
-
-
-@dataclass(eq=False)
-class TennisBall(HasRootBody, IsPerceivable):
-    """
-    A tennis ball.
-    """
-
-
-@dataclass(eq=False)
-class Vegetables(Food, IsPerceivable):
-    """
-    A can of mixed vegetables.
-    """
-
-
-@dataclass(eq=False)
-class Wafer(Food, IsPerceivable):
-    """
-    A pack of wafers.
-    """
-
-
-@dataclass(eq=False)
-class WineGlass(HasRootBody, IsPerceivable):
-    """
-    A wine glass.
-    """
-
-
-@dataclass(eq=False)
-class WoodBlock(HasRootBody, IsPerceivable):
-    """
-    A wooden block.
-    """
-
-
-# Non-Food, but physical objects
-@dataclass(eq=False)
-class Racquetball(HasRootBody, IsPerceivable):
-    """
-    A racquetball.
-    """
-
-
-@dataclass(eq=False)
-class RubiksCube(HasRootBody, IsPerceivable):
-    """
-    A Rubik's cube.
-    """
-
-
-@dataclass(eq=False)
-class Saucer(HasRootBody, IsPerceivable):
-    """
-    A saucer.
-    """
-
-
-@dataclass(eq=False)
-class Softball(HasRootBody, IsPerceivable):
-    """
-    A softball.
-    """
-
-
-@dataclass(eq=False)
-class Marker(HasRootBody, IsPerceivable):
-    """
-    A marker (e.g., black marker).
+    A cooktop surface for cooking.
     """

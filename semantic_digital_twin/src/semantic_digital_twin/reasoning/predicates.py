@@ -1,21 +1,26 @@
 from __future__ import annotations
+
 from abc import ABC
+from copy import deepcopy
 from dataclasses import dataclass
 
 import numpy as np
-import math
 import trimesh.boolean
+from trimesh.collision import CollisionManager
+from typing_extensions import List, TYPE_CHECKING, Iterable, Type
+
 from krrood.entity_query_language.predicate import (
     Predicate,
     Symbol,
     symbolic_function,
 )
-from random_events.interval import Interval
-from typing_extensions import List, TYPE_CHECKING, Iterable, Type
-
-from semantic_digital_twin.collision_checking.trimesh_collision_detector import (
-    FCLCollisionDetector,
+from krrood.entity_query_language.verbalization.vocabulary.english import Prepositions
+from krrood.entity_query_language.verbalization.vocabulary.parts_of_speech import (
+    clause,
+    Noun,
+    Verb,
 )
+from random_events.interval import Interval
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.datastructures.variables import SpatialVariables
 from semantic_digital_twin.spatial_computations.ik_solver import (
@@ -26,9 +31,10 @@ from semantic_digital_twin.spatial_computations.raytracer import RayTracer
 from semantic_digital_twin.spatial_types import Vector3, Point3
 from semantic_digital_twin.spatial_types.spatial_types import (
     HomogeneousTransformationMatrix,
+    Pose,
 )
-from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import FixedConnection
+from semantic_digital_twin.world_description.geometry import BoundingBox
 from semantic_digital_twin.world_description.world_entity import (
     Body,
     Region,
@@ -36,7 +42,8 @@ from semantic_digital_twin.world_description.world_entity import (
 )
 
 if TYPE_CHECKING:
-    from semantic_digital_twin.robots.abstract_robot import (
+    from semantic_digital_twin.world import World
+    from semantic_digital_twin.robots.robot_parts import (
         Camera,
     )
 
@@ -132,9 +139,10 @@ def occluding_bodies(camera: Camera, body: Body) -> List[Body]:
     )
 
     # create a world only containing the target body
-    world_without_occlusion = World()
+    world_without_occlusion = deepcopy(body._world)
     root = Body(name=PrefixedName("root"))
     with world_without_occlusion.modify_world():
+        world_without_occlusion.clear()
         world_without_occlusion.add_body(root)
         copied_body = Body.from_json(body.to_json())
         root_T_body = body.global_transform
@@ -164,15 +172,13 @@ def occluding_bodies(camera: Camera, body: Body) -> List[Body]:
         )
     )
 
-    mask_without_occluders = segmentation_mask_without_occlusion[
-        segmentation_mask_without_occlusion == copied_body.index
-    ].nonzero()
+    # pixels where the target body is visible when nothing else is in the scene
+    target_pixels = segmentation_mask_without_occlusion == copied_body.index
 
-    mask_with_occluders = segmentation_mask_with_occlusion[
-        mask_without_occluders != body.index
-    ]
-    indices = np.unique(mask_with_occluders)
-    indices = indices[indices > -1]
+    # whatever covers those pixels in the real scene (except the target itself)
+    # is occluding the target
+    indices = np.unique(segmentation_mask_with_occlusion[target_pixels])
+    indices = indices[(indices > -1) & (indices != body.index)]
     bodies = [camera._world.kinematic_structure[i] for i in indices]
     return bodies
 
@@ -180,7 +186,7 @@ def occluding_bodies(camera: Camera, body: Body) -> List[Body]:
 @symbolic_function
 def reachable(pose: HomogeneousTransformationMatrix, root: Body, tip: Body) -> bool:
     """
-    Checks if a manipulator can reach a given position.
+    Checks if a end_effector can reach a given position.
     This is determined by inverse kinematics.
 
     :param pose: The pose to reach
@@ -200,11 +206,40 @@ def reachable(pose: HomogeneousTransformationMatrix, root: Body, tip: Body) -> b
 
 
 @symbolic_function
-def compute_euclidean_distance_2d(body1: Body, body2: Body):
-    return math.dist(
-        body1.global_pose.to_position().to_list()[:2],
-        body2.global_pose.to_position().to_list()[:2],
-    )
+def compute_euclidean_planar_distance(
+    body1: Body, body2: Body, ignore_dimension: Vector3
+):
+    """
+    Computes the Euclidean distance between two bodies in 2D space, ignoring a specific dimension
+    specified by the user. The ignored dimension is set to zero before the distance calculation. This
+    function can be used to handle scenarios where computations are restricted to certain spatial
+    planes.
+
+    :param body1: The first body to compute the distance from. It uses the global pose of the body
+                      to extract the position.
+    :param body2: The second body to compute the distance to. It also utilizes the global pose of
+                      the body to extract the position.
+    :param ignore_dimension: Specifies which dimension (x, y, or z) should be ignored in the
+                                     computation. The ignored dimension is set to zero for both
+                                     positions prior to calculating the distance.
+
+    :return: The Euclidean distance between the two bodies in the 2D plane after ignoring the
+               specified dimension.
+    """
+    body1_position = body1.global_pose.to_position()
+    body2_position = body2.global_pose.to_position()
+
+    if np.allclose(ignore_dimension, Vector3.X()):
+        body1_position.x = 0.0
+        body2_position.x = 0.0
+    elif np.allclose(ignore_dimension, Vector3.Y()):
+        body1_position.y = 0.0
+        body2_position.y = 0.0
+    elif np.allclose(ignore_dimension, Vector3.Z()):
+        body1_position.z = 0.0
+        body2_position.z = 0.0
+
+    return body1_position.euclidean_distance(body2_position)
 
 
 @symbolic_function
@@ -346,7 +381,7 @@ class PointSpatialRelation(Symbol, ABC):
 @dataclass
 class ViewDependentSpatialRelation(PointSpatialRelation, ABC):
 
-    point_of_semantic_annotation: HomogeneousTransformationMatrix
+    point_of_view: HomogeneousTransformationMatrix
     """
     The reference spot from where to look at the bodies.
     """
@@ -369,14 +404,14 @@ class ViewDependentSpatialRelation(PointSpatialRelation, ABC):
             the spatial relation is computed.
         :return: The signed distance between the first and the second points along the given direction.
         """
-        ref_np = self.point_of_semantic_annotation.to_np()
+        ref_np = self.point_of_view.to_np()
         front_world = ref_np[:3, index]
         front_norm = front_world / (np.linalg.norm(front_world) + self.eps)
         front_norm = Vector3(
             x=front_norm[0],
             y=front_norm[1],
             z=front_norm[2],
-            reference_frame=self.point_of_semantic_annotation.reference_frame,
+            reference_frame=self.point_of_view.reference_frame,
         )
 
         s_body = front_norm.dot(self.point.to_vector3())
@@ -522,3 +557,68 @@ class ContainsType(Predicate):
 
     def __call__(self) -> bool:
         return any(isinstance(obj, self.obj_type) for obj in self.iterable)
+
+    @classmethod
+    def _verbalization_fragment_(cls, fields):
+        return clause(
+            Noun(fields["iterable"]),
+            Verb("contain"),
+            Noun("instance"),
+            Prepositions.OF,
+            Noun(fields["obj_type"]),
+        )
+
+
+@symbolic_function
+def is_place_occupied(
+    box: BoundingBox, pose: Pose, world: World, allowed_bodies: List[Body] = None
+) -> bool:
+    """
+    Checks if the given region (as a box at its pose) intersects with any collidable
+    object in the world, excluding `allowed_bodies`.
+
+    The region is converted to a box mesh at the region pose and tested against
+    each body's world-aligned collision mesh using trimesh's collision manager.
+
+    :param box: The region (axis-aligned box in its own local frame with pose in `region.origin`).
+    :param world: The world providing bodies with enabled collisions.
+    :param allowed_bodies: Bodies to ignore during the check.
+    :return: True if any collision is found, False otherwise.
+    """
+    allowed_bodies = set(allowed_bodies or [])
+
+    # Build a mesh for the region box at its current pose
+    region_box_shape = box.as_shape()  # returns a Box centered at the region
+    region_mesh = region_box_shape.mesh.copy()
+    region_mesh.apply_transform(world.transform(pose, world.root).to_np())
+
+    # Prepare collision manager with the region mesh
+    cm = CollisionManager()
+    cm.add_object("region", region_mesh)
+
+    # Iterate over collidable bodies and test collision
+    for body in world.bodies_with_collision:
+        if body in allowed_bodies:
+            continue
+
+        mesh_local = getattr(body.collision, "combined_mesh", None)
+        if mesh_local is None or getattr(mesh_local, "is_empty", False):
+            continue
+
+        # Transform body mesh into world frame
+        body_mesh = mesh_local.copy()
+        body_mesh.apply_transform(body.global_pose.to_np())
+
+        # Early exit on first collision
+        if cm.in_collision_single(body_mesh):
+            return True
+
+    return False
+
+
+@symbolic_function
+def allclose(array1: np.ndarray, array2: np.ndarray, atol=1e-3) -> bool:
+    """
+    Symbolic wrapper around `np.allclose`.
+    """
+    return np.allclose(array1, array2, atol=atol)

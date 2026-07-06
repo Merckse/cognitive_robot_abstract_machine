@@ -12,6 +12,36 @@ from random_events.interval import SimpleInterval, Interval
 from typing_extensions import Type
 import datetime
 
+from random_events.product_algebra import Event
+from random_events.variable import Variable, Continuous
+
+
+def logsumexp(values, axis=None):
+    """
+    Numerically stable logarithm of a sum of exponentials.
+
+    This is a lightweight drop-in for :func:`scipy.special.logsumexp` covering the
+    cases used in the probabilistic circuit inference loops (a list or array reduced
+    over ``axis``, or a one-dimensional array reduced over everything). scipy's
+    implementation carries large per-call dispatch overhead that dominates those
+    loops, where this function is called once per sum unit per query.
+
+    :param values: The values to reduce. May be a list of scalars or arrays.
+    :param axis: The axis to reduce over, or ``None`` to reduce over all entries.
+    :return: ``log(sum(exp(values)))`` reduced over ``axis``.
+    """
+    values = np.asarray(values, dtype=float)
+    maximum = np.amax(values, axis=axis, keepdims=True)
+    # avoid NaN when a whole reduction is -inf (or +inf): subtract 0.0 instead
+    maximum = np.where(np.isfinite(maximum), maximum, 0.0)
+    with np.errstate(divide="ignore"):
+        result = (
+            np.log(np.sum(np.exp(values - maximum), axis=axis, keepdims=True)) + maximum
+        )
+    if axis is None:
+        return result.reshape(())[()]
+    return np.squeeze(result, axis=axis)
+
 
 def simple_interval_as_array(interval: SimpleInterval) -> np.ndarray:
     """
@@ -90,3 +120,33 @@ def neighbouring_points(point: float) -> np.array:
     :return: The point and its two neighbours
     """
     return np.array([np.nextafter(point, -np.inf), point, np.nextafter(point, np.inf)])
+
+
+def event_compatible_for_truncation_with_singletons(event: Event):
+    """
+    Check if the event is compatible for truncation with singletons.
+    It is compatible if for each variable, either all intervals are singletons or all intervals are not singletons.
+    :param event: The event to check.
+    :return: True if the event is compatible, False otherwise.
+    """
+    intervals_per_dimensions = defaultdict(list)
+
+    for variable in event.variables:
+        variable: Variable
+        if not isinstance(variable, Continuous):
+            continue
+
+        for simple_event in event.simple_sets:
+            # collect all simple intervals for this variable across the composite event
+            intervals_per_dimensions[variable].extend(
+                simple_event[variable].simple_sets
+            )
+
+    for variable, intervals in intervals_per_dimensions.items():
+        if all(interval.is_singleton() for interval in intervals):
+            continue
+        elif all(not interval.is_singleton() for interval in intervals):
+            continue
+        else:
+            return False
+    return True

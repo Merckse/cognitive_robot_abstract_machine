@@ -1,10 +1,11 @@
+from __future__ import annotations
+
 import logging
 import inspect
 import os
-import shutil
-import time
-from typing import Self
+from typing import Tuple
 
+import time
 import trimesh
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -13,28 +14,33 @@ from types import NoneType
 from typing_extensions import Dict, List, Any, ClassVar, Type, Optional, Union
 
 import numpy
-from mujoco_connector import MultiverseMujocoConnector
 import mujoco
-from multiverse_simulator import (
-    MultiverseSimulator,
-    MultiverseSimulatorState,
-    MultiverseViewer,
-    MultiverseAttribute,
-    MultiverseCallbackResult,
+from physics_simulators.mujoco_simulator import MujocoSimulator
+from physics_simulators.base_simulator import (
+    BaseSimulator,
+    SimulatorState,
+    SimulatorCallbackResult,
+    SimulatorConstraints,
 )
-
-from krrood.adapters.json_serializer import SubclassJSONSerializer, to_json
 from krrood.utils import recursive_subclasses
 from scipy.spatial.transform import Rotation
 from trimesh.visual import TextureVisuals
 
-from semantic_digital_twin.callbacks.callback import ModelChangeCallback
+from semantic_digital_twin.callbacks.callback import (
+    ModelChangeCallback,
+    StateChangeCallback,
+)
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
+from semantic_digital_twin.exceptions import (
+    QuaternionConversionError,
+    MujocoEntityNotFoundError,
+)
 from semantic_digital_twin.spatial_types.spatial_types import (
     HomogeneousTransformationMatrix,
     Point3,
     Quaternion,
 )
+from semantic_digital_twin.spatial_types.math import inverse_frame
 from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import (
     RevoluteConnection,
@@ -42,6 +48,8 @@ from semantic_digital_twin.world_description.connections import (
     ActiveConnection1DOF,
     FixedConnection,
     Connection6DoF,
+    OmniDrive,
+    DifferentialDrive,
 )
 from semantic_digital_twin.world_description.geometry import (
     Box,
@@ -63,6 +71,7 @@ from semantic_digital_twin.mixin import SimulatorAdditionalProperty
 from semantic_digital_twin.world_description.world_modification import (
     AddKinematicStructureEntityModification,
     AddActuatorModification,
+    AddConnectionModification,
 )
 
 logger = logging.getLogger(__name__)
@@ -78,7 +87,10 @@ def cas_pose_to_list(pose: HomogeneousTransformationMatrix) -> List[float]:
     pose = pose.evaluate()
     pos = pose[:3, 3]
     rotation_matrix = pose[:3, :3]
-    quat = Rotation.from_matrix(rotation_matrix).as_quat(scalar_first=True)
+    try:
+        quat = Rotation.from_matrix(rotation_matrix).as_quat(scalar_first=True)
+    except Exception as e:
+        raise QuaternionConversionError(rotation_matrix, str(e))
     return [pos[0], pos[1], pos[2], quat[0], quat[1], quat[2], quat[3]]
 
 
@@ -126,14 +138,20 @@ class GeomVisibilityAndCollisionType(IntEnum):
     """
 
 
-class MultiSimError(Exception):
-    """Base class for all MultiSim-related exceptions."""
-
-
 @dataclass(eq=False)
 class MultiSimCamera(SimulatorAdditionalProperty):
     """
     Additional property representing a camera in MultiSim.
+    """
+
+    name: str = ""
+    """
+    The name of the camera.
+    """
+
+    body: Any = None
+    """
+    The body that the camera is attached to. This can be set to the name of the body or a reference to the body object itself.
     """
 
 
@@ -193,6 +211,7 @@ class InertialConverter:
         )
 
 
+@dataclass
 class EntityConverter(ABC):
     """
     A converter to convert an entity object (WorldEntity, Shape, Connection) to a dictionary of properties for Multiverse simulator.
@@ -255,6 +274,7 @@ class EntityConverter(ABC):
         raise NotImplementedError
 
 
+@dataclass
 class KinematicStructureEntityConverter(EntityConverter, ABC):
     """
     Converts a KinematicStructureEntity object to a dictionary of body properties for Multiverse simulator.
@@ -264,8 +284,8 @@ class KinematicStructureEntityConverter(EntityConverter, ABC):
     """
 
     entity_type: ClassVar[Type[KinematicStructureEntity]] = KinematicStructureEntity
-    pos_str: str
-    quat_str: str
+    pos_str: str = "pos"
+    quat_str: str = "quat"
 
     def _convert(self, entity: entity_type, **kwargs) -> Dict[str, Any]:
         """
@@ -276,8 +296,8 @@ class KinematicStructureEntityConverter(EntityConverter, ABC):
         """
 
         kinematic_structure_entity_props = EntityConverter._convert(self, entity)
-        px, py, pz, qw, qx, qy, qz = cas_pose_to_list(
-            entity.parent_connection.origin_expression
+        [px, py, pz, qx, qy, qz, qw] = (
+            entity.parent_connection.origin_as_position_quaternion().evaluate()[0]
         )
         kinematic_structure_entity_pos = [px, py, pz]
         kinematic_structure_entity_quat = [qw, qx, qy, qz]
@@ -290,6 +310,7 @@ class KinematicStructureEntityConverter(EntityConverter, ABC):
         return kinematic_structure_entity_props
 
 
+@dataclass
 class BodyConverter(KinematicStructureEntityConverter, ABC):
     """
     Converts a Body object to a dictionary of body properties for Multiverse simulator.
@@ -302,22 +323,22 @@ class BodyConverter(KinematicStructureEntityConverter, ABC):
 
     # Attributes for specifying body properties in the Mujoco simulator.
 
-    mass_str: str
+    mass_str: str = "mass"
     """
     The key for the mass property in the output dictionary.
     """
 
-    inertia_pos_str: str
+    inertia_pos_str: str = "inertia_pos"
     """
     The key for the inertia position property in the output dictionary.
     """
 
-    inertia_quat_str: str
+    inertia_quat_str: str = "inertia_quat"
     """
     The key for the inertia quaternion property in the output dictionary.
     """
 
-    diagonal_inertia_str: str
+    diagonal_inertia_str: str = "diagonal_inertia"
     """
     The key for the diagonal inertia tensor property in the output dictionary.
     """
@@ -355,6 +376,7 @@ class BodyConverter(KinematicStructureEntityConverter, ABC):
         return body_props
 
 
+@dataclass
 class RegionConverter(KinematicStructureEntityConverter, ABC):
     """
     Converts a Region object to a dictionary of region properties for Multiverse simulator.
@@ -366,6 +388,7 @@ class RegionConverter(KinematicStructureEntityConverter, ABC):
     """
 
 
+@dataclass
 class ShapeConverter(EntityConverter, ABC):
     """
     Converts a Shape object to a dictionary of shape properties for Multiverse simulator.
@@ -376,17 +399,17 @@ class ShapeConverter(EntityConverter, ABC):
     The type of the entity to convert.
     """
 
-    pos_str: str
+    pos_str: str = "pos"
     """
     The key for the shape position property in the output dictionary.
     """
 
-    quat_str: str
+    quat_str: str = "quat"
     """
     The key for the shape quaternion property in the output dictionary.
     """
 
-    rgba_str: str
+    rgba_str: str = "rgba"
     """
     The key for the shape RGBA color property in the output dictionary.
     """
@@ -419,6 +442,7 @@ class ShapeConverter(EntityConverter, ABC):
         return geom_props
 
 
+@dataclass
 class BoxConverter(ShapeConverter, ABC):
     """
     Converts a Box object to a dictionary of box properties for Multiverse simulator.
@@ -427,6 +451,7 @@ class BoxConverter(ShapeConverter, ABC):
     entity_type: ClassVar[Type[Box]] = Box
 
 
+@dataclass
 class SphereConverter(ShapeConverter, ABC):
     """
     Converts a Sphere object to a dictionary of sphere properties for Multiverse simulator.
@@ -435,6 +460,7 @@ class SphereConverter(ShapeConverter, ABC):
     entity_type: ClassVar[Type[Sphere]] = Sphere
 
 
+@dataclass
 class CylinderConverter(ShapeConverter, ABC):
     """
     Converts a Cylinder object to a dictionary of cylinder properties for Multiverse simulator.
@@ -443,6 +469,7 @@ class CylinderConverter(ShapeConverter, ABC):
     entity_type: ClassVar[Type[Cylinder]] = Cylinder
 
 
+@dataclass
 class MeshConverter(ShapeConverter, ABC):
     """
     Converts a Mesh object to a dictionary of mesh properties for Multiverse simulator.
@@ -451,6 +478,7 @@ class MeshConverter(ShapeConverter, ABC):
     entity_type: ClassVar[Type[Mesh]] = Mesh
 
 
+@dataclass
 class ConnectionConverter(EntityConverter, ABC):
     """
     Converts a Connection object to a dictionary of joint properties for Multiverse simulator.
@@ -471,6 +499,7 @@ class ConnectionConverter(EntityConverter, ABC):
         return EntityConverter._convert(self, entity)
 
 
+@dataclass
 class Connection1DOFConverter(ConnectionConverter, ABC):
     """
     Converts an ActiveConnection1DOF object to a dictionary of joint properties for Multiverse simulator.
@@ -481,37 +510,37 @@ class Connection1DOFConverter(ConnectionConverter, ABC):
     The type of the entity to convert.
     """
 
-    axis_str: str
+    axis_str: str = "axis"
     """
     The key for the joint axis property in the output dictionary.
     """
 
-    range_str: str
+    range_str: str = "range"
     """
     The key for the joint range property in the output dictionary.
     """
 
-    pos_str: str
+    pos_str: str = "pos"
     """
     The key for the joint position property in the output dictionary.
     """
 
-    quat_str: str
+    quat_str: str = "quat"
     """
     The key for the joint quaternion property in the output dictionary.
     """
 
-    armature_str: str
+    armature_str: str = "armature"
     """
     The key for the joint armature property in the output dictionary.
     """
 
-    dry_friction_str: str
+    dry_friction_str: str = "dry_friction"
     """
     The key for the joint dry friction property in the output dictionary.
     """
 
-    damping_str: str
+    damping_str: str = "damping"
     """
     The key for the joint damping property in the output dictionary.
     """
@@ -531,18 +560,21 @@ class Connection1DOFConverter(ConnectionConverter, ABC):
         px, py, pz, qw, qx, qy, qz = cas_pose_to_list(child_T_connection_transform)
         joint_pos = [px, py, pz]
         joint_quat = [qw, qx, qy, qz]
+        joint_range = [dof.limits.lower.position, dof.limits.upper.position]
+        if any([r is None for r in joint_range]):
+            joint_range = [0, 0]
         joint_props.update(
             {
                 self.pos_str: joint_pos,
                 self.quat_str: joint_quat,
                 self.axis_str: entity.axis.to_np().tolist()[:3],
-                self.range_str: [dof.limits.lower.position, dof.limits.upper.position],
+                self.range_str: joint_range,
                 self.armature_str: entity.dynamics.armature,
                 self.dry_friction_str: entity.dynamics.dry_friction,
                 self.damping_str: entity.dynamics.damping,
             }
         )
-        if dof.name.name != joint_props["name"]:
+        if dof.name.name != joint_props["name"] and dof.name.name != "dof":
             joint_props["equality_joint"] = {
                 "joint": dof.name.name,
                 "data": [entity.offset, entity.multiplier, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -550,6 +582,7 @@ class Connection1DOFConverter(ConnectionConverter, ABC):
         return joint_props
 
 
+@dataclass
 class ConnectionRevoluteConverter(Connection1DOFConverter, ABC):
     """
     Converts a RevoluteConnection object to a dictionary of revolute joint properties for Multiverse simulator.
@@ -561,6 +594,7 @@ class ConnectionRevoluteConverter(Connection1DOFConverter, ABC):
     """
 
 
+@dataclass
 class ConnectionPrismaticConverter(Connection1DOFConverter, ABC):
     """
     Converts a PrismaticConnection object to a dictionary of prismatic joint properties for Multiverse simulator.
@@ -572,6 +606,7 @@ class ConnectionPrismaticConverter(Connection1DOFConverter, ABC):
     """
 
 
+@dataclass
 class Connection6DOFConverter(ConnectionConverter, ABC):
     """
     Converts a Connection6DoF object to a dictionary of 6DoF joint properties for Multiverse simulator.
@@ -594,6 +629,7 @@ class Connection6DOFConverter(ConnectionConverter, ABC):
         return joint_props
 
 
+@dataclass
 class ActuatorConverter(EntityConverter, ABC):
     """
     Converts an Actuator object to a dictionary of actuator properties for Multiverse simulator.
@@ -616,6 +652,7 @@ class ActuatorConverter(EntityConverter, ABC):
         return actuator_props
 
 
+@dataclass
 class CameraConverter(EntityConverter, ABC):
     """
     Converts a Camera object to a dictionary of camera properties for Multiverse simulator.
@@ -638,26 +675,8 @@ class CameraConverter(EntityConverter, ABC):
         return camera_props
 
 
-class MujocoError(MultiSimError):
-    """
-    Base class for all MuJoCo-related exceptions.
-    """
-
-
-class MujocoEntityNotFoundError(MujocoError):
-    """
-    Raised when a MuJoCo entity of a given type and name cannot be found.
-    """
-
-    def __init__(
-        self, entity_name: str, entity_type: mujoco.mjtObj, action: str = "find"
-    ):
-        message = f"Failed to {action}: type={entity_type}, name='{entity_name}'"
-        super().__init__(message)
-
-
 @dataclass
-class MujocoActuator(SimulatorAdditionalProperty, SubclassJSONSerializer):
+class MujocoActuator(SimulatorAdditionalProperty):
     """
     Represents a MuJoCo-specific actuator in the world model.
     For more information, see: https://mujoco.readthedocs.io/en/stable/XMLreference.html#actuator-general
@@ -745,53 +764,9 @@ class MujocoActuator(SimulatorAdditionalProperty, SubclassJSONSerializer):
     mujoco.mjtGain.mjGAIN_USER:     gain_term = mjcb_act_gain(…)
     """
 
-    def to_json(self) -> Dict[str, Any]:
-        """
-        Serializes the MujocoActuator to a JSON-compatible dictionary.
-
-        :return: A dictionary representation of the MujocoActuator.
-        """
-        return {
-            "activation_limited": self.activation_limited,
-            "activation_range": to_json(self.activation_range),
-            "control_limited": self.control_limited,
-            "control_range": to_json(self.control_range),
-            "force_limited": self.force_limited,
-            "force_range": to_json(self.force_range),
-            "bias_parameters": to_json(self.bias_parameters),
-            "bias_type": self.bias_type,
-            "dynamics_parameters": to_json(self.dynamics_parameters),
-            "dynamics_type": self.dynamics_type,
-            "gain_parameters": to_json(self.gain_parameters),
-            "gain_type": self.gain_type,
-        }
-
-    @classmethod
-    def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
-        """
-        Deserializes a JSON-compatible dictionary to a MujocoActuator instance.
-
-        :param data: A dictionary representation of a MujocoActuator.
-        :return: A MujocoActuator instance created from the provided data.
-        """
-        return cls(
-            activation_limited=mujoco.mjtLimited(data["activation_limited"]),
-            activation_range=data["activation_range"],
-            control_limited=mujoco.mjtLimited(data["control_limited"]),
-            control_range=data["control_range"],
-            force_limited=mujoco.mjtLimited(data["force_limited"]),
-            force_range=data["force_range"],
-            bias_parameters=data["bias_parameters"],
-            bias_type=mujoco.mjtBias(data["bias_type"]),
-            dynamics_parameters=data["dynamics_parameters"],
-            dynamics_type=mujoco.mjtDyn(data["dynamics_type"]),
-            gain_parameters=data["gain_parameters"],
-            gain_type=mujoco.mjtGain(data["gain_type"]),
-        )
-
 
 @dataclass
-class MujocoCamera(SimulatorAdditionalProperty):
+class MujocoCamera(MultiSimCamera):
     """
     Additional property representing a MuJoCo camera in the world model.
     """
@@ -923,7 +898,7 @@ class MujocoTendon(SimulatorAdditionalProperty):
     Inertia associated with changes in tendon length.
     """
 
-    damping: float = 0.0
+    damping: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     """
     Damping coefficient. A positive value generates a damping force (linear in velocity) acting along the tendon.
     """
@@ -993,7 +968,7 @@ class MujocoTendon(SimulatorAdditionalProperty):
     Spring resting position, can take either one or two values. If one value is given, it corresponds to the length of the tendon at rest.
     """
 
-    stiffness: float = 0.0
+    stiffness: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     """
     Stiffness coefficient. A positive value generates a spring force (linear in position) acting along the tendon.
     """
@@ -1045,7 +1020,7 @@ class MujocoJoint(SimulatorAdditionalProperty):
     An additional property declaring that a Connection is a MujocoJoint.
     """
 
-    stiffness: float = 0.0
+    stiffness: List[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     """
     The stiffness of the joint.
     """
@@ -1078,9 +1053,11 @@ class MujocoBody(SimulatorAdditionalProperty):
     """
 
 
+@dataclass
 class MujocoConverter(EntityConverter, ABC): ...
 
 
+@dataclass
 class MujocoKinematicStructureEntityConverter(
     MujocoConverter, KinematicStructureEntityConverter, ABC
 ):
@@ -1088,6 +1065,7 @@ class MujocoKinematicStructureEntityConverter(
     quat_str: str = "quat"
 
 
+@dataclass
 class MujocoBodyConverter(MujocoKinematicStructureEntityConverter, BodyConverter):
     mass_str: str = "mass"
     inertia_pos_str: str = "ipos"
@@ -1100,6 +1078,7 @@ class MujocoBodyConverter(MujocoKinematicStructureEntityConverter, BodyConverter
         return body_props
 
 
+@dataclass
 class MujocoRegionConverter(MujocoKinematicStructureEntityConverter, RegionConverter):
     def _post_convert(
         self, entity: Region, region_props: Dict[str, Any], **kwargs
@@ -1107,11 +1086,12 @@ class MujocoRegionConverter(MujocoKinematicStructureEntityConverter, RegionConve
         return region_props
 
 
+@dataclass
 class MujocoGeomConverter(MujocoConverter, ShapeConverter, ABC):
     pos_str: str = "pos"
     quat_str: str = "quat"
     rgba_str: str = "rgba"
-    type: mujoco.mjtGeom
+    type: mujoco.mjtGeom = mujoco.mjtGeom.mjGEOM_SPHERE
 
     def _post_convert(
         self, entity: Shape, shape_props: Dict[str, Any], **kwargs
@@ -1136,6 +1116,7 @@ class MujocoGeomConverter(MujocoConverter, ShapeConverter, ABC):
         return shape_props
 
 
+@dataclass
 class MujocoBoxConverter(MujocoGeomConverter, BoxConverter):
     type: mujoco.mjtGeom = mujoco.mjtGeom.mjGEOM_BOX
 
@@ -1151,6 +1132,7 @@ class MujocoBoxConverter(MujocoGeomConverter, BoxConverter):
         return shape_props
 
 
+@dataclass
 class MujocoSphereConverter(MujocoGeomConverter, SphereConverter):
     type: mujoco.mjtGeom = mujoco.mjtGeom.mjGEOM_SPHERE
 
@@ -1164,6 +1146,7 @@ class MujocoSphereConverter(MujocoGeomConverter, SphereConverter):
         return shape_props
 
 
+@dataclass
 class MujocoCylinderConverter(MujocoGeomConverter, CylinderConverter):
     type: mujoco.mjtGeom = mujoco.mjtGeom.mjGEOM_CYLINDER
 
@@ -1177,6 +1160,7 @@ class MujocoCylinderConverter(MujocoGeomConverter, CylinderConverter):
         return shape_props
 
 
+@dataclass
 class MujocoMeshConverter(MujocoGeomConverter, MeshConverter):
     type: mujoco.mjtGeom = mujoco.mjtGeom.mjGEOM_MESH
 
@@ -1190,16 +1174,26 @@ class MujocoMeshConverter(MujocoGeomConverter, MeshConverter):
         if isinstance(entity.mesh.visual, TextureVisuals) and isinstance(
             entity.mesh.visual.material.name, str
         ):
-            shape_props["texture_file_path"] = (
-                entity.mesh.visual.material.image.filename
-            )
+            texture_file_path = entity.mesh.visual.material.name
+            if not os.path.isfile(texture_file_path):
+                texture_file_path = entity.mesh.visual.material.image.filename
+            if not os.path.isfile(texture_file_path):
+                texture_file_path = entity.mesh.visual.material.image.info.get(
+                    "file_path", ""
+                )
+            if not os.path.isfile(texture_file_path):
+                raise FileNotFoundError(
+                    f"Texture file not found for mesh. Checked paths: '{entity.mesh.visual.material.name}', '{entity.mesh.visual.material.image.filename}', '{entity.mesh.visual.material.image.info.get('file_path', '')}'"
+                )
+            shape_props["texture_file_path"] = texture_file_path
         return shape_props
 
 
+@dataclass
 class MujocoJointConverter(ConnectionConverter, ABC):
     pos_str: str = "pos"
     quat_str: str = "quat"
-    type: mujoco.mjtJoint
+    type: mujoco.mjtJoint = mujoco.mjtJoint.mjJNT_HINGE
     armature_str: str = "armature"
     dry_friction_str: str = "frictionloss"
     damping_str: str = "damping"
@@ -1211,6 +1205,7 @@ class MujocoJointConverter(ConnectionConverter, ABC):
         return joint_props
 
 
+@dataclass
 class Mujoco1DOFJointConverter(MujocoJointConverter, Connection1DOFConverter):
     axis_str: str = "axis"
     range_str: str = "range"
@@ -1227,6 +1222,7 @@ class Mujoco1DOFJointConverter(MujocoJointConverter, Connection1DOFConverter):
         return joint_props
 
 
+@dataclass
 class MujocoRevoluteJointConverter(
     Mujoco1DOFJointConverter, ConnectionRevoluteConverter
 ):
@@ -1242,20 +1238,24 @@ class MujocoRevoluteJointConverter(
         return joint_props
 
 
+@dataclass
 class MujocoPrismaticJointConverter(
     Mujoco1DOFJointConverter, ConnectionPrismaticConverter
 ):
     type: mujoco.mjtJoint = mujoco.mjtJoint.mjJNT_SLIDE
 
 
+@dataclass
 class Mujoco6DOFJointConverter(MujocoJointConverter, Connection6DOFConverter):
     type: mujoco.mjtJoint = mujoco.mjtJoint.mjJNT_FREE
 
 
+@dataclass
 class MujocoActuatorConverter(ActuatorConverter, ABC):
     entity_type: ClassVar[Type[Actuator]] = Actuator
 
 
+@dataclass
 class MujocoGeneralActuatorConverter(MujocoActuatorConverter, ActuatorConverter):
 
     def _post_convert(
@@ -1278,6 +1278,7 @@ class MujocoGeneralActuatorConverter(MujocoActuatorConverter, ActuatorConverter)
         return actuator_props
 
 
+@dataclass
 class MujocoCameraConverter(CameraConverter, ABC):
 
     entity_type: ClassVar[Type[MujocoCamera]] = MujocoCamera
@@ -1286,7 +1287,14 @@ class MujocoCameraConverter(CameraConverter, ABC):
         self, entity: MujocoCamera, camera_props: Dict[str, Any], **kwargs
     ) -> Dict[str, Any]:
         camera_props["mode"] = entity.mode
-        camera_props["orthographic"] = entity.orthographic
+        if mujoco.mj_version() >= 3005000:
+            camera_props["proj"] = (
+                mujoco.mjtProjection.mjPROJ_ORTHOGRAPHIC
+                if entity.orthographic
+                else mujoco.mjtProjection.mjPROJ_PERSPECTIVE
+            )
+        else:
+            camera_props["orthographic"] = entity.orthographic
         camera_props["fovy"] = entity.fovy
         camera_props["resolution"] = entity.resolution
         camera_props["focal_length"] = entity.focal_length
@@ -1311,6 +1319,17 @@ class MultiSimBuilder(ABC):
     The world to be built.
     """
 
+    _ignore_connection_types: ClassVar[Tuple[Type, ...]] = (
+        FixedConnection,
+        OmniDrive,
+        DifferentialDrive,
+    )
+    """
+    A list of connection types to ignore when building connections in the simulator.
+    FixedConnection is ignored because in MuJoCo, all bodies that are not connected by a joint are implicitly fixed to the parent body.
+    OmniDrive and DifferentialDrive are ignored because in MuJoCo, those are controlled by the degree of freedom of the freejoints.
+    """
+
     def build_world(self, world: World, file_path: str):
         """
         Builds the world in the simulator and saves it to a file.
@@ -1328,7 +1347,7 @@ class MultiSimBuilder(ABC):
         if len(self.world.bodies) == 0:
             with self.world.modify_world():
                 self.world.add_body(root)
-        elif self.world.root != root:
+        elif self.world.root.name != root.name:
             # search for all Connection6DoF joints that are connected to the non "world" root
             # to change their parent to the new "world" root later.
             # Mujoco identifies all Connection6DoF joints as free joints.
@@ -1357,13 +1376,13 @@ class MultiSimBuilder(ABC):
 
         self._start_build(file_path=file_path)
 
-        for body in world.bodies:
+        for body in world.bodies_topologically_sorted:
             self.build_body(body=body)
 
         for region in world.regions:
             self.build_region(region=region)
 
-        for connection in world.connections:
+        for connection in world.connections_topologically_sorted:
             self._build_connection(connection=connection)
 
         for actuator in world.actuators:
@@ -1518,6 +1537,8 @@ class MujocoBuilder(MultiSimBuilder):
 
         tree = ET.parse(file_path)
         root = tree.getroot()
+        for compiler_element in root.iter("compiler"):
+            compiler_element.set("inertiafromgeom", "true")
         for body_id, body_element in enumerate(root.findall(".//body")):
             body_spec = self.spec.bodies[body_id + 1]
             if numpy.isclose(body_spec.mass, 0.0):
@@ -1534,6 +1555,24 @@ class MujocoBuilder(MultiSimBuilder):
             texture_name = material_spec.textures[0]
             if texture_name != "":
                 material_element.set("texture", texture_name)
+        keyframe_element = ET.SubElement(root, "keyframe")
+        key_element = ET.SubElement(keyframe_element, "key")
+        key_element.set("name", "home")
+        key_element.set("time", "0")
+        qpos = []
+        for body in self.world.bodies:
+            parent_connection = body.parent_connection
+            if (
+                isinstance(parent_connection, self._ignore_connection_types)
+                or parent_connection is None
+            ):
+                continue
+            qpos += [
+                self.world.state[dof.id].position
+                for dof in parent_connection.active_dofs
+                + parent_connection.passive_dofs
+            ]
+        key_element.set("qpos", " ".join(map(str, qpos)))
         tree.write(file_path, encoding="utf-8", xml_declaration=True)
 
     def _build_body(self, body: Body):
@@ -1664,7 +1703,7 @@ class MujocoBuilder(MultiSimBuilder):
         return True
 
     def _build_connection(self, connection: Connection):
-        if isinstance(connection, FixedConnection):
+        if isinstance(connection, self._ignore_connection_types):
             return
         joint_props = MujocoJointConverter.convert(connection)
         if "equality_joint" in joint_props:
@@ -1677,7 +1716,11 @@ class MujocoBuilder(MultiSimBuilder):
             equality.data = equality_joint["data"]
         for mujoco_joint in connection.simulator_additional_properties:
             if isinstance(mujoco_joint, MujocoJoint):
-                joint_props["stiffness"] = mujoco_joint.stiffness
+                joint_props["stiffness"] = (
+                    mujoco_joint.stiffness[0]
+                    if mujoco.mj_version() < 3007000
+                    else mujoco_joint.stiffness
+                )
                 joint_props["actfrcrange"] = mujoco_joint.actuator_force_range
                 break
 
@@ -1737,7 +1780,7 @@ class MujocoBuilder(MultiSimBuilder):
             )
 
     def _build_camera(self, camera: MultiSimCamera):
-        camera_name = camera.name.name
+        camera_name = camera.name
         camera_props = MujocoCameraConverter.convert(camera)
         body_name = camera_props.pop("body")
         body_spec = self._find_entity(
@@ -1809,7 +1852,11 @@ class MujocoBuilder(MultiSimBuilder):
                 tendon.actfrclimited = mujoco_tendon.actuator_force_limited
                 tendon.actfrcrange = mujoco_tendon.actuator_force_range
                 tendon.armature = mujoco_tendon.armature
-                tendon.damping = mujoco_tendon.damping
+                tendon.damping = (
+                    mujoco_tendon.damping[0]
+                    if mujoco.mj_version() < 3007000
+                    else mujoco_tendon.damping
+                )
                 tendon.frictionloss = mujoco_tendon.frictionloss
                 tendon.group = mujoco_tendon.group
                 tendon.limited = mujoco_tendon.limited
@@ -1822,7 +1869,11 @@ class MujocoBuilder(MultiSimBuilder):
                 tendon.solref_friction = mujoco_tendon.solver_reference_friction
                 tendon.solref_limit = mujoco_tendon.solver_reference_limit
                 tendon.springlength = mujoco_tendon.spring_length
-                tendon.stiffness = mujoco_tendon.stiffness
+                tendon.stiffness = (
+                    mujoco_tendon.stiffness[0]
+                    if mujoco.mj_version() < 3007000
+                    else mujoco_tendon.stiffness
+                )
                 tendon.width = mujoco_tendon.width
                 for joint_name, joint_coef in mujoco_tendon.joints.items():
                     tendon.wrap_joint(joint_name, joint_coef)
@@ -1848,6 +1899,7 @@ class MujocoBuilder(MultiSimBuilder):
             return self.spec.__getattribute__(f"find_{entity_type_str}")(entity_name)
 
 
+@dataclass
 class EntitySpawner(ABC):
     """
     A spawner to spawn a WorldEntity object in the Multiverse simulator.
@@ -1859,7 +1911,7 @@ class EntitySpawner(ABC):
     """
 
     @classmethod
-    def spawn(cls, simulator: MultiverseSimulator, entity: entity_type) -> bool:  # type: ignore
+    def spawn(cls, simulator: BaseSimulator, entity: entity_type) -> bool:  # type: ignore
         """
         Spawns a WorldEntity object in the Multiverse simulator.
 
@@ -1878,7 +1930,7 @@ class EntitySpawner(ABC):
         raise NotImplementedError(f"No converter found for entity type {type(entity)}.")
 
     @abstractmethod
-    def _spawn(self, simulator: MultiverseSimulator, entity: Any) -> bool:
+    def _spawn(self, simulator: BaseSimulator, entity: Any) -> bool:
         """
         The actual spawning method to be implemented by subclasses.
 
@@ -1889,6 +1941,7 @@ class EntitySpawner(ABC):
         raise NotImplementedError
 
 
+@dataclass
 class KinematicStructureEntitySpawner(EntitySpawner):
     """
     A spawner to spawn a KinematicStructureEntity object in the Multiverse simulator.
@@ -1900,7 +1953,7 @@ class KinematicStructureEntitySpawner(EntitySpawner):
     """
 
     def _spawn(
-        self, simulator: MultiverseSimulator, entity: KinematicStructureEntity
+        self, simulator: BaseSimulator, entity: KinematicStructureEntity
     ) -> bool:
         """
         Spawns a KinematicStructureEntity object in the Multiverse simulator including its shapes.
@@ -1916,7 +1969,7 @@ class KinematicStructureEntitySpawner(EntitySpawner):
 
     @abstractmethod
     def _spawn_kinematic_structure_entity(
-        self, simulator: MultiverseSimulator, entity: KinematicStructureEntity
+        self, simulator: BaseSimulator, entity: KinematicStructureEntity
     ) -> bool:
         """
         Spawns a KinematicStructureEntity object in the Multiverse simulator.
@@ -1930,7 +1983,7 @@ class KinematicStructureEntitySpawner(EntitySpawner):
 
     @abstractmethod
     def _spawn_shapes(
-        self, simulator: MultiverseSimulator, entity: KinematicStructureEntity
+        self, simulator: BaseSimulator, entity: KinematicStructureEntity
     ) -> bool:
         """
         Spawns the shapes of a KinematicStructureEntity object in the Multiverse simulator.
@@ -1946,7 +1999,7 @@ class KinematicStructureEntitySpawner(EntitySpawner):
     def _spawn_shape(
         self,
         parent: Union[Body, Region],
-        simulator: MultiverseSimulator,
+        simulator: BaseSimulator,
         shape: Shape,
         visible: bool,
         collidable: bool,
@@ -1965,6 +2018,7 @@ class KinematicStructureEntitySpawner(EntitySpawner):
         raise NotImplementedError
 
 
+@dataclass
 class BodySpawner(KinematicStructureEntitySpawner, ABC):
     """
     A spawner to spawn a Body object in the Multiverse simulator.
@@ -1975,7 +2029,7 @@ class BodySpawner(KinematicStructureEntitySpawner, ABC):
     The type of the entity to spawn.
     """
 
-    def _spawn_shapes(self, simulator: MultiverseSimulator, parent: Body) -> bool:
+    def _spawn_shapes(self, simulator: BaseSimulator, parent: Body) -> bool:
         return all(
             self._spawn_shape(
                 parent=parent,
@@ -1990,6 +2044,7 @@ class BodySpawner(KinematicStructureEntitySpawner, ABC):
         )
 
 
+@dataclass
 class RegionSpawner(KinematicStructureEntitySpawner, ABC):
     """
     A spawner to spawn a Region object in the Multiverse simulator.
@@ -2000,7 +2055,7 @@ class RegionSpawner(KinematicStructureEntitySpawner, ABC):
     The type of the entity to spawn.
     """
 
-    def _spawn_shapes(self, simulator: MultiverseSimulator, parent: Region) -> bool:
+    def _spawn_shapes(self, simulator: BaseSimulator, parent: Region) -> bool:
         return all(
             self._spawn_shape(
                 parent=parent,
@@ -2013,9 +2068,107 @@ class RegionSpawner(KinematicStructureEntitySpawner, ABC):
         )
 
 
+@dataclass
+class ConnectionSpawner(EntitySpawner):
+    """
+    A spawner to spawn a Connection object in the simulator.
+    """
+
+    entity_type: ClassVar[Type[Connection]] = Connection
+    """
+    The type of the entity to spawn.
+    """
+
+    def _spawn(self, simulator: BaseSimulator, entity: Connection) -> bool:
+        """
+        Spawns a Connection object in the simulator, including its dof and its child body.
+
+        :param simulator: The simulator to spawn the Connection in.
+        :param entity: The Connection object to spawn.
+
+        :return: True if the Connection was spawned successfully, False otherwise.
+        """
+        return self._spawn_connection(simulator, entity)
+
+    @abstractmethod
+    def _spawn_connection(
+        self, simulator: BaseSimulator, connection: Connection
+    ) -> bool:
+        """
+        Spawns a Connection object in the simulator.
+
+        :param simulator: The simulator to spawn the Connection in.
+        :param connection: The Connection object to spawn.
+
+        :return: True if the Connection was spawned successfully, False otherwise.
+        """
+        raise NotImplementedError
+
+
+@dataclass
+class FixedConnectionSpawner(ConnectionSpawner, ABC):
+    """
+    A spawner to spawn a FixedConnection object in the simulator.
+    """
+
+    entity_type: ClassVar[Type[Connection]] = FixedConnection
+    """
+    The type of the entity to spawn.
+    """
+
+
+@dataclass
+class Connection1DOFSpawner(ConnectionSpawner, ABC):
+    """
+    A spawner to spawn an ActiveConnection1DOF object in the simulator.
+    """
+
+    entity_type: ClassVar[Type[Connection]] = ActiveConnection1DOF
+    """
+    The type of the entity to spawn.
+    """
+
+
+@dataclass
+class ConnectionPrismaticSpawner(ConnectionSpawner, ABC):
+    """
+    A spawner to spawn a PrismaticConnection object in the simulator.
+    """
+
+    entity_type: ClassVar[Type[Connection]] = PrismaticConnection
+    """
+    The type of the entity to spawn.
+    """
+
+
+@dataclass
+class ConnectionRevoluteSpawner(ConnectionSpawner, ABC):
+    """
+    A spawner to spawn a RevoluteConnection object in the simulator.
+    """
+
+    entity_type: ClassVar[Type[Connection]] = RevoluteConnection
+    """
+    The type of the entity to spawn.
+    """
+
+
+@dataclass
+class Connection6DOFSpawner(ConnectionSpawner, ABC):
+    """
+    A spawner to spawn a Connection6DoF object in the simulator.
+    """
+
+    entity_type: ClassVar[Type[Connection]] = Connection6DoF
+    """
+    The type of the entity to spawn.
+    """
+
+
+@dataclass
 class ActuatorSpawner(EntitySpawner):
     """
-    A spawner to spawn an Actuator object in the Multiverse simulator.
+    A spawner to spawn an Actuator object in the simulator.
     """
 
     entity_type: ClassVar[Type[Actuator]] = Actuator
@@ -2023,11 +2176,11 @@ class ActuatorSpawner(EntitySpawner):
     The type of the entity to spawn.
     """
 
-    def _spawn(self, simulator: MultiverseSimulator, entity: Actuator) -> bool:
+    def _spawn(self, simulator: BaseSimulator, entity: Actuator) -> bool:
         """
-        Spawns an Actuator object in the Multiverse simulator, including its dofs.
+        Spawns an Actuator object in the simulator, including its dof.
 
-        :param simulator: The Multiverse simulator to spawn the entity in.
+        :param simulator: The simulator to spawn the entity in.
         :param entity: The Actuator object to spawn.
 
         :return: True if the entity is spawned successfully, False otherwise.
@@ -2035,18 +2188,19 @@ class ActuatorSpawner(EntitySpawner):
         return self._spawn_actuator(simulator, entity)
 
     @abstractmethod
-    def _spawn_actuator(
-        self, simulator: MultiverseSimulator, actuator: Actuator
-    ) -> bool:
+    def _spawn_actuator(self, simulator: BaseSimulator, actuator: Actuator) -> bool:
         """
-        Spawns an Actuator object in the Multiverse simulator.
+        Spawns an Actuator object in the simulator.
 
-        :param simulator: The Multiverse simulator to spawn the entity in.
+        :param simulator: The simulator to spawn the entity in.
         :param actuator: The Actuator object to spawn.
+
+        :return: True if the Actuator was spawned successfully, False otherwise.
         """
         raise NotImplementedError
 
 
+@dataclass
 class MujocoEntitySpawner(EntitySpawner, ABC):
     """
     A spawner to spawn a WorldEntity object in the Mujoco simulator.
@@ -2055,6 +2209,7 @@ class MujocoEntitySpawner(EntitySpawner, ABC):
     ...
 
 
+@dataclass
 class MujocoKinematicStructureEntitySpawner(
     MujocoEntitySpawner, KinematicStructureEntitySpawner, ABC
 ):
@@ -2063,7 +2218,7 @@ class MujocoKinematicStructureEntitySpawner(
     """
 
     def _spawn_kinematic_structure_entity(
-        self, simulator: MultiverseMujocoConnector, entity: KinematicStructureEntity
+        self, simulator: MujocoSimulator, entity: KinematicStructureEntity
     ) -> bool:
         kinematic_structure_entity_props = (
             MujocoKinematicStructureEntityConverter.convert(entity)
@@ -2078,13 +2233,13 @@ class MujocoKinematicStructureEntitySpawner(
         )
         return (
             result.type
-            == MultiverseCallbackResult.ResultType.SUCCESS_AFTER_EXECUTION_ON_MODEL
+            == SimulatorCallbackResult.ResultType.SUCCESS_AFTER_EXECUTION_ON_MODEL
         )
 
     def _spawn_shape(
         self,
         parent: Body,
-        simulator: MultiverseMujocoConnector,
+        simulator: MujocoSimulator,
         shape: Shape,
         visible: bool,
         collidable: bool,
@@ -2101,10 +2256,11 @@ class MujocoKinematicStructureEntitySpawner(
         )
         return (
             result.type
-            == MultiverseCallbackResult.ResultType.SUCCESS_AFTER_EXECUTION_ON_MODEL
+            == SimulatorCallbackResult.ResultType.SUCCESS_AFTER_EXECUTION_ON_MODEL
         )
 
 
+@dataclass
 class MujocoBodySpawner(MujocoKinematicStructureEntitySpawner, BodySpawner):
     """
     A spawner to spawn a Body object in the Mujoco simulator.
@@ -2113,6 +2269,7 @@ class MujocoBodySpawner(MujocoKinematicStructureEntitySpawner, BodySpawner):
     ...
 
 
+@dataclass
 class MujocoRegionSpawner(MujocoKinematicStructureEntitySpawner, RegionSpawner):
     """
     A spawner to spawn a Region object in the Mujoco simulator.
@@ -2121,16 +2278,93 @@ class MujocoRegionSpawner(MujocoKinematicStructureEntitySpawner, RegionSpawner):
     ...
 
 
+@dataclass
+class MujocoConnectionSpawner(MujocoEntitySpawner, ConnectionSpawner):
+    """
+    A spawner to spawn a Connection object in the Mujoco simulator.
+    """
+
+    mujoco_joint_converter: ClassVar[Type[MujocoJointConverter]] = Any
+
+    def _spawn_connection(
+        self, simulator: MujocoSimulator, connection: Connection
+    ) -> bool:
+        joint_props = Mujoco1DOFJointConverter.convert(connection)
+        joint_name = joint_props.pop("name")
+        result = simulator.add_entity(
+            entity_name=joint_name,
+            entity_type="joint",
+            entity_properties=joint_props,
+            parent_name=connection.child.name.name,
+        )
+        return (
+            result.type
+            == SimulatorCallbackResult.ResultType.SUCCESS_AFTER_EXECUTION_ON_MODEL
+        )
+
+
+@dataclass
+class MujocoFixedConnectionSpawner(MujocoEntitySpawner, FixedConnectionSpawner):
+    """
+    This spawner does nothing. FixedConnections are implicitly created in Mujoco.
+    """
+
+    def _spawn_connection(
+        self, simulator: MujocoSimulator, connection: Connection
+    ) -> bool:
+        return True
+
+
+@dataclass
+class MujocoPrismaticJointSpawner(MujocoConnectionSpawner, ConnectionPrismaticSpawner):
+    """
+    A spawner to spawn a PrismaticConnection object in the MuJoCo simulator.
+    """
+
+    mujoco_joint_converter: ClassVar[Type[MujocoJointConverter]] = (
+        MujocoPrismaticJointConverter
+    )
+
+
+@dataclass
+class MujocoRevoluteJointSpawner(MujocoConnectionSpawner, ConnectionRevoluteSpawner):
+    """
+    A spawner to spawn a RevoluteConnection object in the MuJoCo simulator.
+    """
+
+    mujoco_joint_converter: ClassVar[Type[MujocoJointConverter]] = (
+        MujocoRevoluteJointConverter
+    )
+
+
+@dataclass
+class MujocoFreejointSpawner(MujocoEntitySpawner, Connection6DOFSpawner):
+    """
+    A spawner to spawn a Connection6DoF object in the MuJoCo simulator.
+    """
+
+    def _spawn_connection(
+        self, simulator: MujocoSimulator, connection: Connection
+    ) -> bool:
+        result = simulator.add_entity(
+            entity_name=connection.name.name,
+            entity_type="joint",
+            entity_properties={"type": mujoco.mjtJoint.mjJNT_FREE},
+            parent_name=connection.child.name.name,
+        )
+        return (
+            result.type
+            == SimulatorCallbackResult.ResultType.SUCCESS_AFTER_EXECUTION_ON_MODEL
+        )
+
+
+@dataclass
 class MujocoActuatorSpawner(MujocoEntitySpawner, ActuatorSpawner):
     """
     A spawner to spawn a MujocoActuator object in the MuJoCo simulator.
     """
 
-    entity_type: ClassVar[Type[Actuator]] = Actuator
-
-    def _spawn_actuator(
-        self, simulator: MultiverseMujocoConnector, actuator: Actuator
-    ) -> bool:
+    def _spawn_actuator(self, simulator: MujocoSimulator, actuator: Actuator) -> bool:
         actuator_props = MujocoActuatorConverter.convert(actuator)
         actuator_name = actuator_props.pop("name")
         dof_names = actuator_props.pop("dof_names")
@@ -2161,20 +2395,40 @@ class MujocoActuatorSpawner(MujocoEntitySpawner, ActuatorSpawner):
         )
         return (
             result.type
-            == MultiverseCallbackResult.ResultType.SUCCESS_AFTER_EXECUTION_ON_MODEL
+            == SimulatorCallbackResult.ResultType.SUCCESS_AFTER_EXECUTION_ON_MODEL
         )
+
+
+@dataclass(eq=False)
+class _MultiSimStateCallback(StateChangeCallback):
+    """
+    Sibling callback owned by a :class:`MultiSimSynchronizer`. Forwards
+    world-state-change notifications to the synchronizer so it can push the
+    new world state into its simulator.
+    """
+
+    synchronizer: MultiSimSynchronizer = field(kw_only=True)
+
+    def on_state_change(self, **kwargs):
+        self.synchronizer._on_state_change()
 
 
 @dataclass(eq=False)
 class MultiSimSynchronizer(ModelChangeCallback, ABC):
     """
-    A callback to synchronize the world model with the Multiverse simulator.
-    This callback will listen to the world model changes and update the Multiverse simulator accordingly.
+    A callback to synchronize the world model with the simulator.
+
+    Listens to world *model* changes (entity/connection/actuator additions)
+    via the :class:`ModelChangeCallback` base and spawns the matching entities
+    in the simulator. In addition, a sibling :class:`_MultiSimStateCallback`
+    is created in ``__post_init__`` that listens to world *state* changes and
+    routes them to :meth:`_on_state_change` so concrete synchronizers can
+    push the new state into the simulator (the *world → sim* direction).
     """
 
-    simulator: MultiverseSimulator = field(kw_only=True)
+    simulator: BaseSimulator = field(kw_only=True)
     """
-    The Multiverse simulator to synchronize with the world.
+    The simulator to synchronize with the world.
     """
 
     entity_converter: Type[EntityConverter] = NoneType
@@ -2187,34 +2441,328 @@ class MultiSimSynchronizer(ModelChangeCallback, ABC):
     The spawner to spawn WorldEntity, Shape, and Connection objects in the simulator.
     """
 
-    def _notify(self, **kwargs):
+    _state_callback: Optional[_MultiSimStateCallback] = field(
+        init=False, default=None, repr=False
+    )
+    """
+    Sibling state-change callback registered in ``world.state.state_change_callbacks``.
+    """
+
+    def __post_init__(self):
+        super().__post_init__()
+        self._state_callback = _MultiSimStateCallback(
+            _world=self._world,
+            synchronizer=self,
+        )
+
+    def on_model_change(self, **kwargs):
         for modification in self._world._model_manager.model_modification_blocks[-1]:
             if isinstance(modification, AddKinematicStructureEntityModification):
                 entity = modification.kinematic_structure_entity
                 self.entity_spawner.spawn(simulator=self.simulator, entity=entity)
+            elif isinstance(modification, AddConnectionModification):
+                connection = modification.connection
+                self.entity_spawner.spawn(simulator=self.simulator, entity=connection)
             elif isinstance(modification, AddActuatorModification):
                 entity = modification.actuator
                 self.entity_spawner.spawn(simulator=self.simulator, entity=entity)
 
     def stop(self):
-        self._world._model_manager.model_change_callbacks.remove(self)
+        if self._state_callback is not None:
+            self._state_callback.stop()
+            self._state_callback = None
+        super().stop()
+
+    @abstractmethod
+    def _on_state_change(self) -> None:
+        """
+        Push the current ``world.state`` into the backing simulator.
+
+        Called from the thread that mutated ``world.state`` (typically the
+        user thread). Concrete subclasses implement the simulator-specific
+        write path.
+        """
+        raise NotImplementedError
 
 
 @dataclass(eq=False)
 class MujocoSynchronizer(MultiSimSynchronizer):
-    simulator: MultiverseMujocoConnector
+    simulator: MujocoSimulator
     entity_converter: Type[EntityConverter] = field(default=MujocoConverter)
     entity_spawner: Type[EntitySpawner] = field(default=MujocoEntitySpawner)
+
+    sync_rate_hz: float = 30
+    """
+    Throttle (in wall-clock Hz) for the *sim → world* direction: how often
+    :meth:`_sim_to_world` is allowed to pull ``_mj_data.qpos`` back into
+    ``world.state`` from the physics thread. ``_sim_to_world`` is invoked
+    after every ``mj_step``, but a call is skipped if less than
+    ``1 / sync_rate_hz`` seconds have elapsed since the last successful sync.
+
+    Set ``<= 0`` to **disable the sim → world direction entirely**: no qpos
+    values are pulled back, so ``world.state`` will not reflect joint motion
+    produced by the simulator (gravity, contacts, actuator dynamics, etc.).
+    The opposite *world → sim* direction (driven by ``_on_state_change``) is
+    independent of this setting and continues to push ``world.state`` changes
+    into MuJoCo regardless.
+    """
+
+    _last_sync_time: float = field(init=False, default=0.0, repr=False)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.simulator.read_data_from_simulator = self._sim_to_world
+
+    def _resolve_qpos_adr(self, connection: Connection) -> Optional[int]:
+        """
+        Resolve the qpos address for the MuJoCo joint backing ``connection``,
+        or ``None`` if the joint is not present in the model.
+        """
+        mj_model = self.simulator._mj_model
+        joint_id = mujoco.mj_name2id(
+            mj_model, mujoco.mjtObj.mjOBJ_JOINT, connection.name.name
+        )
+        if joint_id == -1:
+            return None
+        return mj_model.jnt_qposadr[joint_id]
+
+    @staticmethod
+    def _make_pose_matrix(
+        xyz: numpy.ndarray, rotation_matrix: numpy.ndarray
+    ) -> numpy.ndarray:
+        """
+        Build a 4×4 homogeneous pose matrix from a translation and a 3×3
+        rotation matrix.
+        """
+        pose = numpy.eye(4)
+        pose[:3, 3] = xyz
+        pose[:3, :3] = rotation_matrix
+        return pose
+
+    @staticmethod
+    def _decompose_pose_matrix(
+        pose: numpy.ndarray,
+    ) -> tuple[numpy.ndarray, numpy.ndarray]:
+        """
+        Decompose a 4×4 homogeneous pose matrix into ``(xyz, quat_xyzw)``.
+        """
+        xyz = pose[:3, 3]
+        quat_xyzw = Rotation.from_matrix(pose[:3, :3]).as_quat()
+        return xyz, quat_xyzw
+
+    def _read_6dof_from_qpos(self, connection: Connection6DoF, qpos_adr: int) -> None:
+        """
+        Copy a 6DoF MuJoCo free-joint qpos block into ``world.state`` for
+        ``connection``.
+        """
+        mj_data = self.simulator._mj_data
+        state = self._world.state
+
+        xyz = mj_data.qpos[qpos_adr : qpos_adr + 3]
+        qwxyz = mj_data.qpos[qpos_adr + 3 : qpos_adr + 7]
+
+        mj_T_world = self._make_pose_matrix(
+            xyz,
+            Rotation.from_quat(qwxyz.tolist(), scalar_first=True).as_matrix(),
+        )
+        parent_T_conn = connection.parent_T_connection_expression.to_np()
+        conn_T_child = inverse_frame(parent_T_conn) @ mj_T_world
+        dof_xyz, dof_quat_xyzw = self._decompose_pose_matrix(conn_T_child)
+
+        state[connection.x.id].position = float(dof_xyz[0])
+        state[connection.y.id].position = float(dof_xyz[1])
+        state[connection.z.id].position = float(dof_xyz[2])
+        state[connection.qw.id].position = float(dof_quat_xyzw[3])
+        state[connection.qx.id].position = float(dof_quat_xyzw[0])
+        state[connection.qy.id].position = float(dof_quat_xyzw[1])
+        state[connection.qz.id].position = float(dof_quat_xyzw[2])
+
+    def _read_1dof_from_qpos(
+        self, connection: ActiveConnection1DOF, qpos_adr: int
+    ) -> None:
+        """
+        Copy a single MuJoCo qpos slot into ``world.state`` for ``connection``.
+        """
+        self._world.state[connection.raw_dof.id].position = float(
+            self.simulator._mj_data.qpos[qpos_adr]
+        )
+
+    def _sim_to_world(self) -> None:
+        """
+        Copy ``_mj_data.qpos`` back into ``world.state``.
+
+        Called by :meth:`physics_simulators.base_simulator.BaseSimulator.step`
+        on the physics thread after every ``mj_step``. Throttled to
+        ``sync_rate_hz`` wall-clock Hz. The sibling state-change callback is
+        paused across the write so our own ``notify_state_change`` does not
+        echo back into :meth:`_on_state_change`.
+        """
+        if self.sync_rate_hz <= 0:
+            return
+        now = time.time()
+        if now - self._last_sync_time < 1.0 / self.sync_rate_hz:
+            return
+        self._last_sync_time = now
+
+        changed = False
+        self._state_callback.pause()
+
+        for connection in self._world.connections:
+            if isinstance(connection, FixedConnection):
+                continue
+            qpos_adr = self._resolve_qpos_adr(connection)
+            if qpos_adr is None:
+                continue
+
+            if isinstance(connection, Connection6DoF):
+                self._read_6dof_from_qpos(connection, qpos_adr)
+                changed = True
+            elif isinstance(connection, ActiveConnection1DOF):
+                self._read_1dof_from_qpos(connection, qpos_adr)
+                changed = True
+            else:
+                logger.warning(
+                    "sim→world sync: unsupported connection type %s for "
+                    "joint %s; skipping",
+                    type(connection).__name__,
+                    connection.name.name,
+                )
+
+        if changed:
+            self._world.notify_state_change()
+            self._state_callback.update_previous_world_state()
+        self._state_callback.resume()
+
+    def _write_6dof_to_qpos(
+        self,
+        connection: Connection6DoF,
+        qpos_adr: int,
+        positions: numpy.ndarray,
+        previous_positions: numpy.ndarray,
+        state_index: Dict[Any, int],
+    ) -> None:
+        """
+        Push the 6DoF world state for ``connection`` into the MuJoCo qpos
+        block at ``qpos_adr``. No-op if the DoF values match the previous
+        snapshot within tolerance.
+        """
+        ix = state_index[connection.x.id]
+        iy = state_index[connection.y.id]
+        iz = state_index[connection.z.id]
+        iqx = state_index[connection.qx.id]
+        iqy = state_index[connection.qy.id]
+        iqz = state_index[connection.qz.id]
+        iqw = state_index[connection.qw.id]
+
+        dof_indices = [ix, iy, iz, iqx, iqy, iqz, iqw]
+        if numpy.allclose(
+            positions[dof_indices],
+            previous_positions[dof_indices],
+            atol=1e-4,
+            rtol=1e-4,
+        ):
+            return
+
+        conn_T_child = self._make_pose_matrix(
+            numpy.array([positions[ix], positions[iy], positions[iz]]),
+            Rotation.from_quat(
+                [positions[iqx], positions[iqy], positions[iqz], positions[iqw]]
+            ).as_matrix(),
+        )
+        parent_T_conn = connection.parent_T_connection_expression.to_np()
+        mj_xyz, mj_quat_xyzw = self._decompose_pose_matrix(parent_T_conn @ conn_T_child)
+
+        mj_data = self.simulator._mj_data
+        mj_data.qpos[qpos_adr + 0] = mj_xyz[0]
+        mj_data.qpos[qpos_adr + 1] = mj_xyz[1]
+        mj_data.qpos[qpos_adr + 2] = mj_xyz[2]
+        mj_data.qpos[qpos_adr + 3] = mj_quat_xyzw[3]
+        mj_data.qpos[qpos_adr + 4] = mj_quat_xyzw[0]
+        mj_data.qpos[qpos_adr + 5] = mj_quat_xyzw[1]
+        mj_data.qpos[qpos_adr + 6] = mj_quat_xyzw[2]
+
+    def _write_1dof_to_qpos(
+        self,
+        connection: ActiveConnection1DOF,
+        qpos_adr: int,
+        positions: numpy.ndarray,
+        previous_positions: numpy.ndarray,
+        state_index: Dict[Any, int],
+    ) -> None:
+        """
+        Push the 1DoF world state for ``connection`` into the MuJoCo qpos slot
+        at ``qpos_adr``. No-op if the DoF value is unchanged.
+        """
+        idx = state_index[connection.raw_dof.id]
+        if positions[idx] == previous_positions[idx]:
+            return
+        self.simulator._mj_data.qpos[qpos_adr] = positions[idx]
+
+    def _on_state_change(self) -> None:
+        """
+        Push ``world.state`` into ``_mj_data.qpos`` for every connection whose
+        DoF values changed since the last notification. Only non-fixed
+        connections that resolve to a MuJoCo joint are pushed.
+        """
+        positions = self._world.state.positions
+        previous_positions = self._state_callback.previous_world_state_data
+
+        if len(positions) != len(previous_positions):
+            # Model shape changed since the last notification (e.g. a spawn
+            # just added DoFs). The spawner already wrote the initial qpos
+            # for the new entities; just rebase the diff and return.
+            self._state_callback.update_previous_world_state()
+            return
+
+        state_index = self._world.state._index
+
+        for connection in self._world.connections:
+            if isinstance(connection, FixedConnection):
+                continue
+            qpos_adr = self._resolve_qpos_adr(connection)
+            if qpos_adr is None:
+                continue
+
+            if isinstance(connection, Connection6DoF):
+                self._write_6dof_to_qpos(
+                    connection,
+                    qpos_adr,
+                    positions,
+                    previous_positions,
+                    state_index,
+                )
+            elif isinstance(connection, ActiveConnection1DOF):
+                self._write_1dof_to_qpos(
+                    connection,
+                    qpos_adr,
+                    positions,
+                    previous_positions,
+                    state_index,
+                )
+            else:
+                logger.warning(
+                    "world→sim sync: unsupported connection type %s for "
+                    "joint %s; skipping",
+                    type(connection).__name__,
+                    connection.name.name,
+                )
+
+        self._state_callback.update_previous_world_state()
+
+    def stop(self):
+        if "read_data_from_simulator" in self.simulator.__dict__:
+            del self.simulator.read_data_from_simulator
+        super().stop()
 
 
 class MultiSim(ABC):
     """
-    Class to handle the simulation of a world using the Multiverse simulator.
+    Class to handle the simulation of a world using the simulator.
     """
 
-    simulator_class: ClassVar[Type[MultiverseSimulator]]
+    simulator_class: ClassVar[Type[BaseSimulator]]
     """
-    The class of the Multiverse simulator to use.
+    The class of the simulator to use.
     """
 
     synchronizer_class: ClassVar[Type[MultiSimSynchronizer]]
@@ -2227,9 +2775,9 @@ class MultiSim(ABC):
     The class of the MultiSimBuilder to use.
     """
 
-    simulator: MultiverseSimulator
+    simulator: BaseSimulator
     """
-    The Multiverse simulator instance.
+    The simulator instance.
     """
 
     synchronizer: MultiSimSynchronizer
@@ -2245,10 +2793,8 @@ class MultiSim(ABC):
     def __init__(
         self,
         world: World,
-        viewer: MultiverseViewer,
         headless: bool = False,
         step_size: float = 1e-3,
-        real_time_factor: float = 1.0,
         **kwargs,
     ):
         """
@@ -2258,31 +2804,29 @@ class MultiSim(ABC):
         :param viewer: The MultiverseViewer to read/write objects.
         :param headless: Whether to run the simulation in headless mode.
         :param step_size: The step size for the simulation.
-        :param real_time_factor: The real time factor for the simulation (1.0 = real time, 2.0 = twice as fast, -1.0 = as fast as possible).
         """
         self.builder_class().build_world(world=world, file_path=self.default_file_path)
         self.simulator = self.simulator_class(
             file_path=self.default_file_path,
-            viewer=viewer,
-            headless=headless,
-            step_size=step_size,
-            real_time_factor=real_time_factor,
-            **kwargs,
+            _headless=headless,
+            _step_size=step_size,
+            config=kwargs,
         )
         self.synchronizer = self.synchronizer_class(
             _world=world,
             simulator=self.simulator,
         )
-        self._viewer = viewer
 
-    def start_simulation(self):
+    def start_simulation(self, constraints: Optional[SimulatorConstraints] = None):
         """
         Starts the simulation. This will start one physics simulation thread and render it at 60Hz.
+
+        :param constraints: The constraints to apply to the simulation.
         """
         assert (
-            self.simulator.state != MultiverseSimulatorState.RUNNING
+            self.simulator.state != SimulatorState.RUNNING
         ), "Simulation is already running."
-        self.simulator.start()
+        self.simulator.start(constraints=constraints)
 
     def stop_simulation(self):
         """
@@ -2295,14 +2839,14 @@ class MultiSim(ABC):
         """
         Pauses the simulation. This will pause the physics simulation but not the rendering.
         """
-        if self.simulator.state != MultiverseSimulatorState.PAUSED:
+        if self.simulator.state != SimulatorState.PAUSED:
             self.simulator.pause()
 
     def unpause_simulation(self):
         """
         Unpauses the simulation. This will unpause the physics simulation.
         """
-        if self.simulator.state == MultiverseSimulatorState.PAUSED:
+        if self.simulator.state == SimulatorState.PAUSED:
             self.simulator.unpause()
 
     def reset_simulation(self):
@@ -2311,117 +2855,14 @@ class MultiSim(ABC):
         """
         self.simulator.reset()
 
-    def set_write_objects(self, write_objects: Dict[str, Dict[str, List[float]]]):
-        """
-        Sets the objects to be written to the simulator.
-        For example, to set the position and quaternion of an object, you can use the following format:
-        {
-            "object_name": {
-                "position": [x, y, z],
-                "quaternion": [w, x, y, z]
-            }
-        }
-
-        :param write_objects: The objects to be written to the simulator.
-        """
-        self._viewer.write_objects = write_objects
-        if self.simulator.state == MultiverseSimulatorState.PAUSED:
-            self.simulator.step()
-
-    def set_read_objects(self, read_objects: Dict[str, Dict[str, List[float]]]):
-        """
-        Sets the objects to be read from the simulator.
-
-        For example, to read the position and quaternion of an object, you can use the following format:
-        {
-            "object_name": {
-                "position": [0.0, 0.0, 0.0], # Default value
-                "quaternion": [1.0, 0.0, 0.0], # Default value
-            }
-        }
-        :param read_objects: The objects to be read from the simulator.
-        """
-        self._viewer.read_objects = read_objects
-        if self.simulator.state == MultiverseSimulatorState.PAUSED:
-            self.simulator.step()
-
-    def get_read_objects(self) -> Dict[str, Dict[str, MultiverseAttribute]]:
-        """
-        Gets the objects that are being read from the simulator.
-        For example, if you have set the read objects as follows:
-        {
-            "object_name": {
-                "position": [0.0, 0.0, 0.0],
-                "quaternion": [1.0, 0.0, 0.0, 0.0],
-            }
-        }
-        You will get the following format:
-        {
-            "object_name": {
-                "position": MultiverseAttribute(...),
-                "quaternion": MultiverseAttribute(...),
-            }
-        }
-        where MultiverseAttribute contains the values of the attribute via the .values() method.
-        It will return the values that are being read from the simulator in every simulation step.
-
-        :return: The objects that are being read from the simulator.
-        """
-        if self.simulator.state == MultiverseSimulatorState.PAUSED:
-            self.simulator.step()
-        return self._viewer.read_objects
-
-    def is_stable(
-        self, body_names: List[str], max_simulation_steps: int = 100, atol: float = 1e-2
-    ) -> bool:
-        """
-        Checks if an object is stable in the world. Stable meaning that it's pose will not change after simulating
-        physics in the World. This function will pause the simulation, set the read objects to the given body names,
-        unpause the simulation, and check if the pose of the objects change after a certain number of simulation steps.
-        If the pose of the objects change, the function will return False. If the pose of the objects do not change,
-        the function will return True. After checking, the function will restore the read objects and the simulation state.
-
-        :param body_names: The names of the bodies to check for stability
-        :param max_simulation_steps: The maximum number of simulation steps to run
-        :param atol: The absolute tolerance for comparing the pose
-        :return: True if the object is stable, False otherwise
-        """
-
-        origin_read_objects = self.get_read_objects()
-        origin_state = self.simulator.state
-
-        self.pause_simulation()
-        self.set_read_objects(
-            read_objects={
-                body_name: {
-                    "position": [0.0, 0.0, 0.0],
-                    "quaternion": [1.0, 0.0, 0.0, 0.0],
-                }
-                for body_name in body_names
-            }
-        )
-        initial_body_state = numpy.array(self._viewer.read_data)
-        current_simulation_step = self.simulator.current_number_of_steps
-        self.unpause_simulation()
-        stable = True
-        while (
-            self.simulator.current_number_of_steps
-            < current_simulation_step + max_simulation_steps
-        ):
-            if numpy.abs(initial_body_state - self._viewer.read_data).max() > atol:
-                stable = False
-                break
-            time.sleep(1e-3)
-        self._viewer.read_objects = origin_read_objects
-        if origin_state == MultiverseSimulatorState.PAUSED:
-            self.pause_simulation()
-        return stable
+    def is_running(self):
+        return self.simulator.state == SimulatorState.RUNNING
 
 
 class MujocoSim(MultiSim):
-    simulator_class: ClassVar[Type[MultiverseSimulator]] = MultiverseMujocoConnector
+    simulator_class: ClassVar[Type[BaseSimulator]] = MujocoSimulator
     synchronizer_class: ClassVar[Type[MultiSimSynchronizer]] = MujocoSynchronizer
     builder_class: ClassVar[Type[MultiSimBuilder]] = MujocoBuilder
-    simulator: MultiverseMujocoConnector
+    simulator: MujocoSimulator
     synchronizer: Type[MultiSimSynchronizer] = MujocoSynchronizer
     default_file_path: str = "/tmp/scene.xml"

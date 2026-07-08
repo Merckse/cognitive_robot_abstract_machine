@@ -72,8 +72,8 @@ if TYPE_CHECKING:
         Handle,
         Hinge,
         Slider,
-        Aperture,
-    )
+        Aperture, ShelfLayer,
+)
 
 
 @dataclass(eq=False)
@@ -567,6 +567,30 @@ class HasDoors(HasRootKinematicStructureEntity, ABC):
         self._attach_child_entity_in_kinematic_structure(door.root)
         self.doors.append(door)
 
+@dataclass(eq=False)
+class HasShelfLayer(HasRootKinematicStructureEntity, ABC):
+    """
+    A mixin class for semantic annotations that have doors.
+    """
+
+    shelf_layer: List[ShelfLayer] = field(default_factory=list, hash=False, kw_only=True)
+    """
+    The doors of the semantic annotation.
+    """
+
+    @synchronized_attribute_modification
+    def add_shelf_layer(
+        self,
+        shelf_layer: ShelfLayer,
+    ):
+        """
+        Add a door to the semantic annotation.
+
+        :param door: The door to add.
+        """
+
+        self._attach_child_entity_in_kinematic_structure(shelf_layer.root)
+        self.shelf_layer.append(shelf_layer)
 
 @dataclass(eq=False)
 class HasHandle(HasRootBody, ABC):

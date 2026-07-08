@@ -22,7 +22,7 @@ from semantic_digital_twin.semantic_annotations.mixins import (
     HasApertures,
     IsPerceivable,
     HasRootBody,
-    HasStorageSpace,
+    HasStorageSpace, HasShelfLayer,
 )
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.datastructures.variables import SpatialVariables
@@ -238,7 +238,7 @@ class Door(HasHandle, HasHinge):
         connection_limits: Optional[DegreeOfFreedomLimits] = None,
         active_axis: Vector3 = Vector3.Z(),
         connection_multiplier: float = 1.0,
-        connection_offset: float = 0.0,
+        connection_offset: float = 0.1,
         *,
         scale: Scale = Scale(0.03, 1, 2),
     ) -> Self:
@@ -404,7 +404,7 @@ class Dresser(Cabinet, HasDrawers, HasDoors): ...
 
 
 @dataclass(eq=False)
-class Cupboard(Cabinet, HasDoors): ...
+class Cupboard(Cabinet, HasDoors, HasShelfLayer): ...
 
 
 @dataclass(eq=False)

@@ -1,14 +1,19 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
 
+from giskardpy.motion_statechart.goals.pick_up import PullUp
+from giskardpy.motion_statechart.goals.place import Retracting
 from giskardpy.motion_statechart.goals.templates import Sequence
+from giskardpy.motion_statechart.ros2_nodes.gripper_control import OpenHand, CloseHand
 from giskardpy.motion_statechart.tasks.cartesian_tasks import (
     CartesianPose,
     CartesianPosition,
 )
+from giskardpy.motion_statechart.tasks.align_planes import AlignPlanes
 from giskardpy.motion_statechart.tasks.joint_tasks import JointPositionList, JointState
 from semantic_digital_twin.datastructures.definitions import GripperState
-from semantic_digital_twin.spatial_types.spatial_types import Pose
+from semantic_digital_twin.robots.abstract_robot import ParallelGripper, Manipulator
+from semantic_digital_twin.spatial_types.spatial_types import Pose, Vector3
 from semantic_digital_twin.world_description.world_entity import Body
 from pycram.robot_plans.motions.base import BaseMotion
 from pycram.datastructures.enums import (
@@ -212,3 +217,130 @@ class MoveTCPWaypointsMotion(BaseMotion):
             for pose in self.waypoints
         ]
         return Sequence(nodes=nodes)
+
+
+
+@dataclass
+class GiskardMoveGripperMotion(BaseMotion):
+    """
+    Opens or closes the gripper, this is specified to HSRB and not yet generalized implemented
+    """
+
+    gripper_state: GripperState
+    """
+    GripperState.OPEN or GripperState.CLOSE — determines which Giskard goal is issued.
+    """
+
+    arm: Arms
+    """
+    The arm with the gripper that should be Opened or Closed
+    """
+
+    def perform(self):
+        return
+
+    @property
+    def _motion_chart(self):
+        """Returns the matching Giskard OpenHand or CloseHand goal."""
+        if self.gripper_state == GripperState.OPEN:
+            return OpenHand()
+        if self.gripper_state == GripperState.CLOSE:
+            return CloseHand()
+        else:
+            raise ValueError(f"Unknown motion {self.gripper_state}")
+
+
+@dataclass
+class PullUpMotion(BaseMotion):
+    """
+    High-level motion for pulling up an object with a parallel gripper.
+
+    This motion wraps the Giskard PullUp goal and exposes it to the
+    motion framework via the `_motion_chart` property.
+    """
+
+    # The gripper that will execute the pullUp (must be a ParallelGripper)
+    manipulator: ParallelGripper = field(default=None, kw_only=True)
+
+    # The world object that should be pulledUp
+    object_geometry: Body = field(default=None, kw_only=True)
+
+    # If True, the gripper is kept vertically aligned during the grasp
+    # kw_only=True forces this to be passed as a keyword argument
+    gripper_vertical: Optional[bool] = field(default=True, kw_only=True)
+
+    def perform(self):
+        return
+
+    @property
+    def _motion_chart(self):
+        """
+        Creates and returns the underlying Giskard PickUp goal.
+
+        The motion framework queries this property to insert the task
+        into the MotionStatechart.
+        """
+        print(f"Creating PullUp motion with {self.object_geometry}")
+
+
+        pickup = PullUp(
+            manipulator=self.manipulator, object_geometry=self.object_geometry
+        )
+        return pickup
+
+
+@dataclass
+class PointGripperForwardMotion(BaseMotion):
+    """
+    Rotates the gripper so it points forward
+    """
+
+    arm: Arms
+    """
+    The arm whose gripper should point forward.
+    """
+
+    def perform(self):
+        return
+
+    @property
+    def _motion_chart(self):
+        end_effector = ViewManager().get_end_effector_view(self.arm, self.robot)
+        tool_frame = end_effector.tool_frame
+
+        tip_normal = Vector3(
+            *end_effector.front_facing_axis.to_np()[:3], reference_frame=tool_frame
+        )
+        goal_normal = Vector3(1, 0, 0, reference_frame=self.robot.root)
+
+        return AlignPlanes(
+            root_link=self.robot.root,
+            tip_link=tool_frame,
+            tip_normal=tip_normal,
+            goal_normal=goal_normal,
+            name="PointGripperForward",
+        )
+
+
+@dataclass
+class RetractMotion(BaseMotion):
+    """
+    Retracts the gripper to a safe pose after a grasp or place.
+    Wraps the Giskard Retracting goal via _motion_chart.
+    """
+
+    gripper: Manipulator = field(kw_only=True)
+    """
+    The manipulator (end effector) to retract.
+    """
+
+    def perform(self):
+        return
+
+    @property
+    def _motion_chart(self):
+        """Returns the Giskard Retracting goal for this manipulator."""
+        return Retracting(
+            manipulator=self.gripper,
+        )
+

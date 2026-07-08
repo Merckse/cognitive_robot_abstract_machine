@@ -107,7 +107,7 @@ class ApproachPlacement(Goal):
     object_geometry: Body = field(kw_only=True)
     goal: Union[HomogeneousTransformationMatrix, Point3] = field(kw_only=True)
     ft: bool = field(kw_only=True, default=False)
-    pre_place_distance: float = field(default=0.05, kw_only=True)
+    pre_place_distance: float = field(default=0.002, kw_only=True)
 
     def expand(self, context: MotionStatechartContext) -> None:
         super().expand(context)
@@ -238,3 +238,4 @@ class Retracting(Goal):
         artifacts = super().build(context)
         artifacts.observation = self.cart_pos.observation_variable
         return artifacts
+

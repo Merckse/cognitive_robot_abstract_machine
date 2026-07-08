@@ -404,3 +404,195 @@ class EfficientTransportAction(ActionDescription):
         ).perform()
 
         ParkArmsActionDescription(Arms.BOTH).perform()
+
+# @dataclass
+# class GiskardMoveAndPickUpAction(ActionDescription):
+#     """
+#     Navigate to `standing_position`, then turn towards the object and pick it up.
+#     """
+#
+#     standing_position: Point3
+#     """
+#     The pose to stand before trying to pick up the object
+#     """
+#
+#     object_designator: Body
+#     """
+#     The object to pick up
+#     """
+#
+#     arm: Arms
+#     """
+#     The arm to use
+#     """
+#
+#     def __post_init__(self):
+#         super().__post_init__()
+#
+#     def execute(self):
+#         from pycram.robot_plans import nav2NavigateAction
+#
+#         SequentialPlan(
+#             self.context,
+#             nav2NavigateAction(self.standing_position),
+#             GiskardPickUpActionDescription(self.object_designator, self.arm),
+#         ).perform()
+#
+#     def validate(
+#         self, result: Optional[Any] = None, max_wait_time: Optional[timedelta] = None
+#     ):
+#         raise NotImplementedError
+#
+#     @classmethod
+#     def description(
+#         cls,
+#         standing_position: Union[Iterable[PoseStamped], PoseStamped],
+#         object_designator: Union[Iterable[Body], Body],
+#         arm: Union[Iterable[Arms], Arms] = None,
+#         keep_joint_states: Union[
+#             Iterable[bool], bool
+#         ] = ActionConfig.navigate_keep_joint_states,
+#     ) -> PartialDesignator[GiskardMoveAndPickUpAction]:
+#         return PartialDesignator(
+#             GiskardMoveAndPickUpAction,
+#             standing_position=standing_position,
+#             object_designator=object_designator,
+#             arm=arm,
+#             keep_joint_states=keep_joint_states,
+#         )
+#
+#
+# @dataclass
+# class GiskardMoveAndPlaceAction(ActionDescription):
+#     """
+#     Navigate to `standing_position`, then place the held object at `target_location`.
+#     The robot must already be holding the object before this action is called.
+#     """
+#
+#     standing_position: Point3
+#     """
+#     The position the robot drives to before attempting the place.
+#     """
+#
+#     target_location: Point3
+#     """
+#     The position in the world where the object should be placed.
+#     """
+#
+#     object_designator: Body
+#     """
+#     The object currently held by the robot that should be placed.
+#     """
+#
+#     arm: Arms
+#     """
+#     The arm to use
+#     """
+#
+#     def __post_init__(self):
+#         super().__post_init__()
+#
+#     def execute(self):
+#         from pycram.robot_plans import nav2NavigateAction
+#
+#         obj_pose = PoseStamped.from_spatial_type(
+#             self.object_designator.global_pose
+#         )  # reserved for LookAt once re-enabled
+#         SequentialPlan(
+#             self.context,
+#             nav2NavigateAction(self.standing_position),
+#             # LookAtActionDescription(obj_pose, self.keep_joint_states),
+#             GiskardPlaceActionDescription(
+#                 object_designator=self.object_designator,
+#                 arm=self.arm,
+#                 target_location=self.target_location,
+#             ),
+#         ).perform()
+#
+#     def validate(
+#         self, result: Optional[Any] = None, max_wait_time: Optional[timedelta] = None
+#     ):
+#         raise NotImplementedError
+#         # The validation will be done in each of the core action perform methods so no need to validate here.
+#         pass
+#
+#     @classmethod
+#     def description(
+#         cls,
+#         standing_position: Point3,
+#         target_location: Point3,
+#         object_designator: Body,
+#         arm: Union[Iterable[Arms], Arms] = None,
+#     ) -> PartialDesignator[MoveAndPickUpAction]:
+#         return PartialDesignator(
+#             MoveAndPickUpAction,
+#             standing_position=standing_position,
+#             target_location=target_location,
+#             object_designator=object_designator,
+#             arm=arm,
+#         )
+#
+#
+# @dataclass
+# class GiskardPickAndPlaceAction(ActionDescription):
+#     """
+#     Transports an object to a position using an arm without moving the base of the robot
+#     """
+#
+#     object_designator: Body
+#     """
+#     Object designator_description describing the object that should be transported.
+#     """
+#     target_location: Point3 | Pose
+#     """
+#     Target Location to which the object should be transported
+#     """
+#     arm: Arms
+#     """
+#     Arm that should be used
+#     """
+#     ignore_orientation: bool = False
+#     """
+#     ignores orientation if set to true
+#     """
+#
+#     def __post_init__(self):
+#         super().__post_init__()
+#
+#     def execute(self) -> None:
+#         # Park → pick up → park → place → park keeps the arm safely tucked
+#         # between steps and avoids collisions during base-free transport.
+#         SequentialPlan(
+#             self.context,
+#             ParkArmsActionDescription(Arms.BOTH),
+#             GiskardPickUpActionDescription(
+#                 object_designator=self.object_designator,
+#                 arm=self.arm,
+#             ),
+#             ParkArmsActionDescription(Arms.BOTH),
+#             GiskardPlaceActionDescription(
+#                 self.object_designator, self.target_location, self.arm
+#             ),
+#             ParkArmsActionDescription(Arms.BOTH),
+#         ).perform()
+#
+#     def validate(
+#         self, result: Optional[Any] = None, max_wait_time: Optional[timedelta] = None
+#     ):
+#         raise NotImplementedError
+#
+#     @classmethod
+#     def description(
+#         cls,
+#         object_designator: Body,
+#         target_location: Point3 | Pose,
+#         arm: Union[Iterable[Arms], Arms] = None,
+#         ignore_orientation: bool = False,
+#     ) -> PartialDesignator[PickAndPlaceAction]:
+#         return PartialDesignator(
+#             PickAndPlaceAction,
+#             object_designator=object_designator,
+#             target_location=target_location,
+#             arm=arm,
+#             ignore_orientation=ignore_orientation,
+#         )

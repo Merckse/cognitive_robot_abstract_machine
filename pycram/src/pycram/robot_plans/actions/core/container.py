@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import time
 from copy import deepcopy
 from dataclasses import dataclass
 
@@ -29,6 +31,7 @@ from semantic_digital_twin.reasoning.robot_predicates import is_body_in_gripper
 from semantic_digital_twin.world_description.connections import ActiveConnection1DOF
 from semantic_digital_twin.world_description.world_entity import Body
 
+logger = logging.getLogger(__name__)
 
 @dataclass
 class OpenAction(ActionDescription):
@@ -48,6 +51,10 @@ class OpenAction(ActionDescription):
     """
     The distance in meters the gripper should be at in the x-axis away from the handle.
     """
+    assisted : bool = False
+    """
+    Signals the need for assistance
+    """
 
     def execute(self) -> None:
         arm = ViewManager.get_arm_view(self.arm, self.robot)
@@ -59,17 +66,33 @@ class OpenAction(ActionDescription):
             manipulator,
         )
 
-        self.add_subplan(
-            sequential(
-                [
-                    GraspingAction(self.object_designator, self.arm, grasp_description),
-                    OpeningMotion(self.object_designator, self.arm),
-                    MoveGripperMotion(
-                        GripperState.OPEN, self.arm, allow_gripper_collision=True
-                    ),
-                ]
-            )
-        ).perform()
+        connection = self.object_designator.get_first_parent_connection_of_type(ActiveConnection1DOF)
+        connection_pose = connection.position
+        upper_limit = connection.dof.limits.upper.position
+        lower_limit = connection.dof.limits.lower.position
+
+        if connection_pose == upper_limit:
+            logger.info("The Object is already opened.")
+            return
+
+        if self.assisted:
+            print("Could you help me open", self.object_designator.name, "?")
+            time.sleep(5)
+            with self.world.modify_world():
+                connection.position = upper_limit
+                return
+        else:
+            self.add_subplan(
+                sequential(
+                    [
+                        GraspingAction(self.object_designator, self.arm, grasp_description),
+                        OpeningMotion(self.object_designator, self.arm),
+                        MoveGripperMotion(
+                            GripperState.OPEN, self.arm, allow_gripper_collision=True
+                        ),
+                    ]
+                )
+            ).perform()
 
     @staticmethod
     def pre_condition(
@@ -114,7 +137,6 @@ class OpenAction(ActionDescription):
             )
         ) and bool(parent_connection.position > 0.3)
 
-
 @dataclass
 class CloseAction(ActionDescription):
     """
@@ -133,6 +155,10 @@ class CloseAction(ActionDescription):
     """
     The distance in meters between the gripper and the handle before approaching to grasp.
     """
+    assisted : bool = False
+    """
+    Boolean to signal need for assistance
+    """
 
     def execute(self) -> None:
         arm = ViewManager.get_arm_view(self.arm, self.robot)
@@ -143,6 +169,21 @@ class CloseAction(ActionDescription):
             VerticalAlignment.NoAlignment,
             manipulator,
         )
+
+        connection = self.object_designator.get_first_parent_connection_of_type(ActiveConnection1DOF)
+        connection_pose = connection.position
+        lower_limit = connection.dof.limits.lower.position
+
+        if connection_pose == lower_limit:
+            logger.info("The Object is already closed.")
+            return
+
+        if self.assisted:
+            print("Could you help me close", self.object_designator.name, "?")
+            time.sleep(5)
+            with self.world.modify_world():
+                connection.position = lower_limit
+                return
 
         self.add_subplan(
             sequential(

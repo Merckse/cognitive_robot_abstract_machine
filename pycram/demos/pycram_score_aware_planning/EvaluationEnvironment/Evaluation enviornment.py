@@ -1,37 +1,13 @@
-import math
-import time
-from copy import deepcopy
 
-import rclpy
-
-from Evaluate.CompositeEvaluator import CompositeEvaluator
-from SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.actions.simulate_perception import simulate_perception
-from SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.events.event_handler import EventDispatcher
 from ScoreAwareExecutioner import score_aware_execution
-from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
-from Stabilizer.PlanStabilizer import PlanStabilizer
-from common.cram_types import Task, TaskStep, ActionType, Status
-from common.values import CHALLENGE_TASKS, ROOM_SURFACES
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
-from helper_methods import generate_plan_taskstep_list, \
-    NAVIGATION_POSES, at_location, print_base_yaw, challenge_setup
+from helper_methods import challenge_setup
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, Arms
-from pycram.motion_executor import simulated_robot
 
 from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
 from demos.pycram_score_aware_planning.common.cram_types import ChallengeMode
-from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
-from pycram.plans.factories import sequential
-from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
-from semantic_digital_twin.datastructures.definitions import TorsoState
-from semantic_digital_twin.robots.abstract_robot import Manipulator, AbstractRobot
 from semantic_digital_twin.robots.hsrb import HSRB
-from semantic_digital_twin.spatial_types import Point3, Quaternion
-from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world_description.geometry import Color
-from semantic_digital_twin.world_description.world_entity import SemanticAnnotation, Body
-from EvaluationEnvironment import ScoreAwareExecutioner
 
 
 

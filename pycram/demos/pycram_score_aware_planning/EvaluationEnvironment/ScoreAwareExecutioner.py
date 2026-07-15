@@ -14,7 +14,7 @@ from common.cram_types import Task, TaskStep, ActionType, Status
 from common.values import CHALLENGE_TASKS, ROOM_SURFACES
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from helper_methods import generate_plan_taskstep_list, \
-    NAVIGATION_POSES, at_location, print_base_yaw
+    NAVIGATION_POSES, at_location
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, Arms
 from pycram.motion_executor import simulated_robot

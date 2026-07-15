@@ -7,6 +7,8 @@ from typing import Optional
 from common.cram_types import Status, ChallengeMode
 from common.values import evaluation
 from probabilistic_model.bayesian_network.bayesian_network import Root
+
+from giskardpy.motion_statechart.goals.place import PlacementNotReachableException
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
 from pycram.datastructures.grasp import GraspDescription
@@ -132,7 +134,7 @@ def generic_object_spawner(
                     os.path.dirname(__file__), "..", "..", "resources", "objects", name.lower()+".stl"
                 )
             ).parse()
-
+            object.root.name = PrefixedName(name.lower())
             with world.modify_world():
                 world.merge_world_at_pose(
                     object,
@@ -140,9 +142,11 @@ def generic_object_spawner(
                         pose[i][0], pose[i][1], pose[i][2], reference_frame=world.root
                     ),
                 )
+            body = world.get_body_by_name(name.lower())
+            semantic_cls = annotation_class_by_label(name)
+            with world.modify_world():
+                world.add_semantic_annotation(semantic_cls(name=body.name, root=body))
         except:
-
-
             object_to_spawn = spawn_semantic_with_body(semantic_type=name,name=name.lower(),pose=pose_, scale=scale_,world=world, color = color)
         i+=1
 
@@ -322,7 +326,8 @@ def find_free_placement_pose(
     object_body: Body,
     world,
     grid_step: float = 0.05,
-    padding: float = 0.02,
+    x_padding: float = 0.05,
+    y_padding: float = 0.02,
 ) -> Optional[tuple[float, float]]:
     """
     Find a free (x, y) position on the surface where object_body can be placed
@@ -335,11 +340,11 @@ def find_free_placement_pose(
     # Object half-extents in its local frame (upright assumption)
     local_bbs = object_body.collision.as_bounding_box_collection_in_frame(object_body).bounding_boxes
     if local_bbs:
-        half_x = (max(bb.x_interval.upper for bb in local_bbs) - min(bb.x_interval.lower for bb in local_bbs)) / 2 + padding
-        half_y = (max(bb.y_interval.upper for bb in local_bbs) - min(bb.y_interval.lower for bb in local_bbs)) / 2 + padding
+        half_x = (max(bb.x_interval.upper for bb in local_bbs) - min(bb.x_interval.lower for bb in local_bbs)) / 2 + x_padding
+        half_y = (max(bb.y_interval.upper for bb in local_bbs) - min(bb.y_interval.lower for bb in local_bbs)) / 2 + y_padding
     else:
-        half_x = 0.1 + padding
-        half_y = 0.1 + padding
+        half_x = 0.1 + x_padding
+        half_y = 0.05 + y_padding
 
     # Collect footprints of all objects already on the surface, excluding the object itself
     occupied: list[tuple[float, float, float, float]] = []

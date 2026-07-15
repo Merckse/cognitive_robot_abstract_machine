@@ -6,12 +6,13 @@ from typing import Tuple
 
 import numpy as np
 import trimesh
-from krrood.entity_query_language.factories import variable_from, entity, variable, an
 from polytope import bounding_box
 from probabilistic_model.distributions.gaussian import GaussianDistribution
 from random_events.product_algebra import Event
 from random_events.set import Set
 from random_events.variable import Symbolic
+
+from krrood.entity_query_language.factories import variable_from, entity
 from semantic_digital_twin.reasoning.predicates import is_supported_by
 from typing_extensions import (
     TYPE_CHECKING,
@@ -759,6 +760,21 @@ class HasSupportingSurface(HasStorageSpace, ABC):
         return supporting_surface
 
     def infer_objects_on_surface(self):
+        supported_bodies = []
+        for body in self._world.bodies_with_collision:
+            if (body is not self.root
+                    and is_supported_by(supported_body=body, supporting_body=self.root)):
+                supported_bodies.append(body)
+
+        for annotation in self._world.semantic_annotations:
+            if (
+                isinstance(annotation, HasRootBody)
+                and annotation.root in supported_bodies
+                and annotation not in self.objects
+            ):
+                self.add_object(annotation)
+
+    def infer_objects_on_surface_original(self):
         """
         Infer and add objects that are supported by this surface to the storage space.
 

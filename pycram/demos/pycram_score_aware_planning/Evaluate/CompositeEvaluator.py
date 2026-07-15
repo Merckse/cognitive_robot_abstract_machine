@@ -34,7 +34,7 @@ class CompositeEvaluator:
             cum_expected_score = 0
             for ts in task.task_steps:
                 safe_gain = ts.action_score * ts.action_probability ** risk_aversion
-                expected_penalty = abs(ts.action_penatly) * (1 - ts.action_probability)
+                expected_penalty = abs(ts.action_penalty) * (1 - ts.action_probability)
                 ts.expected_score = (safe_gain - expected_penalty) / ts.action_time if ts.action_time else 0.0
                 cum_expected_score += ts.expected_score
             task.cum_expected_score = cum_expected_score
@@ -103,7 +103,7 @@ class CompositeEvaluator:
         tot_score = tot_pen = tot_time = 0.0
         tot_gain = tot_epen = 0.0
         for i, step in enumerate(best.task_steps, 1):
-            pen = step.action_penatly
+            pen = step.action_penalty
             p = step.action_probability
             t = step.action_time
             es = getattr(step, "expected_score", 0.0)

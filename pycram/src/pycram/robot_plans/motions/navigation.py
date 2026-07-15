@@ -22,6 +22,16 @@ class MoveMotion(BaseMotion):
     Keep the joint states of the robot during/at the end of the motion
     """
 
+    reference_linear_velocity: float = 0.5
+    """
+    Reference speed for driving the base.
+    """
+
+    reference_angular_velocity: float = 2.0
+    """
+    Reference speed for turning the base.
+    """
+
     def perform(self):
         return
 
@@ -31,4 +41,6 @@ class MoveMotion(BaseMotion):
             root_link=self.world.root,
             tip_link=self.robot.root,
             goal_pose=self.target,
+            reference_linear_velocity=self.reference_linear_velocity,
+            reference_angular_velocity=self.reference_angular_velocity,
         )

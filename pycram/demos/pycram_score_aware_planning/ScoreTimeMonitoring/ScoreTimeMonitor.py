@@ -7,9 +7,7 @@ import time
 
 from dataclasses import asdict, dataclass, field
 
-from fontTools.merge.util import avg_int
-
-from common.cram_types import ScoreEvent, TaskStep, Task, ChallengeMode, Status
+from common.cram_types import TaskStep, ScoreEvent, Task, ChallengeMode, Status
 from common.values import CHALLENGE_DURATION, CHALLENGE_TASKS
 from helper_methods import get_values
 from pycram.datastructures.enums import TaskStatus

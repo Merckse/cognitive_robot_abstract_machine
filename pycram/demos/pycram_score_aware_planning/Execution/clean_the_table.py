@@ -1,5 +1,6 @@
 import math
 import time
+from copy import deepcopy
 
 import rclpy
 
@@ -12,14 +13,17 @@ from common.cram_types import Task, TaskStep, ActionType, Status
 from common.values import CHALLENGE_TASKS, ROOM_SURFACES
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from helper_methods import generate_plan_taskstep_list, \
-    NAVIGATION_POSES
+    NAVIGATION_POSES, at_location, print_base_yaw
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator
+from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, Arms
 from pycram.motion_executor import simulated_robot
 
 from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
 from demos.pycram_score_aware_planning.common.cram_types import ChallengeMode
 from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
+from pycram.plans.factories import sequential
+from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
+from semantic_digital_twin.datastructures.definitions import TorsoState
 from semantic_digital_twin.robots.abstract_robot import Manipulator, AbstractRobot
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.spatial_types import Point3, Quaternion
@@ -115,14 +119,7 @@ def get_task_room(task: Task) -> str:
             return ts.room
     return ""
 
-def at_location(location : str, robot : AbstractRobot, threshold: float = 0.5)-> bool:
-    coords_goal = NAVIGATION_POSES.get(location)
-    pose_goal : Pose= Pose(Point3(x=coords_goal[0], y=coords_goal[1], z=0), Quaternion(coords_goal[2][0], coords_goal[2][1], coords_goal[2][2], coords_goal[2][3]))
-    point3_goal : Point3 = pose_goal.to_position()
-    robot_pose : Point3= robot.root.global_pose.to_position()
 
-    is_at_location : bool = True if float(robot_pose.euclidean_distance(point3_goal)) < threshold else False
-    return is_at_location
 
 def scan_table(dispatcher : EventDispatcher, context : Context, surface: str, robot: AbstractRobot,
                explored: list[str], found: dict) -> None:
@@ -199,7 +196,7 @@ def main():
 
     # Spawning objects
     generic_object_spawner(["Bowl"], [(1.325, 6.23, 0.81)], world, color=Color.GREEN())
-    generic_object_spawner(["Plate"], [(-0.15, 0.88, 0.85)], world, color=Color.ORANGE())
+    generic_object_spawner(["Plate"], [(0.2, 1, 0.85)], world, color=Color.ORANGE())
     # generic_object_spawner(["Milk"], [(2.42, 0.128, 0.945)], world, color=Color.RED())
     generic_object_spawner(["Milk"], [(1.037, -2.31, 0.645)], world, color=Color.RED())
     generic_object_spawner(["Knife"], [(4.65, 4.84, 1.62)], world, color=Color.CYAN())
@@ -210,6 +207,9 @@ def main():
 
 
     while task_list != []:
+        with simulated_robot:
+            sequential([ParkArmsAction(Arms.BOTH), MoveTorsoAction(TorsoState.LOW)], context).perform()
+
         evaluated_tasks: list[Task] = evaluator.estimate(context=context, task_list=task_list, found_objects=found_objects, risk_aversion=1)
         task_list: list[Task] = structurizer.structurize(task_list=evaluated_tasks)
 
@@ -242,14 +242,17 @@ def main():
         # ---- TOP TASK KNOWN -> execute it ----
         task_list.pop(0)
 
-        # Build navigation-inserted steps in a LOCAL list -- do NOT mutate current_task.task_steps,
-        # otherwise re-processing the same task (re-rank / recovery) re-prepends navigation forever.
+        temp_robot = deepcopy(hsrb)
         exec_steps = []
         for ts in current_task.task_steps:
-            if ts.location != "" and not at_location(location=ts.location, robot=hsrb):
+            if ts.location != "" and not at_location(location=ts.location, robot=temp_robot):
+                # location known -> place the robot at the approach pose so distance is measured from there
+                if ts.location in NAVIGATION_POSES:
+                    x, y, _ = NAVIGATION_POSES[ts.location]
+                    temp_robot.root.global_pose.x = x
+                    temp_robot.root.global_pose.y = y
                 exec_steps.append(TaskStep(action_type=ActionType.NAVIGATE, location=ts.location))
             exec_steps.append(ts)
-
 
         plan = generate_plan_taskstep_list(taskstep_list=exec_steps, context=context)
         print("going for", target)
@@ -257,20 +260,25 @@ def main():
         with (simulated_robot):
             scoretime_monitor.record_task_start(task=current_task)
             plan.perform()
+
+            with simulated_robot:
+                sequential([ParkArmsAction(Arms.BOTH), MoveTorsoAction(TorsoState.LOW)], context).perform()
+
             if plan.status == TaskStatus.INTERRUPTED or plan.status == TaskStatus.FAILED:
-                winning = stabilizer.stabilize(plan=plan, task=current_task, exception=plan.reason,
+                winning = stabilizer.stabilize(plan=plan, task=current_task, exception=plan.plan.root.reason,
                                                scoretime_monitor=scoretime_monitor, context=context)
                 if winning is not None:
                     operator, expected_value, repaired_plan, repaired_task_list = winning
                     print(f"[stabilizer] {plan.reason} -> recover via {operator} "
                           f"(expected value {expected_value:.1f}); re-performing {len(repaired_task_list)} step(s)")
                     if operator == PlanTransformationOperator.SKIP:
-                        # SKIP = give up and move on; do NOT re-append (that retries the same failure forever)
                         current_task.status = Status.SKIPPED
                     else:
-                        # splice in the winning repair as a fresh plan and re-perform from the failure onward
-                        recovery_plan = stabilizer.build_recovery_plan(repaired_task_list, context)
-                        recovery_plan.perform()
+
+                        repaired_plan.perform()
+        with simulated_robot:
+            sequential([ParkArmsAction(Arms.BOTH), MoveTorsoAction(TorsoState.LOW)], context).perform()
+
 
 if __name__ == "__main__":
     main()

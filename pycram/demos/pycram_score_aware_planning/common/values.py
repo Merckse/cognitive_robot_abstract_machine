@@ -14,23 +14,6 @@ from semantic_digital_twin.exceptions import WorldEntityNotFoundError
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Plate, Knife, Fork, Spoon, Bowl, Milk, Cereal
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation
 
-# ---------------------------------------------------------------------------
-# Action scoring table
-# ---------------------------------------------------------------------------
-# Single source of truth for every (action, object, location) case. Each entry
-# bundles all four scoring metrics (points, penalty, time, probability) so they
-# can never drift out of sync the way four parallel dicts did.
-#
-# Key = (action, object, location):
-#   - Object-centric actions (PICKUP, PLACE object) put the object in slot 1 and
-#     use ANY for location.
-#   - Location/furniture-centric actions (NAVIGATE, OPEN/CLOSE, PLACE target) put
-#     the location in slot 2 and use ANY for object.
-#   - A catch-all uses ANY in both slots.
-#
-# Resolution goes through profile(): it tries the most specific key first, then
-# widens each slot to ANY. A specific object beats a specific location.
-
 ANY = "*"   # wildcard: matches any object or location in that slot
 
 
@@ -157,38 +140,48 @@ def evaluation(action_type: ActionType, semantic_annotation: SemanticAnnotation 
 CANDIDATE_OPERATORS: dict[type[Exception],
 list[PlanTransformationOperator]] = {
     ObjectNotReachableException:
-        [PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE,
-         PlanTransformationOperator.REPLAN_WITH_ASSISTANCE,
-         PlanTransformationOperator.SKIP,
+        [PlanTransformationOperator.SKIP,
+        # PlanTransformationOperator.REPLAN,
+        PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE,
+        PlanTransformationOperator.RETRY
           ],
     ObjectDoesntFitException:
-        [PlanTransformationOperator.REPLAN_WITH_ASSISTANCE,
+        [
+            # PlanTransformationOperator.REPLAN_WITH_ASSISTANCE,
+         PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE,
          PlanTransformationOperator.SKIP],
     TimeoutError:
         [PlanTransformationOperator.SKIP,
         PlanTransformationOperator.RETRY,
-        PlanTransformationOperator.REPLAN,
+        # PlanTransformationOperator.REPLAN,
         PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE,
         ],
     MotionDidNotFinish:
-        [PlanTransformationOperator.SKIP,
-         PlanTransformationOperator.REPLAN,
-         PlanTransformationOperator.RETRY],
+        [
+         PlanTransformationOperator.SKIP,
+         # PlanTransformationOperator.REPLAN,
+         PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE,
+         PlanTransformationOperator.RETRY
+         ],
     ObjectNotGrasped:
         [PlanTransformationOperator.SKIP,
-        PlanTransformationOperator.REPLAN,
+        # PlanTransformationOperator.REPLAN,
         PlanTransformationOperator.RETRY,
         PlanTransformationOperator.SUBSTITUTE_WITH_ASSISTANCE,
         ],
     CollisionViolatedError:
-        [PlanTransformationOperator.REPLAN],
+        [
+# PlanTransformationOperator.REPLAN
+         ],
     WorldEntityNotFoundError:
-        [PlanTransformationOperator.REPLAN,
+        [
+            # PlanTransformationOperator.REPLAN,
          PlanTransformationOperator.SKIP],
     ExecutionAbortedException:
         [PlanTransformationOperator.SKIP,
          PlanTransformationOperator.REPLAN,
-         PlanTransformationOperator.RETRY]
+         PlanTransformationOperator.RETRY],
+
     # TODO: add other errors, that I want to handle
 }
 
@@ -201,7 +194,7 @@ DEFAULT_OPERATORS: list[PlanTransformationOperator] = [
 # keep in mind to potentially add MRO
 def lookup_operators(exception: Exception) -> list[PlanTransformationOperator]:
     if type(exception) in CANDIDATE_OPERATORS:
-        return CANDIDATE_OPERATORS.get(exception)
+        return CANDIDATE_OPERATORS.get(type(exception))
     else: return DEFAULT_OPERATORS
 
 # Penalties applied on top of (or instead of) base points
@@ -236,7 +229,10 @@ SURFACE_ROOM: dict[str, str] = {s: r for r, surfaces in ROOM_SURFACES.items() fo
 
 # All possible tasks for PP
 # TODO: implement navigationTimeOut, for unexpected length
-TASKSTEP_PP: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Bowl, room="preperation_room", uncertain=True),
+TASKSTEP_PP: list[Task] = [
+    Task(id= 0, task_steps=[
+        TaskStep(
+        ActionType.PICKUP, object_annotations=Bowl, room="preperation_room", uncertain=True),
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.PLACE, object_annotations=Bowl, location="counterTop"),
                                                    TaskStep(ActionType.PARK)]),
@@ -245,7 +241,7 @@ TASKSTEP_PP: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, o
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.PLACE, object_annotations=Plate, location="table"),
                                                    TaskStep(ActionType.PARK)]),
-
+    #
                            Task(id= 2, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Milk, room="kitchen", uncertain=True),
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.PLACE, object_annotations=Milk, location="shelf_1"),
@@ -254,7 +250,11 @@ TASKSTEP_PP: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, o
                            Task(id= 3, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Cereal, room="kitchen", uncertain=True),
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.PLACE, object_annotations=Cereal, location="table"),
-                                                   TaskStep(ActionType.PARK)]), ]
+                                                   TaskStep(ActionType.PARK)]),
+                            ]
+
+
+
 
 TASKSTEP_PP2: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Bowl, room="preperation_room", uncertain=True),
                                                    TaskStep(ActionType.PARK),
@@ -274,35 +274,21 @@ TASKSTEP_PP2: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, 
                            Task(id= 3, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Cereal, room="kitchen", uncertain=True),
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.PLACE, object_annotations=Cereal, location="table"),
-                                                   TaskStep(ActionType.PARK)]), ]
+                                                   TaskStep(ActionType.PARK)]),
+                            ]
 
-
-
-# ---------------------------------------------------------------------------
-# Pick and Place Challenge (RoboCup@Home 2026 score sheet, sheet26robocup__evalsheet.pdf)
-# ---------------------------------------------------------------------------
-# Every scoreable line of the sheet, expressed in the TaskStep schema above.
-# Lines that the schema cannot express directly are written down but commented
-# out, each with the reason why.
-#
-# Covered implicitly (not a TaskStep of their own):
-#   - "Navigate to the table" (15)            -> navigation is implicit in PICKUP(room)/PLACE(location)
-#   - "Correctly recognize an object" (12x10) -> DETECT runs inside every uncertain PICKUP
-#   - "First Pick Bonus" (+100), "Common object from auxiliary table" (2x-20),
-#     all Penalties (dropped/thrown objects, human assistance, ...)
-#     -> outcome/scoring modifiers, not plan steps (see ACTIONS / OUTCOME_MODIFIERS)
 TASKSTEP_PP_CHALLENGE: list[Task] = [
-                           # "Picking up an object for transportation" (12x50) + "Plate" (+100)
-                           Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Plate, room="office", uncertain=True),
-                                                   TaskStep(ActionType.PARK),
-                                                   TaskStep(ActionType.PLACE, object_annotations=Plate, location="table"),
-                                                   TaskStep(ActionType.PARK)]),
-
-                           # "Cutlery" (2x+50) -- first cutlery item; Knife is spawned in the world
-                           Task(id= 1, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Knife, room="dining_room", uncertain=True),
-                                                   TaskStep(ActionType.PARK),
-                                                   TaskStep(ActionType.PLACE, object_annotations=Knife, location="table"),
-                                                   TaskStep(ActionType.PARK)]),
+                           # # "Picking up an object for transportation" (12x50) + "Plate" (+100)
+                           # Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Plate, room="office", uncertain=True),
+                           #                         TaskStep(ActionType.PARK),
+                           #                         TaskStep(ActionType.PLACE, object_annotations=Plate, location="table"),
+                           #                         TaskStep(ActionType.PARK)]),
+                           #
+                           # # "Cutlery" (2x+50) -- first cutlery item; Knife is spawned in the world
+                           # Task(id= 1, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Knife, room="dining_room", uncertain=True),
+                           #                         TaskStep(ActionType.PARK),
+                           #                         TaskStep(ActionType.PLACE, object_annotations=Knife, location="table"),
+                           #                         TaskStep(ActionType.PARK)]),
 
                            # Common objects (base 12x50 pickup / 12x40 place)
                            Task(id= 2, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Bowl, room="preperation_room", uncertain=True),
@@ -310,74 +296,17 @@ TASKSTEP_PP_CHALLENGE: list[Task] = [
                                                    TaskStep(ActionType.PLACE, object_annotations=Bowl, location="counterTop"),
                                                    TaskStep(ActionType.PARK)]),
 
-                           Task(id= 3, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Milk, room="kitchen", uncertain=True),
-                                                   TaskStep(ActionType.PARK),
-                                                   TaskStep(ActionType.PLACE, object_annotations=Milk, location="shelf_1"),
-                                                   TaskStep(ActionType.PARK)]),
-
-                           Task(id= 4, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Cereal, room="kitchen", uncertain=True),
-                                                   TaskStep(ActionType.PARK),
-                                                   TaskStep(ActionType.PLACE, object_annotations=Cereal, location="table"),
-                                                   TaskStep(ActionType.PARK)]),
-
-                           # ------------------------------------------------------------------
-                           # Not directly implemented in this schema -- written down, commented out
-                           # ------------------------------------------------------------------
-
-                           # "Cutlery" (2x+50) -- second cutlery item: Fork/Spoon are in ACTIONS
-                           # but are never spawned by the world setup (Executor.py spawns only
-                           # Bowl, Plate, Milk, Knife, Cereal).
-                           # Task(id= 5, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Fork, room="dining_room", uncertain=True),
+                           # Task(id= 3, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Milk, room="kitchen", uncertain=True),
                            #                         TaskStep(ActionType.PARK),
-                           #                         TaskStep(ActionType.PLACE, object_annotations=Fork, location="table"),
+                           #                         TaskStep(ActionType.PLACE, object_annotations=Milk, location="shelf_1"),
                            #                         TaskStep(ActionType.PARK)]),
-
-                           # "Dishwasher tab" pickup (+100) / "In the dishwasher tab slot inside
-                           # the dishwasher" (+160): no DishwasherTab SemanticAnnotation exists.
-                           # Task(id= 6, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=DishwasherTab, room="kitchen", uncertain=True),
+                           #
+                           # Task(id= 4, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Cereal, room="kitchen", uncertain=True),
                            #                         TaskStep(ActionType.PARK),
-                           #                         TaskStep(ActionType.PLACE, object_annotations=DishwasherTab, location="dishwasher"),
-                           #                         TaskStep(ActionType.PARK)]),
+                           #                         TaskStep(ActionType.PLACE, object_annotations=Cereal, location="table"),
+                           #                         TaskStep(ActionType.PARK)
 
-                           # "Correctly in the dishwasher" (3x+70): PLACE@dishwasher is priced in
-                           # ACTIONS (p=0.4), but "dishwasher" is not a surface in ROOM_SURFACES/
-                           # SURFACE_ROOM (not navigable) and requires OPEN first (p=0.0).
-                           # Task(id= 7, task_steps=[TaskStep(ActionType.OPEN, location="dishwasher"),
-                           #                         TaskStep(ActionType.PICKUP, object_annotations=Plate, room="kitchen", uncertain=True),
-                           #                         TaskStep(ActionType.PARK),
-                           #                         TaskStep(ActionType.PLACE, object_annotations=Plate, location="dishwasher"),
-                           #                         TaskStep(ActionType.PARK),
-                           #                         TaskStep(ActionType.CLOSE, location="dishwasher")]),
 
-                           # "From the floor" (+30): the schema has no floor location; PICKUP only
-                           # resolves objects on room surfaces.
-                           # Task(id= 8, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Cereal, room="kitchen", location="floor", uncertain=True), ...]),
-
-                           # "Perceive objects on a shelf and indicate the correct placement"
-                           # (2x30): DETECT only runs inside uncertain PICKUPs; there is no
-                           # standalone perceive-and-indicate step.
-                           # Task(id= 9, task_steps=[TaskStep(ActionType.DETECT, location="shelf_1"), TaskStep(ActionType.DETECT, location="shelf_2")]),
-
-                           # "Open or close the dishwasher door without assistance" (2x200):
-                           # OPEN/CLOSE are in ACTIONS but probability=0.0 (not yet implemented).
-                           # Task(id=10, task_steps=[TaskStep(ActionType.OPEN, location="dishwasher"), TaskStep(ActionType.CLOSE, location="dishwasher")]),
-
-                           # "Pull or push the dishwasher rack" (2x100): PUSH probability=0.0.
-                           # Task(id=11, task_steps=[TaskStep(ActionType.PUSH, location="dishwasher")]),
-
-                           # "Open milk container without assistance" (400): no ActionType for
-                           # opening containers (CUSTOM is a stub with probability=0.0).
-                           # Task(id=12, task_steps=[TaskStep(ActionType.CUSTOM, object_annotations=Milk)]),
-
-                           # "Pour cereal or milk into the bowl without assistance" (2x200):
-                           # POUR is in ACTIONS but probability=0.0 (not yet implemented).
-                           # Task(id=13, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Milk, room="kitchen", uncertain=True),
-                           #                         TaskStep(ActionType.POUR, object_annotations=Milk, location="table"),
-                           #                         TaskStep(ActionType.PARK)]),
-
-                           # "Next to similar objects in the cabinet" (2x+20): priced via the
-                           # "PLACEHOLDER" ACTIONS key, but no cabinet surface exists and PLACE
-                           # has no next-to-similar-object targeting.
                            ]
 
 # All possible tasks for GPSR

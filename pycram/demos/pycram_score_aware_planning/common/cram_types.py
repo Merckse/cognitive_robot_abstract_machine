@@ -27,6 +27,7 @@ class ActionType(str, Enum):
     HAND_OVER = "hand_over"
     POUR = "pour"
     PUSH = "push"
+    THROW_AWAY = "throw_away"
     DETECT = "detect"
     PARK = "park"
     CUSTOM = "custom"
@@ -72,7 +73,7 @@ class TaskStep:
     action_score : float = 0
     action_expected_score : float = 0
     action_expected_score_per_seconds : float = 0
-    action_penatly: int = 0
+    action_penalty: int = 0
     action_time : float = 0
     action_assisted: bool = False
     action_failures : int = 0.5

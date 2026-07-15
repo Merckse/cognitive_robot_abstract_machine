@@ -269,6 +269,7 @@ class PlanNode(PlanEntity):
         self.status = TaskStatus.RUNNING
 
         try:
+
             self.result = self._perform()
 
             if self.parent is None and self.is_interrupted:
@@ -288,6 +289,7 @@ class PlanNode(PlanEntity):
         except Exception as e:
             self.status = TaskStatus.FAILED
             self.reason = e
+            self.plan.root.reason  = e
             logger.info(f"Failed node: {e}")
             self.plan.root.interrupt()
             self.interrupt()

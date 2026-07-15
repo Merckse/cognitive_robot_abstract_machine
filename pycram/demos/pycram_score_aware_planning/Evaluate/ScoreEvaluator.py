@@ -12,9 +12,6 @@ from demos.pycram_score_aware_planning.common.values import (
 )
 from pycram.datastructures.enums import TaskStatus
 
-# ---------------------------------------------------------------------------
-# Data classes
-# ---------------------------------------------------------------------------
 """
 This is the actual score event that is recorded.
 
@@ -108,7 +105,7 @@ class RobotScorer:
 
                 # Asserting  evaluated score and time
                 step.action_score = base_score
-                step.action_penatly = penalty
+                step.action_penalty = penalty
                 step.action_time = expected_time
                 step.task_score_penalized = base_score+penalty
 

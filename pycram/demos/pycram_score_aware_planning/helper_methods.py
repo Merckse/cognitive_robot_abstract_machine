@@ -16,7 +16,7 @@ from pycram.plans.plan_node import PlanNode
 from pycram.robot_plans.actions.base import ActionDescription
 from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.pick_up import PickUpAction
-from pycram.robot_plans.actions.core.placing import PlaceAction
+from pycram.robot_plans.actions.core.placing import PlaceAction, PlaceInTrashAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
 from demos.pycram_score_aware_planning.common.cram_types import Task, ActionType, SurfaceSpace, TaskStep
 from semantic_digital_twin.adapters.mesh import STLParser
@@ -24,7 +24,7 @@ from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import WorldEntityNotFoundError
 from semantic_digital_twin.reasoning.predicates import is_supported_by
 from semantic_digital_twin.reasoning.queries import annotation_class_by_label
-from semantic_digital_twin.robots.abstract_robot import Manipulator
+from semantic_digital_twin.robots.abstract_robot import Manipulator, AbstractRobot
 from semantic_digital_twin.semantic_annotations.mixins import HasRootBody, HasSupportingSurface
 from semantic_digital_twin.spatial_types import (
     Point3,
@@ -125,7 +125,7 @@ def generic_object_spawner(
         pose_point3_: Point3 = Point3(x=pose_xyz[0], y=pose_xyz[1], z=pose_xyz[2], reference_frame=world.root)
         orientation_quaternion_: Quaternion = Quaternion(x=0, y=0, z=0, w=1, reference_frame=world.root)
         pose_: Pose = Pose(position=pose_point3_, orientation=orientation_quaternion_, reference_frame=world.root)
-        scale_: Scale = Scale(x=0.2, y=0.2, z=0.2)
+        scale_: Scale = Scale(x=0.1, y=0.1, z=0.2)
         try:
             object = STLParser(
                 os.path.join(
@@ -241,11 +241,9 @@ def navigation_subplan(target_location: str, world):
     )
     return NavigateAction(target_location=pose, keep_joint_states=True)
 
-def pickup_subplan(object_annotation: SemanticAnnotation, arm: Arms, world: World):
-    manipulator: Manipulator = world.get_semantic_annotations_by_type(Manipulator)[0]
+def pickup_subplan(object_annotation: SemanticAnnotation, arm: Arms, world: World, assisted : bool=False):
     object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
-    grasp = GraspDescription(approach_direction=ApproachDirection.FRONT, vertical_alignment=VerticalAlignment.NoAlignment, manipulator=manipulator)
-    return PickUpAction(grasp_description=grasp, object_designator=object_body, arm=arm)
+    return PickUpAction(object_geometry=object_body, arm=arm, assisted=assisted)
 
 def compute_surface_spaces(world) -> list[SurfaceSpace]:
     surfaces = world.get_semantic_annotations_by_type(HasSupportingSurface)
@@ -380,7 +378,7 @@ def find_free_placement_pose(
 
 
 
-def place_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world):
+def place_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world, assisted : bool):
     object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
 
     surface_spaces = compute_surface_spaces(world=world)
@@ -395,19 +393,19 @@ def place_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_locat
 
     if matched_surface is None:
         logger.warning(ValueError(f"No surface named '{target_location}' found in the world."))
-        # TODO: add human assisted place
+        assisted = True
         return None
     if free_spot is None:
         logger.warning(f"No free placement spot found on '{target_location}'.")
-        # TODO: add human assisted place
+        assisted = True
         return None
 
-    object = world.get_semantic_annotations_by_type(object_annotation)[0]
-    object_z_half = world.get_semantic_annotations_by_type(object_annotation)[0].scale.z/2
+    local_bbs = object_body.collision.as_bounding_box_collection_in_frame(object_body).bounding_boxes
+    origin_to_bottom = min(bb.z_interval.lower for bb in local_bbs) if local_bbs else 0.0
     x, y = free_spot
-    z = matched_surface.z_surface + (object_z_half + 0.002)
-    if z > 1:
-        z = 1
+    z = matched_surface.z_surface - origin_to_bottom + 0.002
+    if z > 1.1:
+        assisted=True
 
     _, _, (qx, qy, qz, qw) = NAVIGATION_POSES[target_location]
     pose = Pose(
@@ -415,43 +413,14 @@ def place_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_locat
         orientation=Quaternion(qx, qy, qz, qw, reference_frame=world.root),
         reference_frame=world.root,
     )
-    return PlaceAction(object_designator=object_body, arm=arm, target_location=pose)
-
-def assisted_place_subplan(object_name: str, arm: Arms, target_location: str, world):
-    object_body : Body= world.get_body_by_name(object_name)
-
-    surface_spaces = compute_surface_spaces(world=world)
-
-    free_spot = None
-    matched_surface = None
-    for surface_space in surface_spaces:
-        if surface_space.name == target_location:
-            matched_surface = surface_space
-            free_spot = find_free_placement_pose(surface=surface_space, world=world, object_body=object_body)
-            break
-
-    if matched_surface is None:
-        logger.warning(ValueError(f"No surface named '{target_location}' found in the world."))
-        # TODO: add human assisted place
-        return None
-    if free_spot is None:
-        logger.warning(f"No free placement spot found on '{target_location}'.")
-        # TODO: add human assisted place
-        return None
+    return PlaceAction(object_designator=object_body, arm=arm, target_location=pose, assisted=assisted)
 
 
-    x, y = free_spot
-    z = matched_surface.z_surface
-    if z > 1:
-        z = 1
+def place_in_trash_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world, assisted : bool):
+    object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
 
-    _, _, (qx, qy, qz, qw) = NAVIGATION_POSES[target_location]
-    pose = Pose(
-        position=Point3(x, y, z, reference_frame=world.root),
-        orientation=Quaternion(qx, qy, qz, qw, reference_frame=world.root),
-        reference_frame=world.root,
-    )
-    return PlaceAction(object_designator=object_body, arm=arm, target_location=pose)
+    return PlaceInTrashAction(object_designator=object_body, arm=arm, assisted=assisted)
+
 def generate_plan(tasks: list[Task], context: Context):
     from pycram.plans.factories import make_node
     plan = sequential(children=[], context=context)
@@ -467,7 +436,10 @@ def generate_plan(tasks: list[Task], context: Context):
                     last_pickup_object = task_steps.object_annotations
                     action = pickup_subplan(object_name=task_steps.object_annotations, arm=arm, world=context.world)
                 case ActionType.PLACE:
-                    action = place_subplan(object_name=last_pickup_object, arm=arm, target_location=task_steps.object_placement, world=context.world)
+                    action = place_in_trash_subplan(object_name=last_pickup_object, arm=arm, target_location=task_steps.object_placement, world=context.world)
+                case ActionType.PLACE:
+                    action = place_in_trash_subplan(object_name=last_pickup_object, arm=arm,
+                                           target_location=task_steps.object_placement, world=context.world)
                 case ActionType.PARK:
                     action = ParkArmsAction(Arms.LEFT)
                 case ActionType.DETECT:
@@ -479,51 +451,23 @@ def generate_plan(tasks: list[Task], context: Context):
 
     return plan
 
-def generate_plan_task(task: Task, context: Context) -> PlanNode:
-    from pycram.plans.factories import make_node
-    plan = sequential(children=[], context=context)
-    arm = Arms.LEFT
-    action = None
-    last_pickup_object: Optional[SemanticAnnotation] = None
-    action_list : list[ActionDescription] = []
-    for task_steps in task.task_steps:
-        # TODO: add assisted tasks
-        if task_steps.action_assisted:
-            match task_steps.action_type:
-                case ActionType.NAVIGATE:
-                    action = navigation_subplan(target_location=task_steps.location, world=context.world)
-                case ActionType.PICKUP:
-                    last_pickup_object = task_steps.object_annotations
-                    action = pickup_subplan(object_annotation=task_steps.object_annotations, arm=arm, world=context.world)
-                case ActionType.PLACE:
-                    action = place_subplan(object_annotation=last_pickup_object, arm=arm,
-                                           target_location=task_steps.location, world=context.world)
-                case ActionType.PARK:
-                    action = ParkArmsAction(Arms.LEFT)
-                case ActionType.DETECT:
-                    pass
-                case _:
-                    raise NotImplementedError(f"Action type not implemented: {task_steps.action_type}")
-        else:
-            match task_steps.action_type:
-                case ActionType.NAVIGATE:
-                    action = navigation_subplan(target_location=task_steps.location, world=context.world)
-                case ActionType.PICKUP:
-                    last_pickup_object : SemanticAnnotation= task_steps.object_annotations
-                    action = pickup_subplan(object_annotation=last_pickup_object, arm=arm, world=context.world)
-                case ActionType.PLACE:
-                    action = place_subplan(object_annotation=last_pickup_object, arm=arm, target_location=task_steps.location, world=context.world)
-                case ActionType.PARK:
-                    action = ParkArmsAction(Arms.LEFT)
-                case ActionType.DETECT:
-                    pass
-                case _:
-                    raise NotImplementedError(f"Action type not implemented: {task_steps.action_type}")
-        if action is not None:
-            # action_list.append(action)
-            plan.add_child(make_node(action))
+def at_location(location : str, robot: AbstractRobot, threshold: float = 0.5, yaw_threshold: float = math.radians(20)) -> bool:
+    x_goal, y_goal, (qx, qy, qz, qw) = NAVIGATION_POSES.get(location)
+    point3_goal : Point3 = Point3(x=x_goal, y=y_goal, z=0)
+    robot_pose : Pose = robot.root.global_pose
+    robot_position : Point3 = robot_pose.to_position()
 
-    return plan
+    if float(robot_position.euclidean_distance(point3_goal)) >= threshold:
+        return False
+
+    # Quaternion heading orientation, since the robot can only spin vertically. That means
+    # qz and qw are the only ones impacted
+    goal_yaw = 2.0 * math.atan2(qz, qw)
+    pose_matrix = robot_pose.to_np()
+
+    robot_yaw = math.atan2(pose_matrix[1, 0], pose_matrix[0, 0])
+    yaw_error = math.atan2(math.sin(robot_yaw - goal_yaw), math.cos(robot_yaw - goal_yaw))
+    return abs(yaw_error) < yaw_threshold
 
 def generate_plan_taskstep_list(taskstep_list: list[TaskStep], context: Context) -> PlanNode:
     from pycram.plans.factories import make_node
@@ -534,41 +478,28 @@ def generate_plan_taskstep_list(taskstep_list: list[TaskStep], context: Context)
     action_list : list[ActionDescription] = []
     for task_step in taskstep_list:
         # TODO: add assisted tasks
-        if task_step.action_assisted:
-            match task_step.action_type:
-                case ActionType.NAVIGATE:
-                    action = navigation_subplan(target_location=task_step.location, world=context.world)
-                case ActionType.PICKUP:
-                    last_pickup_object = task_step.object_annotations
-                    action = pickup_subplan(object_annotation=task_step.object_annotations, arm=arm, world=context.world)
-                case ActionType.PLACE:
-                    action = place_subplan(object_annotation=last_pickup_object, arm=arm,
-                                           target_location=task_step.location, world=context.world)
-                case ActionType.PARK:
-                    action = ParkArmsAction(Arms.LEFT)
-                case ActionType.DETECT:
-                    pass
-                case _:
-                    raise NotImplementedError(f"Action type not implemented: {task_step.action_type}")
-        else:
-            match task_step.action_type:
-                case ActionType.NAVIGATE:
-                    action = navigation_subplan(target_location=task_step.location, world=context.world)
-                case ActionType.PICKUP:
-                    last_pickup_object : SemanticAnnotation= task_step.object_annotations
-                    action = pickup_subplan(object_annotation=last_pickup_object, arm=arm, world=context.world)
-                case ActionType.PLACE:
-                    action = place_subplan(object_annotation=last_pickup_object, arm=arm, target_location=task_step.location, world=context.world)
-                case ActionType.PARK:
-                    action = ParkArmsAction(Arms.LEFT)
-                case ActionType.DETECT:
-                    pass
-                case _:
-                    raise NotImplementedError(f"Action type not implemented: {task_step.action_type}")
+        match task_step.action_type:
+            case ActionType.NAVIGATE:
+                action = navigation_subplan(target_location=task_step.location, world=context.world)
+            case ActionType.PICKUP:
+                last_pickup_object : SemanticAnnotation= task_step.object_annotations
+                action = pickup_subplan(object_annotation=last_pickup_object, arm=arm, world=context.world, assisted=task_step.action_assisted)
+            case ActionType.PLACE:
+                action = place_subplan(object_annotation=last_pickup_object, arm=arm, target_location=task_step.location, world=context.world, assisted=task_step.action_assisted)
+            case ActionType.THROW_AWAY:
+                action = place_in_trash_subplan(object_annotation=last_pickup_object, arm=arm,
+                                       target_location=task_step.location, world=context.world,
+                                       assisted=task_step.action_assisted)
+
+            case ActionType.PARK:
+                action = ParkArmsAction(Arms.LEFT)
+            case ActionType.DETECT:
+                pass
+            case _:
+                raise NotImplementedError(f"Action type not implemented: {task_step.action_type}")
         if action is not None:
             # action_list.append(action)
             plan.add_child(make_node(action))
-
     return plan
 
 def _quat(yaw: float) -> tuple[float, float, float, float]:

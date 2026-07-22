@@ -6,21 +6,13 @@ import numpy as np
 import rclpy
 
 from demos.SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.events.event_handler import EventDispatcher
-from demos.pycram_score_aware_planning.helper_methods import spawn_semantic_with_body
-from semantic_digital_twin.adapters.mesh import STLParser
 from semantic_digital_twin.adapters.urdf import URDFParser
 from semantic_digital_twin.predetermined_maps.kitchen_environment import KitchenEnvironment
-from semantic_digital_twin.semantic_annotations.semantic_annotations import (
-    Milk,
-)
-from semantic_digital_twin.spatial_types import Point3, Quaternion
 from semantic_digital_twin.spatial_types.spatial_types import (
     HomogeneousTransformationMatrix,
-    Pose,
 )
 from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import OmniDrive
-from semantic_digital_twin.world_description.geometry import Scale, Color
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +43,7 @@ def setup_world():
 
 
     node = rclpy.create_node("kitchen_environment")
-    publisher = VizMarkerPublisher(_world=KitchenEnvironment().get_world(), node=node)
+    publisher = VizMarkerPublisher(_world=KitchenEnvironment().get_world(), node=node, show_labels=True)
     (publisher.with_tf_publisher())
     apartment_world : World= publisher._world
 

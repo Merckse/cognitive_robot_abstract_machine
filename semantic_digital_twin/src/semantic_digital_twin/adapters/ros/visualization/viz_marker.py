@@ -8,7 +8,7 @@ from uuid import UUID
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, DurabilityPolicy
-from visualization_msgs.msg import MarkerArray
+from visualization_msgs.msg import Marker, MarkerArray
 
 from semantic_digital_twin.adapters.ros.msg_converter import SemDTToRos2Converter
 from semantic_digital_twin.adapters.ros.tf_publisher import TFPublisher
@@ -76,6 +76,16 @@ class VizMarkerPublisher(ModelChangeCallback):
     Marker transparency in [0.0, 1.0]. 0.0 is fully transparent.
     """
 
+    show_labels: bool = field(kw_only=True, default=False)
+    """
+    Whether to publish a text label above every body that has an IsPerceivable semantic annotation.
+    """
+
+    label_text_height: float = field(kw_only=True, default=0.08)
+    """
+    Height of the label text in meters.
+    """
+
     markers: MarkerArray = field(init=False, default_factory=MarkerArray)
     """Maker message to be published."""
     qos_profile: QoSProfile = field(
@@ -112,6 +122,10 @@ class VizMarkerPublisher(ModelChangeCallback):
 
     def _notify(self, **kwargs):
         self.markers = MarkerArray()
+        delete_all = Marker()
+        delete_all.action = Marker.DELETEALL
+        self.markers.markers.append(delete_all)
+        labeled_bodies = self._labeled_bodies() if self.show_labels else set()
         for body in self._world.bodies:
             shapes = self._select_shapes(body)
             if not shapes:
@@ -125,4 +139,51 @@ class VizMarkerPublisher(ModelChangeCallback):
                 marker.id = i
                 marker.ns = marker_ns
                 self.markers.markers.append(marker)
+            if body in labeled_bodies:
+                self.markers.markers.append(self._label_marker(body, marker_ns))
         self.pub.publish(self.markers)
+
+    def _labeled_bodies(self) -> set:
+        """
+        Collect the root bodies of all IsPerceivable annotations, i.e. the bodies that should get a name tag.
+        """
+        # local import to keep the adapter importable without the annotations module
+        from semantic_digital_twin.semantic_annotations.mixins import IsPerceivable
+
+        bodies = set()
+        for annotation in self._world.get_semantic_annotations_by_type(IsPerceivable):
+            root = getattr(annotation, "root", None)
+            if root is not None:
+                bodies.add(root)
+        return bodies
+
+    def _label_marker(self, body, marker_ns: str) -> Marker:
+        """
+        Build a camera-facing text marker floating above the body, in the body's own tf frame so it follows the body.
+        """
+        label = Marker()
+        label.header.frame_id = str(body.name)
+        label.type = Marker.TEXT_VIEW_FACING
+        label.action = Marker.ADD
+        label.text = body.name.name
+        # separate namespace so all labels can be toggled independently of the bodies in Rviz
+        label.ns = marker_ns + "/label"
+        label.id = 0
+        label.pose.orientation.w = 1.0
+        label.pose.position.z = self._label_z_offset(body)
+        label.scale.z = self.label_text_height
+        label.color.r = label.color.g = label.color.b = 1.0
+        label.color.a = 1.0
+        label.frame_locked = True
+        return label
+
+    def _label_z_offset(self, body) -> float:
+        """
+        Place the label slightly above the top of the body's collision geometry, with a fallback for bodies
+        whose bounding box cannot be computed.
+        """
+        try:
+            bb = body.collision.as_bounding_box_collection_in_frame(body).bounding_box()
+            return bb.max_z + 0.05
+        except Exception:
+            return 0.25

@@ -7,10 +7,10 @@ import time
 
 from dataclasses import asdict, dataclass, field
 
-from common.cram_types import TaskStep, ScoreEvent, Task, ChallengeMode, Status
+from common.cram_types import TaskStep, ScoreEvent, Task, Status
 from common.values import CHALLENGE_DURATION, CHALLENGE_TASKS
 from helper_methods import get_values
-from pycram.datastructures.enums import TaskStatus
+from pycram.datastructures.enums import TaskStatus, ChallengeMode
 from pycram.language import SequentialNode
 
 logger = logging.getLogger(__name__)

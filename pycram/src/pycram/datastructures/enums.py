@@ -288,3 +288,9 @@ class MonitorBehavior(Enum):
     """
     Resume the task when the condition is met.
     """
+
+
+class ChallengeMode(str, Enum):
+    GPSR = "gpsr"
+    PP = "pp"
+    FD = "fd"

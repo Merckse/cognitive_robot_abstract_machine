@@ -18,3 +18,17 @@ class TorsoState(JointStateType):
 
 class StaticJointState(JointStateType):
     PARK = auto()
+
+
+class RoomEnum(Enum):
+    KITCHEN = auto()
+    LIVINGROOM = auto()
+    OFFICE = auto()
+    DINING_ROOM = auto()
+    PREPERATION_ROOM = auto()
+
+
+class ChallengeMode(str, Enum):
+    GPSR = "gpsr"
+    PP = "pp"
+    FD = "fd"

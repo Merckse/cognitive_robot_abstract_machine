@@ -35,7 +35,7 @@ from semantic_digital_twin.reasoning.predicates import allclose
 from semantic_digital_twin.reasoning.robot_predicates import is_body_in_gripper
 from semantic_digital_twin.robots.abstract_robot import Manipulator
 from semantic_digital_twin.semantic_annotations.semantic_annotations import TrashCan
-from semantic_digital_twin.spatial_types import Point3, HomogeneousTransformationMatrix
+from semantic_digital_twin.spatial_types import Point3, Quaternion, HomogeneousTransformationMatrix
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world_description.connections import Connection6DoF
 from semantic_digital_twin.world_description.world_entity import Body
@@ -51,13 +51,15 @@ class PlaceAction(ActionDescription):
     """
     Object designator_description describing the object that should be place
     """
-    target_location: Pose
-    """
-    Pose in the world at which the object should be placed
-    """
+
     arm: Arms
     """
     Arm that is currently holding the object
+    """
+
+    target_location: Pose = None
+    """
+    Pose in the world at which the object should be placed
     """
 
     assisted: bool = False
@@ -71,12 +73,11 @@ class PlaceAction(ActionDescription):
 
         if self.assisted:
             self.add_subplan(sequential([HandedOverAction(self.arm)])).perform()
-            time.sleep(1) # TODO: for eval make higher
             self.add_subplan(
                 sequential([GiskardMoveGripperMotion(gripper_state=GripperState.OPEN, arm=self.arm)])).perform()
 
             self.place_target_location(manipulator)
-
+            return
         else:
             self.add_subplan(
                 sequential(
@@ -95,10 +96,10 @@ class PlaceAction(ActionDescription):
                 world_root, self.object_designator
             )
             with self.world.modify_world():
-                self.world.remove_connection(self.object_designator.parent_connection)
                 connection = Connection6DoF.create_with_dofs(
                     parent=world_root, child=self.object_designator, world=self.world
                 )
+                self.world.remove_connection(self.object_designator.parent_connection)
                 self.world.add_connection(connection)
                 connection.origin = obj_transform
 
@@ -115,6 +116,9 @@ class PlaceAction(ActionDescription):
         obj_rot_matrix = obj.global_pose.to_rotation_matrix()
         # tool_frame_pose = manipulator.tool_frame.global_pose
 
+        if not self.target_location:
+            self.target_location = obj.global_pose
+
         print("placing at", self.target_location)
 
         world_root = self.world.root
@@ -124,16 +128,16 @@ class PlaceAction(ActionDescription):
 
         print(self.target_location)
 
+        world_transf_obj_goal = HomogeneousTransformationMatrix.from_point_rotation_matrix(
+            point=self.target_location.to_position(),
+            rotation_matrix=obj_rot_matrix,
+            reference_frame=self.world.root,
+        )
         with self.world.modify_world():
-            self.world.remove_connection(self.object_designator.parent_connection)
             connection = Connection6DoF.create_with_dofs(
                 parent=world_root, child=self.object_designator, world=self.world
             )
-            world_transf_obj_goal = HomogeneousTransformationMatrix.from_point_rotation_matrix(
-                point=self.target_location.to_position(),
-                rotation_matrix=obj_rot_matrix,
-                reference_frame=self.world.root,
-            )
+            self.world.remove_connection(self.object_designator.parent_connection)
             self.world.add_connection(connection)
             connection.origin = world_transf_obj_goal
 
@@ -233,12 +237,12 @@ class PlaceInTrashAction(ActionDescription):
             world_root, self.object_designator
         )
         with self.world.modify_world():
-            self.world.remove_connection(self.object_designator.parent_connection)
             connection = Connection6DoF.create_with_dofs(
                 parent=world_root, child=self.object_designator, world=self.world
             )
-            self.world.add_connection(connection)
             connection.origin = obj_transform
+            self.world.remove_connection(self.object_designator.parent_connection)
+            self.world.add_connection(connection)
 
         self.add_subplan(
             execute_single(RetractMotion(gripper=manipulator)

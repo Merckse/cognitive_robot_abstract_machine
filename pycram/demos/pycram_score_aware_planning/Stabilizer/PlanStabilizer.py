@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Optional
 from unittest import skip
 
+
 from Evaluate.CompositeEvaluator import CompositeEvaluator
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from common.cram_types import Task, Status, TaskStep, ActionType
@@ -11,7 +12,7 @@ from common.values import evaluation, lookup_operators, CANDIDATE_OPERATORS
 from giskardpy.motion_statechart.exceptions import CollisionViolatedError
 from giskardpy.motion_statechart.goals.pick_up import ObjectNotReachableException, ObjectDoesntFitException
 from helper_methods import get_remaining_task_steps, navigation_subplan, pickup_subplan, place_subplan, \
-    NAVIGATION_POSES, at_location
+    NAVIGATION_POSES, at_location, throw_away_subplan, open_subplan
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, Arms
 from pycram.exceptions import MotionDidNotFinish
@@ -21,7 +22,7 @@ from pycram.plans.failures import ObjectNotGrasped
 from pycram.plans.plan_node import PlanNode
 from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.pick_up import PickUpAction
-from pycram.robot_plans.actions.core.placing import PlaceAction
+from pycram.robot_plans.actions.core.placing import PlaceAction, PlaceInTrashAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
 
 
@@ -49,7 +50,8 @@ class PlanStabilizer:
                   plan: SequentialNode,
                   task: Task,
                   exception: Exception,
-                  scoretime_monitor : ScoreTimeMonitor):
+                  scoretime_monitor : ScoreTimeMonitor,
+                  remaining_candidate_operators : list[PlanTransformationOperator] = [],):
         """
         Stabilize works by taking the task and the exception and using it to match it to candidate solutions.
         These solutions are hardcoded by the developers. Since there is (at least not expected to be) a unified way of
@@ -64,7 +66,7 @@ class PlanStabilizer:
         # TOOD: add a constant probability decrease, on actually failed task, so the "hope", becomes less
         """
         self.context = context
-        candidate_operators : list[PlanTransformationOperator] = [PlanTransformationOperator.SKIP]
+        candidate_operators = remaining_candidate_operators if remaining_candidate_operators else lookup_operators(exception=exception)
 
         # sorting out all Nodes, that have already succeeded, expecting, to not doing them again
         for i, child in enumerate(plan.plan.root.children):
@@ -86,7 +88,7 @@ class PlanStabilizer:
         # Pickup-Motion issues
         score : list[list[PlanTransformationOperator, float, PlanNode, list[TaskStep]]]= []
 
-        candidate_operators = lookup_operators(exception=exception)
+
 
 
         # TO CHECK IF CORRECT, DO SOMETHING, THAT NEEDS A MOVETORSOHIGH, BUT RESULTS IN FAILURE; SINCE NOT REACHABLE
@@ -115,14 +117,10 @@ class PlanStabilizer:
         else:
             transformed_task_list = task_list
 
-        temp_robot = deepcopy(self.context.robot)
-        exec_steps = []
-
-
         exec_steps = []
         temp_robot = deepcopy(self.context.robot)
         for ts in transformed_task_list:
-            if ts.location != "" and not at_location(location=ts.location, robot=temp_robot):
+            if ts.location != "" and not at_location(context=context, location=ts.location, robot=temp_robot):
                 # location known -> place the robot at the approach pose so distance is measured from there
                 if ts.location in NAVIGATION_POSES:
                     x, y, _ = NAVIGATION_POSES[ts.location]
@@ -182,20 +180,27 @@ class PlanStabilizer:
         Builds a single executable plan node from a TaskStep, mirroring generate_plan_task.
         Returns None for steps that have no executable node (e.g. DETECT).
         """
+        challenge_mode = context.challenge_mode
         arm = Arms.LEFT
+        world = context.world
         match step.action_type:
             case ActionType.NAVIGATE:
-                action = navigation_subplan(target_location=step.location, world=context.world)
+                action = navigation_subplan(challenge_mode=challenge_mode, target_location=step.location, world=world)
             case ActionType.PICKUP:
                 action = pickup_subplan(object_annotation=step.object_annotations, arm=arm,
-                                        world=context.world, assisted=step.action_assisted)
+                                        world=world, assisted=step.action_assisted)
             case ActionType.PLACE:
-                action = place_subplan(object_annotation=step.object_annotations, arm=arm,
-                                       target_location=step.location, world=context.world, assisted=step.action_assisted)
+                action = place_subplan(challenge_mode=challenge_mode, object_annotation=step.object_annotations, arm=arm,
+                                       target_location=step.location, world=world, assisted=step.action_assisted)
             case ActionType.PARK:
                 action = ParkArmsAction(Arms.LEFT)
             case ActionType.DETECT:
                 return None
+            case ActionType.THROW_AWAY:
+                action =  throw_away_subplan(object_annotation=step.object_annotations, arm=arm, world=world, assisted=step.action_assisted)
+            case ActionType.OPEN:
+                action = open_subplan(object_annotation=step.object_annotations, arm=arm,
+                               world=world, assisted=step.action_assisted)
             case _:
                 raise NotImplementedError(f"Action type not implemented: {step.action_type}")
         if action is None:

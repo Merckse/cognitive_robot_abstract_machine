@@ -201,13 +201,14 @@ class PullUpAction(ActionDescription):
             reference_frame=self.world.root,
         )
 
+        old = obj.parent_connection
+        new_connection = FixedConnection(
+            parent=old.parent, child=obj,
+            parent_T_connection_expression=self.world.transform(world_transf_obj_goal, old.parent),
+        )
         with self.world.modify_world():
-            old = obj.parent_connection
             self.world.remove_connection(old)
-            self.world.add_connection(FixedConnection(
-                parent=old.parent, child=obj,
-                parent_T_connection_expression=self.world.transform(world_transf_obj_goal, old.parent),
-            ))
+            self.world.add_connection(new_connection)
 
     def attach_object(self) -> None:
         end_effector = ViewManager.get_end_effector_view(self.arm, self.robot)

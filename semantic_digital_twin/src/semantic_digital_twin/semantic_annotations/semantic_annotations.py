@@ -22,8 +22,9 @@ from semantic_digital_twin.semantic_annotations.mixins import (
     HasApertures,
     IsPerceivable,
     HasRootBody,
-    HasStorageSpace, HasShelfLayer,
+    HasShelfLayer,
 )
+from semantic_digital_twin.datastructures.definitions import RoomEnum
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.datastructures.variables import SpatialVariables
 from semantic_digital_twin.exceptions import (
@@ -82,6 +83,7 @@ class Handle(HasRootBody):
         active_axis: Optional[Vector3] = None,
         connection_multiplier: float = 1.0,
         connection_offset: float = 0.0,
+        location : str = "",
         *,
         scale: Scale = Scale(0.1, 0.02, 0.02),
         thickness: float = 0.005,
@@ -355,7 +357,7 @@ class DoubleDoor(SemanticAnnotation):
 
 
 @dataclass(eq=False)
-class Drawer(Furniture, HasCaseAsRootBody, HasHandle, HasSlider, HasStorageSpace):
+class Drawer(Furniture, HasCaseAsRootBody, HasHandle, HasSlider, HasSupportingSurface):
 
     @classproperty
     def hole_direction(self) -> Vector3:
@@ -374,6 +376,8 @@ class ShelfLayer(HasSupportingSurface):
 
 @dataclass(eq=False)
 class Table(Furniture, HasSupportingSurface):
+    location : Optional[RoomEnum] = field(kw_only=True, default=None)
+    """The room this table stands in; None if not annotated (changeable at runtime)."""
     """
     A semantic annotation that represents a table.
     """
@@ -554,7 +558,7 @@ class Wall(HasApertures):
 
 
 @dataclass(eq=False)
-class Bottle(HasRootBody):
+class Bottle(HasRootBody, IsPerceivable):
     """
     Abstract class for bottles.
     """
@@ -579,7 +583,7 @@ class WineBottle(Bottle):
 
 
 @dataclass(eq=False)
-class MustardBottle(Bottle):
+class MustardBottle(Bottle, IsPerceivable):
     """
     A mustard bottle.
     """
@@ -691,7 +695,7 @@ class CheezeIt(Food):
 
 
 @dataclass(eq=False)
-class Pringles(Food):
+class Pringles(Food, IsPerceivable):
     """
     Pringles chips
     """
@@ -705,7 +709,7 @@ class GelatinBox(Food):
 
 
 @dataclass(eq=False)
-class TomatoSoup(Food):
+class TomatoSoup(Food, IsPerceivable):
     """
     Tomato soup.
     """
@@ -1051,4 +1055,11 @@ class Baseball(HasRootBody):
 class LiquidCap(HasRootBody):
     """
     A liquid cap.
+    """
+
+
+@dataclass(eq=False)
+class DishwasherTab(HasRootBody, IsPerceivable):
+    """
+    A DishwasherTab.
     """

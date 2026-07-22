@@ -3,7 +3,7 @@ from setuptools.command.build_py import build_py
 from semantic_digital_twin.adapters.ros.visualization.viz_marker import (
     VizMarkerPublisher,
 )
-from semantic_digital_twin.semantic_annotations.mixins import HasDoors
+from semantic_digital_twin.semantic_annotations.mixins import HasDoors, HasSupportingSurface
 from semantic_digital_twin.semantic_annotations.semantic_annotations import (
     Table,
     Sofa,
@@ -27,11 +27,11 @@ from semantic_digital_twin.spatial_types.spatial_types import (
     Point3,
 )
 from semantic_digital_twin.spatial_types.derivatives import DerivativeMap
-from semantic_digital_twin.world_description.connections import FixedConnection, RevoluteConnection
+from semantic_digital_twin.world_description.connections import FixedConnection, RevoluteConnection, PrismaticConnection
 from semantic_digital_twin.world_description.geometry import Box, Scale, Color
 from semantic_digital_twin.world_description.geometry import Cylinder
 from semantic_digital_twin.world_description.shape_collection import ShapeCollection
-from semantic_digital_twin.world_description.world_entity import Body
+from semantic_digital_twin.world_description.world_entity import Body, SemanticAnnotation
 from semantic_digital_twin.spatial_types.spatial_types import Vector3
 from semantic_digital_twin.world_description.degree_of_freedom import (
     DegreeOfFreedomLimits, DegreeOfFreedom,
@@ -243,6 +243,14 @@ class KitchenEnvironment:
             )
 
 
+            shelf_4 = ShelfLayer.create_with_new_body_in_world(
+                name=PrefixedName("shelf_4"),
+                world=world,
+                world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(
+                    x=4.55, y=4.72, z=0.2
+                ),
+                scale=Scale(0.40, 0.76, 0.02),
+            )
             # Creating doors manually and attaching them directly to the cupboard
             door_scale = Scale(0.02, 0.40, 1.055)
 
@@ -253,8 +261,8 @@ class KitchenEnvironment:
             left_door_limits = DegreeOfFreedomLimits(lower=left_lower, upper=left_upper)
 
             # Right door opens outwards (-90 to 0 degrees)
-            right_lower = DerivativeMap[float](position=-np.pi / 2)
-            right_upper = DerivativeMap[float](position=0.0)
+            right_lower = DerivativeMap[float](position=0.0)
+            right_upper = DerivativeMap[float](position=np.pi / 2)
             right_door_limits = DegreeOfFreedomLimits(lower=right_lower, upper=right_upper)
 
             # Left Door
@@ -313,7 +321,7 @@ class KitchenEnvironment:
                 world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(
                     x=4.325, y=5.12, z=0.5275
                 ),
-                active_axis=Vector3.Z(),
+                active_axis=-Vector3.Z(),
                 connection_limits=right_door_limits,
             )
 
@@ -328,6 +336,7 @@ class KitchenEnvironment:
             cupboard.add_shelf_layer(shelf_1)
             cupboard.add_shelf_layer(shelf_2)
             cupboard.add_shelf_layer(shelf_3)
+            cupboard.add_shelf_layer(shelf_4)
 
             for shape in cupboard.bodies[0].visual.shapes:
                 shape.color = Color.YELLOW()
@@ -345,6 +354,8 @@ class KitchenEnvironment:
             for shape in shelf_2.bodies[0].visual.shapes:
                 shape.color = Color.MAGENTA()
             for shape in shelf_3.bodies[0].visual.shapes:
+                shape.color = Color.MAGENTA()
+            for shape in shelf_4.bodies[0].visual.shapes:
                 shape.color = Color.MAGENTA()
 
 
@@ -410,6 +421,7 @@ class KitchenEnvironment:
                 ),
                 active_axis=Vector3.Y(),
                 connection_limits=left_door_limits,
+
             )
 
             dishwasher_rack = Drawer.create_with_new_body_in_world(
@@ -424,7 +436,7 @@ class KitchenEnvironment:
             dishwaser_slider_dof_limits = DegreeOfFreedomLimits(lower=dishwaser_slider_lower, upper=dishwaser_slider_higher)
 
             dishwasher_slider = Slider.create_with_new_body_in_world(
-                world=world, name=PrefixedName("dishwaser_rack"),
+                world=world, name=PrefixedName("dishwaser_rack_slider"),
                 world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=1.481, y=-2.18, z=0.3, pitch= np.pi / 2),
                 scale=Scale(x=0.034, y=0.658, z=0.7),
                 active_axis=Vector3.Y(),
@@ -435,6 +447,23 @@ class KitchenEnvironment:
             dishwasher_door.add_hinge(dishwasher_door_hinge)
             dishwasher.add_drawer(dishwasher_rack)
             dishwasher_rack.add_slider(dishwasher_slider)
+
+            root_T_dw = dishwasher._offline_root_T_entity(dishwasher.root)
+            for part_body, conn_cls, axis, limits in [
+                (dishwasher_door_hinge.root, RevoluteConnection, Vector3.Y(), left_door_limits),
+                (dishwasher_slider.root, PrismaticConnection, Vector3.Y(), dishwaser_slider_dof_limits),
+            ]:
+                old = part_body.parent_connection
+                root_T_part = dishwasher._offline_root_T_entity(part_body)
+                parent_T_part = HomogeneousTransformationMatrix(
+                    (root_T_dw.inverse() @ root_T_part).evaluate()
+                )
+                world.remove_connection(old)
+                world.add_connection(conn_cls.create_with_dofs(
+                    world=world, parent=dishwasher.root, child=part_body,
+                    parent_T_connection_expression=parent_T_part,
+                    axis=axis, dof_limits=limits,
+                ))
 
             for b in dishwasher_rack.bodies:
                 for s in b.visual.shapes:
@@ -475,6 +504,7 @@ class KitchenEnvironment:
                 name=PrefixedName("table"),
                 world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=3.545, y=0.426, z=0.4225),
                 scale=Scale(x=2.45, y=0.796, z=0.845),
+                location=""
             )
             for body in table.bodies:
                 for s in body.visual.shapes:
@@ -522,10 +552,11 @@ class KitchenEnvironment:
                 name=PrefixedName("dining_table"),
                 world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=2.59975, y=5.705,
                                                                                                      z=0.365),
-                scale=Scale(0.73, 1.18, 0.73),
+                scale=Scale(0.73, 1.18, 0.53),
             )
             for color in dinning_table.bodies[0].visual.shapes:
                 color.color = Color.BEIGE()
+
 
         return world
 

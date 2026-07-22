@@ -1,21 +1,26 @@
 import logging
 import math
 import os
+import random
+from random import randint
 from time import sleep
 from typing import Optional
 
-from common.cram_types import Status, ChallengeMode
+from plotly.graph_objs.indicator.gauge import step
+
+from common.cram_types import Status
 from common.values import evaluation
 from probabilistic_model.bayesian_network.bayesian_network import Root
 
 from giskardpy.motion_statechart.goals.place import PlacementNotReachableException
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
+from pycram.datastructures.enums import Arms, ApproachDirection, VerticalAlignment, ChallengeMode
 from pycram.datastructures.grasp import GraspDescription
 from pycram.language import SequentialNode
 from pycram.plans.factories import sequential
 from pycram.plans.plan_node import PlanNode
 from pycram.robot_plans.actions.base import ActionDescription
+from pycram.robot_plans.actions.core.container import OpenAction
 from pycram.robot_plans.actions.core.navigation import NavigateAction
 from pycram.robot_plans.actions.core.pick_up import PickUpAction
 from pycram.robot_plans.actions.core.placing import PlaceAction, PlaceInTrashAction
@@ -28,6 +33,8 @@ from semantic_digital_twin.reasoning.predicates import is_supported_by
 from semantic_digital_twin.reasoning.queries import annotation_class_by_label
 from semantic_digital_twin.robots.abstract_robot import Manipulator, AbstractRobot
 from semantic_digital_twin.semantic_annotations.mixins import HasRootBody, HasSupportingSurface
+from semantic_digital_twin.semantic_annotations.semantic_annotations import Knife, Fork, Spoon, DishwasherTab, Milk, \
+    Bowl, Plate, Table, Mug, Cup, Cereal, Bottle, Pringles, Apple, Sofa, Dishwasher
 from semantic_digital_twin.spatial_types import (
     Point3,
     Quaternion,
@@ -35,13 +42,20 @@ from semantic_digital_twin.spatial_types import (
 )
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world import World
-from semantic_digital_twin.world_description.connections import FixedConnection
+from semantic_digital_twin.world_description.connections import FixedConnection, ActiveConnection1DOF, Connection6DoF
 from semantic_digital_twin.world_description.geometry import Scale, Color
 from semantic_digital_twin.world_description.world_entity import (
     Body, SemanticAnnotation,
 )
 
 import numpy as np
+
+
+from pycram.datastructures.dataclasses import Context
+
+from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
+from semantic_digital_twin.robots.hsrb import HSRB
+from semantic_digital_twin.world_description.geometry import Color
 
 
 logger = logging.getLogger(__name__)
@@ -117,16 +131,18 @@ def spawn_semantic_with_body(
 
 def generic_object_spawner(
         names: list[str] ,
-        pose : list[tuple[float,float,float]] ,
+        pose : list[Pose | tuple[float, float, float]],
         world : World,
-        color: Optional[Color] = Color.WHITE(),
+        custom_name : list[str] = None,
+        color: list[Color] = Color.WHITE(),
 ):
     i = 0
     for name in names:
-        pose_xyz = pose[i]
-        pose_point3_: Point3 = Point3(x=pose_xyz[0], y=pose_xyz[1], z=pose_xyz[2], reference_frame=world.root)
-        orientation_quaternion_: Quaternion = Quaternion(x=0, y=0, z=0, w=1, reference_frame=world.root)
-        pose_: Pose = Pose(position=pose_point3_, orientation=orientation_quaternion_, reference_frame=world.root)
+        curr_pose = pose[i]
+        if isinstance(curr_pose, (tuple, list)):
+            x, y, z = curr_pose[0], curr_pose[1], curr_pose[2]
+        else:
+            x, y, z = curr_pose.x, curr_pose.y, curr_pose.z
         scale_: Scale = Scale(x=0.1, y=0.1, z=0.2)
         try:
             object = STLParser(
@@ -134,20 +150,34 @@ def generic_object_spawner(
                     os.path.dirname(__file__), "..", "..", "resources", "objects", name.lower()+".stl"
                 )
             ).parse()
+
             object.root.name = PrefixedName(name.lower())
+            if custom_name:
+                object.root.name = PrefixedName(custom_name.lower())
+
+            # meshes are modeled around their own origin, so lift the body until the mesh bottom rests on z
+            mesh_bottom_z = object.root.combined_mesh.bounds[0][2]
             with world.modify_world():
                 world.merge_world_at_pose(
                     object,
                     HomogeneousTransformationMatrix.from_xyz_quaternion(
-                        pose[i][0], pose[i][1], pose[i][2], reference_frame=world.root
+                        x, y, z - mesh_bottom_z, reference_frame=world.root
                     ),
                 )
             body = world.get_body_by_name(name.lower())
             semantic_cls = annotation_class_by_label(name)
             with world.modify_world():
                 world.add_semantic_annotation(semantic_cls(name=body.name, root=body))
+            shapes = body.visual.shapes
+            for s in shapes:
+                s.color = color
         except:
+            # fallback boxes have their origin in the center -> lift by half the box height
+            pose_point3_: Point3 = Point3(x=x, y=y, z=z + scale_.z / 2, reference_frame=world.root)
+            orientation_quaternion_: Quaternion = Quaternion(x=0, y=0, z=0, w=1, reference_frame=world.root)
+            pose_: Pose = Pose(position=pose_point3_, orientation=orientation_quaternion_, reference_frame=world.root)
             object_to_spawn = spawn_semantic_with_body(semantic_type=name,name=name.lower(),pose=pose_, scale=scale_,world=world, color = color)
+
         i+=1
 
 
@@ -236,8 +266,8 @@ def normalize_task_estimation(task_list : list[Task]) -> list[Task]:
     return task_list
 
 
-def navigation_subplan(target_location: str, world):
-    x, y, (qx, qy, qz, qw) = NAVIGATION_POSES[target_location]
+def navigation_subplan(challenge_mode : ChallengeMode, target_location: str, world):
+    x, y, (qx, qy, qz, qw) = get_navigation_poses(challenge_mode, target_location)
     pose = Pose(
         position=Point3(x, y, 0.0, reference_frame=world.root),
         orientation=Quaternion(qx, qy, qz, qw, reference_frame=world.root),
@@ -248,6 +278,11 @@ def navigation_subplan(target_location: str, world):
 def pickup_subplan(object_annotation: SemanticAnnotation, arm: Arms, world: World, assisted : bool=False):
     object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
     return PickUpAction(object_geometry=object_body, arm=arm, assisted=assisted)
+
+def open_subplan(object_annotation, arm, world, assisted):
+    object_body: Body = world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
+    return OpenAction(object_designator=object_body, arm=arm, assisted=assisted)
+
 
 def compute_surface_spaces(world) -> list[SurfaceSpace]:
     surfaces = world.get_semantic_annotations_by_type(HasSupportingSurface)
@@ -322,12 +357,12 @@ def objects_on_surface(
     return result
 
 def find_free_placement_pose(
-    surface: SurfaceSpace,
-    object_body: Body,
-    world,
-    grid_step: float = 0.05,
-    x_padding: float = 0.05,
-    y_padding: float = 0.02,
+        surface: SurfaceSpace,
+        object_body: Body,
+        world: object,
+        grid_step: float = 0.05,
+        x_padding: float = 0.05,
+        y_padding: float = 0.02,
 ) -> Optional[tuple[float, float]]:
     """
     Find a free (x, y) position on the surface where object_body can be placed
@@ -383,7 +418,7 @@ def find_free_placement_pose(
 
 
 
-def place_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world, assisted : bool):
+def place_subplan(challenge_mode : ChallengeMode, object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world, assisted : bool):
     object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
 
     surface_spaces = compute_surface_spaces(world=world)
@@ -399,11 +434,11 @@ def place_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_locat
     if matched_surface is None:
         logger.warning(ValueError(f"No surface named '{target_location}' found in the world."))
         assisted = True
-        return None
+        return PlaceAction(object_designator=object_body, arm=arm, assisted=assisted)
     if free_spot is None:
         logger.warning(f"No free placement spot found on '{target_location}'.")
         assisted = True
-        return None
+        return PlaceAction(object_designator=object_body, arm=arm, assisted=assisted)
 
     local_bbs = object_body.collision.as_bounding_box_collection_in_frame(object_body).bounding_boxes
     origin_to_bottom = min(bb.z_interval.lower for bb in local_bbs) if local_bbs else 0.0
@@ -412,7 +447,7 @@ def place_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_locat
     if z > 1.1:
         assisted=True
 
-    _, _, (qx, qy, qz, qw) = NAVIGATION_POSES[target_location]
+    _, _, (qx, qy, qz, qw) = get_navigation_poses(challenge_mode, target_location)
     pose = Pose(
         position=Point3(x, y, z, reference_frame=world.root),
         orientation=Quaternion(qx, qy, qz, qw, reference_frame=world.root),
@@ -420,6 +455,9 @@ def place_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_locat
     )
     return PlaceAction(object_designator=object_body, arm=arm, target_location=pose, assisted=assisted)
 
+def throw_away_subplan(object_annotation: SemanticAnnotation, arm: Arms, world: World, assisted : bool=False):
+    object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
+    return PlaceInTrashAction(object_designator=object_body, arm=arm, assisted=assisted)
 
 def place_in_trash_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world, assisted : bool):
     object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
@@ -441,10 +479,10 @@ def generate_plan(tasks: list[Task], context: Context):
                     last_pickup_object = task_steps.object_annotations
                     action = pickup_subplan(object_name=task_steps.object_annotations, arm=arm, world=context.world)
                 case ActionType.PLACE:
-                    action = place_in_trash_subplan(object_name=last_pickup_object, arm=arm, target_location=task_steps.object_placement, world=context.world)
+                    action = place_in_trash_subplan(object_name=last_pickup_object, arm=arm, target_location=task_steps.object_placement, world=context.world, object_annotation=task_steps.object_annotations)
                 case ActionType.PLACE:
                     action = place_in_trash_subplan(object_name=last_pickup_object, arm=arm,
-                                           target_location=task_steps.object_placement, world=context.world)
+                                           target_location=task_steps.object_placement, world=context.world, object_annotation=task_steps.object_annotations)
                 case ActionType.PARK:
                     action = ParkArmsAction(Arms.LEFT)
                 case ActionType.DETECT:
@@ -456,8 +494,9 @@ def generate_plan(tasks: list[Task], context: Context):
 
     return plan
 
-def at_location(location : str, robot: AbstractRobot, threshold: float = 0.5, yaw_threshold: float = math.radians(20)) -> bool:
-    x_goal, y_goal, (qx, qy, qz, qw) = NAVIGATION_POSES.get(location)
+def at_location(context : Context, location : str, robot: AbstractRobot, threshold: float = 0.5, yaw_threshold: float = math.radians(20)) -> bool:
+    challenge_mode = context.challenge_mode
+    x_goal, y_goal, (qx, qy, qz, qw) = get_navigation_poses(challenge_mode=challenge_mode,location=location)
     point3_goal : Point3 = Point3(x=x_goal, y=y_goal, z=0)
     robot_pose : Pose = robot.root.global_pose
     robot_position : Point3 = robot_pose.to_position()
@@ -476,6 +515,7 @@ def at_location(location : str, robot: AbstractRobot, threshold: float = 0.5, ya
 
 def generate_plan_taskstep_list(taskstep_list: list[TaskStep], context: Context) -> PlanNode:
     from pycram.plans.factories import make_node
+    challenge_mode: ChallengeMode = context.challenge_mode
     plan = sequential(children=[], context=context)
     arm = Arms.LEFT
     action = None
@@ -485,19 +525,21 @@ def generate_plan_taskstep_list(taskstep_list: list[TaskStep], context: Context)
         # TODO: add assisted tasks
         match task_step.action_type:
             case ActionType.NAVIGATE:
-                action = navigation_subplan(target_location=task_step.location, world=context.world)
+                action = navigation_subplan(challenge_mode=challenge_mode, target_location=task_step.location, world=context.world)
             case ActionType.PICKUP:
                 last_pickup_object : SemanticAnnotation= task_step.object_annotations
                 action = pickup_subplan(object_annotation=last_pickup_object, arm=arm, world=context.world, assisted=task_step.action_assisted)
             case ActionType.PLACE:
-                action = place_subplan(object_annotation=last_pickup_object, arm=arm, target_location=task_step.location, world=context.world, assisted=task_step.action_assisted)
+                action = place_subplan(challenge_mode=challenge_mode, object_annotation=last_pickup_object, arm=arm, target_location=task_step.location, world=context.world, assisted=task_step.action_assisted)
             case ActionType.THROW_AWAY:
                 action = place_in_trash_subplan(object_annotation=last_pickup_object, arm=arm,
                                        target_location=task_step.location, world=context.world,
                                        assisted=task_step.action_assisted)
-
+            case ActionType.OPEN:
+                action = open_subplan(object_annotation=task_step.object_annotations, arm=arm, world=context.world, assisted=task_step.action_assisted)
             case ActionType.PARK:
                 action = ParkArmsAction(Arms.LEFT)
+
             case ActionType.DETECT:
                 pass
             case _:
@@ -514,21 +556,64 @@ def find_surface_of_object(context:Context, body: Body) -> HasSupportingSurface 
     world = context.world
     surfaces = world.get_semantic_annotations_by_type(HasSupportingSurface)
     for surface in surfaces:
+        if surface.bodies[0]._world is None:
+            # dangling annotation whose body was removed from the world (e.g. the sofa)
+            continue
+        if surface.bodies[0] is body:
+            # an object (bowl, plate, ...) is itself a HasSupportingSurface but never its own surface
+            continue
         if is_supported_by(body, surface.bodies[0]):
             return surface
     return None
 
 # TODO : TO POSE
+
+def get_navigation_poses(challenge_mode : ChallengeMode, location : str):
+    navigation_poses = []
+    match challenge_mode:
+        case ChallengeMode.FD:
+            navigation_poses = NAVIGATION_POSES.get(location)
+        case ChallengeMode.PP:
+            navigation_poses = NAVIGATION_POSES_PP.get(location)
+        case ChallengeMode.GPSR:
+            navigation_poses = NAVIGATION_POSES.get(location)
+
+    return navigation_poses
+
+
+
 NAVIGATION_POSES: dict[str,
 tuple[float, float,
 tuple[float, float, float, float]]] = {
     "cooking_table": (1.3, 4.6, _quat( math.pi / 2)),   # south of table, facing north
-    "dining_table":  (2.6, 4.1, _quat( math.pi / 2)),   # south of table, facing north
+    "dining_table":  (3.4, 5.7, _quat( math.pi)),       # east of table (wide side), facing west
     "table":         (3.5, 1.8, _quat(-math.pi / 2)),   # north of table, facing south
     "lowerTable":    (3.0, 2.2, _quat( 0.0)),           # west of table,  facing east
     "desk":          (1.3, 1.2, _quat( math.pi)),        # east of desk,   facing west
     "shelf_1":       (3.3,  4.7,  _quat( 0.0)),          # west of cupboard, facing east
     "shelf_2":       (3.3,  4.7,  _quat( 0.0)),          # same approach as shelf_1
+    "counterTop": (1.859, -0.852, _quat(-math.pi / 2)),  # north of counter, facing south
+    "": (0, 0, _quat(-math.pi / 2)),  # going to 0,0 if unknown
+}
+
+NAVIGATION_POSES_PP: dict[str,
+tuple[float, float,
+tuple[float, float, float, float]]] = {
+    "cooking_table": (1.3, 4.6, _quat( math.pi / 2)),   # south of table, facing north
+    "dining_table":  (3.4, 5.7, _quat( math.pi)),       # east of table (wide side), facing west
+    "table":         (3.5, 1.8, _quat(-math.pi / 2)),   # north of table, facing south
+    "dishwasher":    (3.40, 2.63, _quat(-math.pi / 2)), # north of the moved dishwasher
+    "dishwasher_rack": (3.40, 3.05, _quat(-math.pi / 2)), # same approach pose as "dishwasher"
+    "lowerTable":    (3.05, 4.05, _quat( math.pi)),     # east of the moved table
+    "extra_space":   (3.95, 3.70, _quat( 0.1)),         # west of extra_space table
+    "trash_can":     (1, 1.70, _quat( 0.1)),         # west of the can, facing east; outside the trash-object spawn band
+    "trash":         (1.25, 1.70, _quat( 0.1)),         # alias used by place-in-trash task steps
+    "desk":          (1.3, 1.2, _quat( math.pi)),        # east of desk,   facing west
+    "cabinet":       (3.55, 4.72, _quat( 0.1)),          # same approach for every shelf layer
+    "shelf_1":       (3.55, 4.72, _quat( 0.1)),          # west of cupboard, facing east, clear of the opened doors
+    "shelf_2":       (3.55, 4.72, _quat( 0.1)),          # same approach for every shelf layer
+    "shelf_3":       (3.55, 4.72, _quat( 0.1)),
+    "shelf_4":       (3.55, 4.72, _quat( 0.1)),
     "counterTop": (1.859, -0.852, _quat(-math.pi / 2)),  # north of counter, facing south
     "": (0, 0, _quat(-math.pi / 2)),  # going to 0,0 if unknown
 }
@@ -549,7 +634,7 @@ def get_remaining_task_steps(task: Task) -> list[TaskStep]:
 
     return failed_taskstep
 
-def nav_time(robot_pose: Point3, to_loc: str, speed: float = 0.5) -> float:
+def nav_time(robot_pose: Point3, to_loc: str, speed: float = 0.55 / 3.6) -> float:
     (x1, y1) = robot_pose.x, robot_pose.y
     (x2, y2) = NAVIGATION_POSES[to_loc][:2]
     return math.dist((x1, y1), (x2, y2)) / speed
@@ -557,22 +642,298 @@ def nav_time(robot_pose: Point3, to_loc: str, speed: float = 0.5) -> float:
 def challenge_setup(challenge_mode : ChallengeMode):
     match challenge_mode:
         case ChallengeMode.PP:
-            setup_pp()
+            return setup_pp(challenge_mode)
         case ChallengeMode.GPSR:
             setup_gpsr()
         case ChallengeMode.FD:
             setup_fd()
 
+def randomized_placement(supporting_surface : HasSupportingSurface, object_scales : list[Scale], max_attempts: int = 100) -> list[Pose]:
+    world = supporting_surface._world # retrieving world for later transformation.
+    region = supporting_surface.supporting_surface
 
-def setup_pp():
-    task_list : list[Task] = []
+    bb = region.area.as_bounding_box_collection_in_frame(region).bounding_box() # get bounding box to use upper and lower bound
 
-    pass
+    pose_temp = [] # used to store the temp_poses for easier collision comparasion.
+    poses : list[Pose]= []
+    threshold = 0.05
+    for scale in object_scales:
+        overlap = False
+        for _ in range(max_attempts):
+            # highest-x, highest-y
+            hx, hy = scale.x / 2, scale.y / 2
+
+            # random x and y to place at
+            rand_x, rand_y = random.uniform(bb.min_x + hx, bb.max_x - hx), random.uniform(bb.min_y + hy, bb.max_y - hy)
+
+            # current-low-y, current-high-y [...], having the corner coordinates of the pose.
+            cly, chy = rand_y - hy, rand_y + hy
+            clx, chx = rand_x - hx, rand_x + hx
+
+            for pose in pose_temp:
+                x,y,ux,uy = pose[0], pose[1], pose[2], pose[3] # Retrieving the x,y, half x, half y, to have a scale and then compare it to the objects.
+
+                # object-low-y, object-high-y [...], having the corner coordinates of the pose.
+                oly,ohy = y - uy-threshold, y + uy+threshold
+                olx,ohx = x - ux-threshold, x + ux+threshold
+
+                # check for overlap of any kind
+                overlap = True if clx < ohx and chx > olx and cly < ohy and chy > oly else False
+                if overlap:
+                    break
+
+            # If not overlapped at any pose, then append, else retry.
+            if not overlap:
+                pose_temp.append((rand_x,rand_y,hx,hy))
+
+                # z is the surface top; generic_object_spawner lifts each object by its own geometry
+                pose = Pose(position=Point3(rand_x, rand_y, bb.max_z), reference_frame=region)
+                world_pose = world.transform(pose, world.root) # Transforming into the world root, since we are still in region frame.
+                poses.append(world_pose)
+                break
+        else:
+            # a silent skip here would make the caller crash later with a confusing IndexError
+            raise RuntimeError(
+                f"could not place object {len(poses)} of {len(object_scales)} "
+                f"(scale {scale.x}x{scale.y}) on {supporting_surface.name} "
+                f"after {max_attempts} attempts - surface too small or too crowded"
+            )
+    return poses
+
+
+
+
+def setup_pp(challenge_mode : ChallengeMode):
+    world, dispatcher = setup_world()
+
+    hsrb = HSRB.from_world(world)
+
+    context = Context(world=world, robot=hsrb, challenge_mode=challenge_mode)
+    context.evaluate_conditions = False
+    dispatcher.known_furniture = world.bodies
+
+
+    # Opening doors -------------------------------------------------
+    left_door : Body= world.get_body_by_name("cupboard_left_door")
+    right_door : Body= world.get_body_by_name("cupboard_right_door")
+
+    left_door_connection = left_door.get_first_parent_connection_of_type(ActiveConnection1DOF)
+    right_door_connection = right_door.get_first_parent_connection_of_type(ActiveConnection1DOF)
+
+    left_door_connection.position = left_door_connection.dof.limits.upper.position
+    right_door_connection.position = right_door_connection.dof.limits.upper.position
+
+    # Removing sofa -------------------------------------------------
+    sofa: Body = world.get_body_by_name("sofa")
+    sofa_annotation = world.get_semantic_annotation_by_name("sofa")
+    with world.modify_world():
+        # the annotation has to go too, otherwise surface sweeps hit a body without a world
+        world.remove_semantic_annotation(sofa_annotation)
+        world.remove_connection(sofa.parent_connection)
+        world.remove_kinematic_structure_entity(sofa)
+
+    # Moving dishwasher -------------------------------------------------
+    body = world.get_body_by_name("dishwasher")
+    conn = body.parent_connection
+    with world.modify_world():
+        world.remove_connection(conn)
+        new_conn = Connection6DoF.create_with_dofs(parent=world.root, child=body, world=world)
+        world.add_connection(new_conn)
+
+    new_conn.origin = HomogeneousTransformationMatrix.from_xyz_quaternion(
+        3.39975, 1.705,0.365, reference_frame=world.root
+    )
+
+
+    # Moving lowerTable -------------------------------------------------
+    body = world.get_body_by_name("lowerTable")
+    conn = body.parent_connection
+    with world.modify_world():
+        world.remove_connection(conn)
+        new_conn = Connection6DoF.create_with_dofs(parent=world.root, child=body, world=world)
+        world.add_connection(new_conn)
+
+    # the table is 0.44 tall and the origin is its center -> z=0.22 puts the legs on the floor
+    new_conn.origin = HomogeneousTransformationMatrix.from_xyz_quaternion(
+        2.39975, 4.05,0.22, reference_frame=world.root
+    )
+
+
+    # Moving trashcan -------------------------------------------------
+    trashcan = world.get_body_by_name("trash_can")
+    conn = trashcan.parent_connection
+    with world.modify_world():
+        world.remove_connection(conn)
+        new_conn = Connection6DoF.create_with_dofs(parent=world.root, child=trashcan, world=world)
+        world.add_connection(new_conn)
+
+    new_conn.origin = HomogeneousTransformationMatrix.from_xyz_quaternion(
+        2.1975, 1.705,0.2, reference_frame=world.root
+    )
+
+
+    # Placing extra_table -------------------------------------------------
+    # in room dining_room TODO: update that shit in the table list
+    with world.modify_world():
+        table = Table.create_with_new_body_in_world(
+            world=world,
+            name=PrefixedName("extra_space"),
+            world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=4.59975, y=3.705, z=0.22),
+            scale=Scale(x=0.37, y=0.91, z=0.44),
+        )
+        for body in table.bodies:
+            for s in body.visual.shapes:
+                s.color = Color.BEIGE()
+
+    # calculate supporting surfaces -------------------------------------------------
+    ss: list[SemanticAnnotation] = world.get_semantic_annotations_by_type(HasSupportingSurface)
+
+    with world.modify_world():
+        for s in ss:
+            try:
+                s.calculate_supporting_surface()
+            except Exception as e:
+                print(f"ignoring {s.name}: {e}")
+
+    # 6 on dining table, 1 cuttlery, 1 mug, 1 trash, 3 random
+    # 2 objects common_objects on surface
+    # Washing tab on some static spot
+    # 1 trash object on floor near trash bin
+    # each cabinet space has one object
+    # Breakfast objects = Bowl , spoon On surface
+    # Breakfast , milk, ceral, in cabinet
+    cutlery = ["Knife", "Fork"]
+    tableware = ["Cup"]
+    trash = ["Bottle", "Banana"]
+    common_objects = ["Pringles", "Apple", "Bottle", "MustardBottle", "TomatoSoup"]
+    breakfast_objects = ["Bowl", "Spoon"]
+
+    cabinet_objects = ["Milk", "Cereal"]
+
+    # Autogenerating object lists ----------------------------------
+    trash_obj1, trash_obj2 = random.sample(trash, 2)
+    # both trash picks get spawned elsewhere, so the table picks must not duplicate them
+    common_obj1, common_obj2 = random.sample(
+        [o for o in common_objects if o not in (trash_obj1, trash_obj2)], 2
+    )
+    cuttlery_obj = random.choice(cutlery)
+    table_objects = tableware + [trash_obj1, common_obj1, common_obj2, cuttlery_obj]
+
+    extra_space_objects = random.sample(
+        [obj for obj in common_objects if obj not in table_objects and obj != trash_obj2], 2
+    )
+    extra_space_objects.append("DishwasherTab")
+
+    scales_table_obj = [Scale(x=0.1, y=0.1, z=0.2) for _ in range(len(table_objects))]
+    scales_extra_obj = [Scale(x=0.1, y=0.1, z=0.2) for _ in range(len(extra_space_objects))]
+    scales_lower_table = [Scale(x=0.1, y=0.1, z=0), Scale(x=0.1, y=0.1, z=0.2)]
+    # generate random placements ----------------------------------
+    dining_table : SemanticAnnotation = world.get_semantic_annotation_by_name("dining_table")
+    extra_space : SemanticAnnotation = world.get_semantic_annotation_by_name("extra_space")
+    lower_table : SemanticAnnotation = world.get_semantic_annotation_by_name("lowerTable")
+    # cooking_t_ss = dining_table.supporting.
+    placement_dining_table = randomized_placement(dining_table, scales_table_obj)
+    placement_extra_space = randomized_placement(extra_space, scales_extra_obj)
+    placement_lower_table = randomized_placement(lower_table, scales_lower_table)
+
+    # overlap and placement trash objects ----------------------------------
+    threshold = 0.35
+    # Scale is the full bounding-box extent -> halve it for the can's half-widths
+    can_hx, can_hy = trashcan.visual.scale.x / 2, trashcan.visual.scale.y / 2
+    # spawned trash objects are 0.1 x 0.1 fallback boxes
+    obj_hx = obj_hy = 0.05
+
+    trashcan_x, trashcan_y = trashcan.global_pose.x, trashcan.global_pose.y
+    trashcan_lx, trashcan_ly = trashcan_x - can_hx, trashcan_y - can_hy
+    trashcan_ux, trashcan_uy = trashcan_x + can_hx, trashcan_y + can_hy
+
+    overlap = True
+    while overlap:
+        rand_x, rand_y = random.uniform(trashcan_lx - threshold, trashcan_ux + threshold), random.uniform(trashcan_ly - threshold, trashcan_uy + threshold)
+
+        place_lx, place_ly = rand_x - obj_hx, rand_y - obj_hy
+        place_ux, place_uy = rand_x + obj_hx, rand_y + obj_hy
+
+        overlap = place_lx <= trashcan_ux and place_ux >= trashcan_lx and place_ly <= trashcan_uy and place_uy >= trashcan_ly
+
+    # z=0: the trash object stands on the floor
+    trash_placement = Pose(position=Point3(x=rand_x,y=rand_y,z=0.0),reference_frame=world.root)
+    pose_1  = Pose(Point3(x=4.5,y=4.74,z=0.2), reference_frame=world.root)
+    pose_2 =  Pose(Point3(x=4.5,y=4.74,z=0.5), reference_frame=world.root)
+    poses_shelf = [pose_1, pose_2]
+
+    # spawn objects ----------------------------------
+    generic_object_spawner(names=[trash_obj2], pose=[trash_placement], world=world, color=Color.BLUE())
+    generic_object_spawner(names=table_objects, pose=placement_dining_table, world=world, color=Color.RED())
+    generic_object_spawner(names=extra_space_objects, pose=placement_extra_space, world=world, color=Color.ORANGE())
+    generic_object_spawner(names=breakfast_objects, pose=placement_lower_table, world=world, color=Color.GREEN())
+    generic_object_spawner(names=cabinet_objects, pose=poses_shelf, world=world, color=Color.GREEN())
+    return world, dispatcher, context
+
 
 def setup_gpsr():
-    # TODO
+    task_list: list[Task] = []
+
+    world, dispatcher = setup_world()
+
+    hsrb = HSRB.from_world(world)
+
+    context = Context(world=world, robot=hsrb)
+    context.evaluate_conditions = False
+    dispatcher.known_furniture = world.bodies
+
+    left_door: Body = world.get_body_by_name("cupboard_left_door")
+    right_door: Body = world.get_body_by_name("cupboard_right_door")
+
+    left_door_connection = left_door.get_semantic_annotations_by_type(ActiveConnection1DOF)
+    right_door_connection = right_door.get_semantic_annotations_by_type(ActiveConnection1DOF)
+
+    left_door_connection.position = left_door_connection.dof.limits.upper.position
+    right_door_connection.position = right_door_connection.dof.limits.upper.position
+
+    object_list = ["Plate", "Knife", "Fork", "Spoon", "DishwasherTab", "ReferenceError", "Milk", "Bowl", "Table"]
+    # Spawning objects
+    generic_object_spawner(["Bowl"], [(1.325, 6.23, 0.81)], world, color=Color.GREEN())
+    generic_object_spawner(["Plate"], [(0.2, 1, 0.85)], world, color=Color.ORANGE())
+    # generic_object_spawner(["Milk"], [(2.42, 0.128, 0.945)], world, color=Color.RED())
+    generic_object_spawner(["Milk"], [(1.037, -2.31, 0.645)], world, color=Color.RED())
+    generic_object_spawner(["Knife"], [(4.65, 4.84, 1.62)], world, color=Color.CYAN())
+    generic_object_spawner(["Apple"], [(4.135, 1.865, 0.54)], world, color=Color.WHITE())
+    # generic_object_spawner(["Cereal"], [(1.037, -2.31, 0.645)], world, color=Color.BLUE())
+    generic_object_spawner(["Cereal"], [(2.42, 0.128, 0.945)], world, color=Color.BLUE())
+    generic_object_spawner(["Cup"], [(2.33475, 5.215, 0.83)], world, color=Color.BEIGE())
     pass
 
 def setup_fd():
-    # TODO
+    task_list: list[Task] = []
+
+    world, dispatcher = setup_world()
+
+    hsrb = HSRB.from_world(world)
+
+    context = Context(world=world, robot=hsrb)
+    context.evaluate_conditions = False
+    dispatcher.known_furniture = world.bodies
+
+    left_door: Body = world.get_body_by_name("cupboard_left_door")
+    right_door: Body = world.get_body_by_name("cupboard_right_door")
+
+    left_door_connection = left_door.get_semantic_annotations_by_type(ActiveConnection1DOF)
+    right_door_connection = right_door.get_semantic_annotations_by_type(ActiveConnection1DOF)
+
+    left_door_connection.position = left_door_connection.dof.limits.upper.position
+    right_door_connection.position = right_door_connection.dof.limits.upper.position
+
+    object_list = [Plate, Knife, Fork, Spoon, DishwasherTab, ReferenceError, Milk, Bowl, Table]
+
+    # Spawning objects
+    generic_object_spawner(["Bowl"], [(1.325, 6.23, 0.81)], world, color=Color.GREEN())
+    generic_object_spawner(["Plate"], [(0.2, 1, 0.85)], world, color=Color.ORANGE())
+    # generic_object_spawner(["Milk"], [(2.42, 0.128, 0.945)], world, color=Color.RED())
+    generic_object_spawner(["Milk"], [(1.037, -2.31, 0.645)], world, color=Color.RED())
+    generic_object_spawner(["Knife"], [(4.65, 4.84, 1.62)], world, color=Color.CYAN())
+    generic_object_spawner(["Apple"], [(4.135, 1.865, 0.54)], world, color=Color.WHITE())
+    # generic_object_spawner(["Cereal"], [(1.037, -2.31, 0.645)], world, color=Color.BLUE())
+    generic_object_spawner(["Cereal"], [(2.42, 0.128, 0.945)], world, color=Color.BLUE())
+    generic_object_spawner(["Cup"], [(2.33475, 5.215, 0.83)], world, color=Color.BEIGE())
     pass

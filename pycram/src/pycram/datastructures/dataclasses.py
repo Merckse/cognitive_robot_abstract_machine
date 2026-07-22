@@ -10,6 +10,7 @@ from typing_extensions import (
 from krrood.entity_query_language.backends import QueryBackend, EntityQueryLanguageBackend
 from pycram.plans.plan import Plan
 from pycram.plans.plan_entity import PlanEntity
+from semantic_digital_twin.datastructures.definitions import ChallengeMode
 from semantic_digital_twin.robots.abstract_robot import AbstractRobot
 from semantic_digital_twin.world import World
 
@@ -52,6 +53,11 @@ class Context(PlanEntity):
     _debug: bool = field(default=False)
     """
     Should debug information be printed or visualized
+    """
+
+    challenge_mode : ChallengeMode = field(default=None)
+    """
+    The challenge, that is currently running
     """
 
     @property

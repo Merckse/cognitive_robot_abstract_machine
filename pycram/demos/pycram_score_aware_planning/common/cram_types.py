@@ -1,14 +1,10 @@
 import datetime
 from dataclasses import dataclass, field
 from enum import Enum
-from itertools import count
 from typing import Optional
 
 from pycram.robot_plans.actions.base import ActionDescription
-from semantic_digital_twin.semantic_annotations import semantic_annotations
-from semantic_digital_twin.spatial_types.spatial_types import Pose
-
-from pycram.datastructures.enums import TaskStatus
+from semantic_digital_twin.datastructures.definitions import RoomEnum
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation
 
 
@@ -45,11 +41,6 @@ class Status(str, Enum):
     NOT_ASSIGNED = "not_assigned"
 
 
-class ChallengeMode(str, Enum):
-    GPSR = "gpsr"
-    PP = "pp"
-    FD = "fd"
-
 @dataclass(kw_only=True)
 class ScoreEvent:
     timestamp: float
@@ -78,7 +69,7 @@ class TaskStep:
     action_assisted: bool = False
     action_failures : int = 0.5
     uncertain: bool = False # Meaning, if not all informations to a task are known, then there has to be something done
-    room : str = ""
+    room : Optional[RoomEnum] = None
     location : str = ""
     object_annotations: SemanticAnnotation = None # SemanticAnnotations for the actions, that are used for, with action_type: Pick_Up
     object_pickup: str = None # Possible: cooking_table, shelf, lowerTable, table, desk, dining_table, shelf_1, shelf_2

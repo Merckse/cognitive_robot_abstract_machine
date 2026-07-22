@@ -2,18 +2,22 @@
 # values
 # ---------------------------------------------------------------------------
 from dataclasses import dataclass
+import random
 from random import randint
 
-from demos.pycram_score_aware_planning.common.cram_types import ActionType, Status, ChallengeMode, TaskStep, Task
+from demos.pycram_score_aware_planning.common.cram_types import ActionType, Status, TaskStep, Task
+from semantic_digital_twin.datastructures.definitions import RoomEnum
 from giskardpy.middleware.ros2.exceptions import ExecutionAbortedException
 from giskardpy.motion_statechart.exceptions import CollisionViolatedError
 from giskardpy.motion_statechart.goals.pick_up import ObjectDoesntFitException, ObjectNotReachableException
-from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator
+from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, ChallengeMode
 from pycram.exceptions import MotionDidNotFinish
 from pycram.plans.failures import ObjectNotGrasped
 from semantic_digital_twin.exceptions import WorldEntityNotFoundError
-from semantic_digital_twin.semantic_annotations.semantic_annotations import Plate, Knife, Fork, Spoon, Bowl, Milk, Cereal, \
-    Apple, Orange, Cloth, Cup, Bottle, Noodles, Pringles, Food, Cabinet, Dishwasher
+from semantic_digital_twin.semantic_annotations.semantic_annotations import Plate, Knife, Fork, Spoon, Bowl, Milk, \
+    Cereal, \
+    Apple, Orange, Cloth, Cup, Bottle, Noodles, Pringles, Food, Cabinet, Dishwasher, DishwasherTab, MustardBottle, \
+    TomatoSoup, Banana
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation
 
 ANY = "*"   # wildcard: matches any object or location in that slot
@@ -217,147 +221,166 @@ CHALLENGE_DURATION: dict[ChallengeMode, int] = {
     ChallengeMode.FD: 50,
 }
 
-# Rooms as the coarse navigable unit: each room contains the surfaces (tables) that can be
-# scanned within it. Single source of truth -- the surface names must match NAVIGATION_POSES.
-ROOM_SURFACES: dict[str, list[str]] = {
-    "kitchen":    ["table", "counterTop"],
-    "livingroom": ["lowerTable", ],
-    "office":     ["desk"],
-    "dining_room": ["dining_table", "shelf_1", "shelf_2"],
-    "preperation_room": ["cooking_table"],
-}
-# Derived inverse: surface -> room, so a known location always resolves to its room.
-SURFACE_ROOM: dict[str, str] = {s: r for r, surfaces in ROOM_SURFACES.items() for s in surfaces}
 
-CHALLENGE_PP: list[Task] = [
+def get_surfaces(challenge_mode : ChallengeMode, RoomEnum):
+    surfaces = []
+    match challenge_mode:
+        case ChallengeMode.GPSR:
+            surfaces = ROOM_SURFACES.get(RoomEnum)
+        case ChallengeMode.PP:
+            surfaces = ROOM_SURFACES_PP.get(RoomEnum)
+        case ChallengeMode.FD:
+            surfaces = ROOM_SURFACES.get(RoomEnum)
+    return surfaces
+
+ROOM_SURFACES: dict[RoomEnum, list[str]] = {
+    RoomEnum.KITCHEN:          ["table", "counterTop"],
+    RoomEnum.LIVINGROOM:       ["lowerTable", ],
+    RoomEnum.OFFICE:           ["desk"],
+    RoomEnum.DINING_ROOM:      ["dining_table", "shelf_1", "shelf_2"],
+    RoomEnum.PREPERATION_ROOM: ["cooking_table"],
+}
+
+ROOM_SURFACES_PP: dict[RoomEnum, list[str]] = {
+    RoomEnum.KITCHEN:          ["table", "counterTop"],
+    RoomEnum.LIVINGROOM:       ["dishwasher", "trash"],
+    RoomEnum.OFFICE:           ["desk"],
+    RoomEnum.DINING_ROOM:      ["dining_table", "lowerTable", "extra_space", "shelf_1", "shelf_2", "shelf_3", "shelf_4"],
+    RoomEnum.PREPERATION_ROOM: ["cooking_table"],
+}
+
+
+SURFACE_ROOM: dict[str, RoomEnum] = {s: r for r, surfaces in ROOM_SURFACES.items() for s in surfaces}
+
+CHALLENGE_PP_TEST: list[Task] = [
                            # # "Picking up an object for transportation" (12x50) + "Plate" (+100)
-                           # Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Plate, room="office", uncertain=True),
+                           # Task(id= 0, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Plate, room=RoomEnum.OFFICE, uncertain=True),
                            #                         TaskStep(ActionType.PARK),
                            #                         TaskStep(ActionType.PLACE, object_annotations=Plate, location="table"),
                            #                         TaskStep(ActionType.PARK)]),
                            #
                            # # "Cutlery" (2x+50) -- first cutlery item; Knife is spawned in the world
-                           # Task(id= 1, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Knife, room="dining_room", uncertain=True),
+                           # Task(id= 1, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Knife, room=RoomEnum.DINING_ROOM, uncertain=True),
                            #                         TaskStep(ActionType.PARK),
                            #                         TaskStep(ActionType.PLACE, object_annotations=Knife, location="table"),
                            #                         TaskStep(ActionType.PARK)]),
 
                            # Common objects (base 12x50 pickup / 12x40 place)
-                           Task(id= 2, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Bowl, room="preperation_room", uncertain=True),
+                           Task(id= 2, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Bowl, room=RoomEnum.PREPERATION_ROOM, uncertain=True),
                                                    TaskStep(ActionType.PARK),
                                                    TaskStep(ActionType.PLACE, object_annotations=Bowl, location="counterTop"),
                                                    TaskStep(ActionType.PARK)]),
 
-                           # Task(id= 3, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Milk, room="kitchen", uncertain=True),
+                           # Task(id= 3, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Milk, room=RoomEnum.KITCHEN, uncertain=True),
                            #                         TaskStep(ActionType.PARK),
                            #                         TaskStep(ActionType.PLACE, object_annotations=Milk, location="shelf_1"),
                            #                         TaskStep(ActionType.PARK)]),
                            #
-                           # Task(id= 4, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Cereal, room="kitchen", uncertain=True),
+                           # Task(id= 4, task_steps=[TaskStep(ActionType.PICKUP, object_annotations=Cereal, room=RoomEnum.KITCHEN, uncertain=True),
                            #                         TaskStep(ActionType.PARK),
                            #                         TaskStep(ActionType.PLACE, object_annotations=Cereal, location="table"),
                            #                         TaskStep(ActionType.PARK)
                            ]
 
-CHALLENGE_PP: dict[int, Task] = {
+CHALLENGE_PP: list[Task] = [
 
     # Place the plate in the dishwasher.
-    0: Task(id=0, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Plate, uncertain=True),
+    Task(id=0, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Plate, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Plate, location="dishwasher"),
+        TaskStep(ActionType.PLACE, object_annotations=Plate, location="table"),
         TaskStep(ActionType.PARK)]),
 
     # Place the knife in the dishwasher.
-    1: Task(id=1, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Knife, uncertain=True),
+    Task(id=1, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Knife, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Knife, location="dishwasher"),
+        TaskStep(ActionType.PLACE, object_annotations=Knife, location="table"),
         TaskStep(ActionType.PARK)]),
 
     # Place the fork in the dishwasher.
-    2: Task(id=2, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Fork, uncertain=True),
+    Task(id=2, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Fork, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Fork, location="dishwasher"),
+        TaskStep(ActionType.PLACE, object_annotations=Fork, location="table"),
         TaskStep(ActionType.PARK)]),
 
     # Place the spoon in the dishwasher.
-    3: Task(id=3, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Spoon, uncertain=True),
+    Task(id=3, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Spoon, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Spoon, location="dishwasher"),
+        TaskStep(ActionType.PLACE, object_annotations=Spoon, location="table"),
         TaskStep(ActionType.PARK)]),
 
     # Put the dishwasher tab in the tab slot.
-    4: Task(id=4, task_steps=[
-        TaskStep(ActionType.PICKUP, uncertain=True),
+    Task(id=4, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=DishwasherTab, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, location="dishwasher"),
+        TaskStep(ActionType.PLACE, object_annotations=DishwasherTab, location="table"),
         TaskStep(ActionType.PARK)]),
 
     # Open the dishwasher door.
-    5: Task(id=5, task_steps=[
-        TaskStep(ActionType.OPEN, object_annotations=Dishwasher, location="dishwasher")]),
+    Task(id=5, task_steps=[
+        TaskStep(ActionType.OPEN, object_annotations=Dishwasher, location="table")]),
 
     # Close the dishwasher door.
-    6: Task(id=6, task_steps=[
-        TaskStep(ActionType.CLOSE, object_annotations=Dishwasher, location="dishwasher")]),
+    Task(id=6, task_steps=[
+        TaskStep(ActionType.CLOSE, object_annotations=Dishwasher, location="table")]),
 
     # Pull or push the dishwasher rack.
-    7: Task(id=7, task_steps=[
-        TaskStep(ActionType.PUSH, object_annotations=Dishwasher, location="dishwasher")]),
+    Task(id=7, task_steps=[
+        TaskStep(ActionType.PUSH, object_annotations=Dishwasher, location="table")]),
 
     # Place the cereal next to similar objects in the cabinet.
-    8: Task(id=8, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Cereal, uncertain=True),
+    Task(id=8, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Cereal, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Cereal, location="cabinet"),
+        TaskStep(ActionType.PLACE, object_annotations=Cereal, location="dining_table"),
         TaskStep(ActionType.PARK)]),
 
     # Place the milk in the cabinet.
-    9: Task(id=9, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Milk, uncertain=True),
+    Task(id=9, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Milk, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Milk, location="cabinet"),
+        TaskStep(ActionType.PLACE, object_annotations=Milk, location="dining_table"),
         TaskStep(ActionType.PARK)]),
 
     # Place the bowl on the table.
-    10: Task(id=10, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Bowl, uncertain=True),
+    Task(id=10, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Bowl, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
         TaskStep(ActionType.PLACE, object_annotations=Bowl, location="table"),
         TaskStep(ActionType.PARK)]),
 
-    # Open the milk container.
-    11: Task(id=11, task_steps=[
-        TaskStep(ActionType.OPEN, object_annotations=Milk)]),
-
-    # Pour milk into the bowl.
-    12: Task(id=12, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Milk, uncertain=True),
-        TaskStep(ActionType.PARK),
-        TaskStep(ActionType.POUR, object_annotations=Milk, location="bowl"),
-        TaskStep(ActionType.PARK)]),
+    # # Open the milk container.
+    # Task(id=11, task_steps=[
+    #     TaskStep(ActionType.OPEN, object_annotations=Milk)]),
+    #
+    # # Pour milk into the bowl.
+    # Task(id=12, task_steps=[
+    #     TaskStep(ActionType.PICKUP, object_annotations=Milk, uncertain=False, location="dining_table"),
+    #     TaskStep(ActionType.PARK),
+    #     TaskStep(ActionType.POUR, object_annotations=Milk, location="bowl"),
+    #     TaskStep(ActionType.PARK)]),
 
     # Pour cereal into the bowl.
-    13: Task(id=13, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Cereal, uncertain=True),
+    Task(id=13, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Cereal, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.POUR, object_annotations=Cereal, location="bowl"),
+        TaskStep(ActionType.PLACE, object_annotations=Cereal, location="dining_table"),
         TaskStep(ActionType.PARK)]),
+    #
+    # # Perceive the objects on the shelf and indicate the correct placement.
+    # Task(id=14, task_steps=[
+    #     TaskStep(ActionType.DETECT, location="shelf", uncertain=True)]),
 
-    # Perceive the objects on the shelf and indicate the correct placement.
-    14: Task(id=14, task_steps=[
-        TaskStep(ActionType.DETECT, location="shelf", uncertain=True)]),
-
-    # Place a common object from the auxiliary table.
-    15: Task(id=15, task_steps=[
-        TaskStep(ActionType.PICKUP, location="auxiliary table", uncertain=True),
-        TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, location="cabinet"),
-        TaskStep(ActionType.PARK)]),
-}
+    # # Place a common object from the auxiliary table.
+    # Task(id=15, task_steps=[
+    #     TaskStep(ActionType.PICKUP, location="dining_table", uncertain=False),
+    #     TaskStep(ActionType.PARK),
+    #     TaskStep(ActionType.PLACE, location="cabinet"),
+    #     TaskStep(ActionType.PARK)]),
+]
 # All possible tasks for GPSR
 CHALLENGE_GPSR: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Bowl), TaskStep(ActionType.PLACE, object_annotations=Bowl)]),
                               Task(id= 1, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Plate), TaskStep(ActionType.PLACE, object_annotations=Plate)]),
@@ -371,17 +394,12 @@ CHALLENGE_FD: list[Task] = [Task(id= 0, task_steps=[TaskStep(ActionType.NAVIGATE
                             Task(id= 3, task_steps=[TaskStep(ActionType.NAVIGATE), TaskStep(ActionType.PICKUP, object_annotations=Cereal), TaskStep(ActionType.PLACE, object_annotations=Cereal)]), ]
 
 
-CHALLENGE_TASKS : dict[ChallengeMode, list[Task]] = {
-    ChallengeMode.PP: CHALLENGE_PP,
-    ChallengeMode.GPSR: CHALLENGE_GPSR,
-    ChallengeMode.FD: CHALLENGE_FD
-}
 
 
 GPSR_CANDIDATE_TASKS: dict[int, Task] = {
     # Take the apple from the living room to the dining table.
     0: Task(id=0, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Apple, room="living room", uncertain=True),
+        TaskStep(ActionType.PICKUP, object_annotations=Apple, room=RoomEnum.LIVINGROOM, uncertain=True),
         TaskStep(ActionType.PARK),
         TaskStep(ActionType.PLACE, object_annotations=Apple, location="dining table"),
         TaskStep(ActionType.PARK)]),
@@ -453,31 +471,20 @@ GPSR_CANDIDATE_TASKS: dict[int, Task] = {
         TaskStep(ActionType.HAND_OVER),
         TaskStep(ActionType.PARK)]),
 
-    # Clean the kitchen.
-    10: Task(id=10, task_steps=[
-        TaskStep(ActionType.EXPLORE, room="kitchen", uncertain=True),
-        TaskStep(ActionType.PICKUP, room="kitchen", uncertain=True),
-        TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, location="cupboard"),
-        TaskStep(ActionType.PARK)]),
 
     # Take out the garbage.
     11: Task(id=11, task_steps=[
-        TaskStep(ActionType.PICKUP, uncertain=True),
+        TaskStep(ActionType.PICKUP, object_annotations=Bottle, uncertain=True),
         TaskStep(ActionType.PARK),
         TaskStep(ActionType.THROW_AWAY, location="trash")]),
 
     # Find the fork in the kitchen.
     12: Task(id=12, task_steps=[
-        TaskStep(ActionType.DETECT, object_annotations=Fork, room="kitchen", uncertain=True)]),
+        TaskStep(ActionType.DETECT, object_annotations=Fork, room=RoomEnum.KITCHEN, uncertain=True)]),
 
     # Tell me how many drinks there are on the counter.
     13: Task(id=13, task_steps=[
         TaskStep(ActionType.DETECT, location="counter", uncertain=True)]),
-
-    # Tell me what's the heaviest object on the storage table.
-    14: Task(id=14, task_steps=[
-        TaskStep(ActionType.DETECT, location="storage table", uncertain=True)]),
 
     # Tell me which are the three largest objects on the bookcase.
     15: Task(id=15, task_steps=[
@@ -489,28 +496,16 @@ GPSR_CANDIDATE_TASKS: dict[int, Task] = {
 
     # Tell me how many people in the living room are standing.
     17: Task(id=17, task_steps=[
-        TaskStep(ActionType.DETECT, room="living room", uncertain=True)]),
-
-    # Follow Mary from the bed to the kitchen.
-    18: Task(id=18, task_steps=[
-        TaskStep(ActionType.DETECT, location="bed", uncertain=True),
-        TaskStep(ActionType.NAVIGATE, room="kitchen")]),
-
-    # Serve drinks to everyone in the living room.
-    19: Task(id=19, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Bottle, location="counter"),
-        TaskStep(ActionType.PARK),
-        TaskStep(ActionType.HAND_OVER, object_annotations=Bottle),
-        TaskStep(ActionType.PARK)]),
+        TaskStep(ActionType.DETECT, room=RoomEnum.LIVINGROOM, uncertain=True)]),
 
     # -------------------- Part B: EGPSR (10) --------------------
 
-    # Put the noodles into the cabinet.
+    # Put the TomatoSoup into the cabinet.
     20: Task(id=20, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Noodles, uncertain=True),
+        TaskStep(ActionType.PICKUP, object_annotations=TomatoSoup, uncertain=True),
         TaskStep(ActionType.PARK),
         TaskStep(ActionType.OPEN, object_annotations=Cabinet, location="cabinet"),
-        TaskStep(ActionType.PLACE, object_annotations=Noodles, location="cabinet"),
+        TaskStep(ActionType.PLACE, object_annotations=TomatoSoup, location="shelf_3"),
         TaskStep(ActionType.CLOSE, object_annotations=Cabinet, location="cabinet"),
         TaskStep(ActionType.PARK)]),
 
@@ -526,7 +521,7 @@ GPSR_CANDIDATE_TASKS: dict[int, Task] = {
     # Bring me some food from the cabinet.
     22: Task(id=22, task_steps=[
         TaskStep(ActionType.OPEN, object_annotations=Cabinet, location="cabinet"),
-        TaskStep(ActionType.PICKUP, object_annotations=Food, location="cabinet", uncertain=True),
+        TaskStep(ActionType.PICKUP, object_annotations=Food, location="shelf_3", uncertain=True),
         TaskStep(ActionType.CLOSE, object_annotations=Cabinet, location="cabinet"),
         TaskStep(ActionType.PARK),
         TaskStep(ActionType.HAND_OVER, object_annotations=Food),
@@ -583,122 +578,152 @@ def get_gpsr(number_tasks: int) -> list[Task]:
 CHALLENGE_GPSR : list[Task] = get_gpsr(3)
 
 
-# ---------------------------------------------------------------------------
-# Pick and Place Challenge tasks
-# ---------------------------------------------------------------------------
-# Scored actions taken from the "Pick and Place Challenge" score sheet
-# (sheet26robocup__evalsheet.pdf). Human-robot-interaction / human-assistance
-# items are ignored -- in this challenge they are only penalties, so nothing is
-# modelled for them. Each entry is one discrete scored pick/place/manipulation.
-#
-#   plate/cutlery/tab   -> loaded into the dishwasher
-#   breakfast items      -> placed next to similar objects in the cabinet
-#   cereal / milk        -> poured into the bowl
-PP_CANDIDATE_TASKS: dict[int, Task] = {
+PP_CANDIDATE_TASKS: list[Task] = [
 
-    # Place the plate in the dishwasher.
-    0: Task(id=0, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Plate, uncertain=True),
+    # Cup (tableware, always spawned on the dining table).
+    Task(id=0, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Cup, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Plate, location="dishwasher"),
+        TaskStep(ActionType.PLACE, object_annotations=Cup, location="dishwasher"),
         TaskStep(ActionType.PARK)]),
 
-    # Place the knife in the dishwasher.
-    1: Task(id=1, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Knife, uncertain=True),
+    # Knife (the cuttlery_obj slot on the dining table is Knife-or-Fork).
+    Task(id=1, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Knife, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
         TaskStep(ActionType.PLACE, object_annotations=Knife, location="dishwasher"),
         TaskStep(ActionType.PARK)]),
 
-    # Place the fork in the dishwasher.
-    2: Task(id=2, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Fork, uncertain=True),
+    # Fork (the other cuttlery_obj candidate).
+    Task(id=2, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Fork, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
         TaskStep(ActionType.PLACE, object_annotations=Fork, location="dishwasher"),
         TaskStep(ActionType.PARK)]),
-
-    # Place the spoon in the dishwasher.
-    3: Task(id=3, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Spoon, uncertain=True),
+    #
+    # # Dishwasher tab, spawned in extra_space -> tab slot.
+    Task(id=3, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=DishwasherTab, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Spoon, location="dishwasher"),
-        TaskStep(ActionType.PARK)]),
-
-    # Put the dishwasher tab in the tab slot.
-    4: Task(id=4, task_steps=[
-        TaskStep(ActionType.PICKUP, uncertain=True),
-        TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, location="dishwasher"),
+        TaskStep(ActionType.OPEN, object_annotations=Dishwasher, location="dishwasher_rack", action_assisted=True),
+        TaskStep(ActionType.PLACE, object_annotations=DishwasherTab, location="dishwasher_rack"),
         TaskStep(ActionType.PARK)]),
 
     # Open the dishwasher door.
-    5: Task(id=5, task_steps=[
-        TaskStep(ActionType.OPEN, object_annotations=Dishwasher, location="dishwasher")]),
+    # Task(id=4, task_steps=[
+    #     TaskStep(ActionType.OPEN, object_annotations=Dishwasher, location="dishwasher")]),
+    # #
+    # # Close the dishwasher door.
+    # Task(id=5, task_steps=[
+    #     TaskStep(ActionType.CLOSE, object_annotations=Dishwasher, location="dishwasher")]),
+    #
+    # # Pull or push the dishwasher rack.
+    # Task(id=6, task_steps=[
+    #     TaskStep(ActionType.PUSH, object_annotations=Dishwasher, location="dishwasher")]),
 
-    # Close the dishwasher door.
-    6: Task(id=6, task_steps=[
-        TaskStep(ActionType.CLOSE, object_annotations=Dishwasher, location="dishwasher")]),
-
-    # Pull or push the dishwasher rack.
-    7: Task(id=7, task_steps=[
-        TaskStep(ActionType.PUSH, object_annotations=Dishwasher, location="dishwasher")]),
-
-    # Place the cereal next to similar objects in the cabinet.
-    8: Task(id=8, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Cereal, uncertain=True),
+    # Bottle, when drawn as trash rather than a common item
+    Task(id=7, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Bottle, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Cereal, location="cabinet"),
+        TaskStep(ActionType.THROW_AWAY, object_annotations=Bottle, location="trash_can")]),
+    Task(id=7, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Bottle, uncertain=True, room=RoomEnum.LIVINGROOM),
+        TaskStep(ActionType.PARK),
+        TaskStep(ActionType.THROW_AWAY, object_annotations=Bottle, location="trash_can")]),
+    # Pringles, when drawn as trash rather than a common item.
+    Task(id=8, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Pringles, uncertain=True, room=RoomEnum.DINING_ROOM),
+        TaskStep(ActionType.PARK),
+        TaskStep(ActionType.THROW_AWAY, location="trash_can")]),
+
+    # Apple, when drawn as trash rather than a common item.
+    Task(id=9, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Apple, uncertain=True, room=RoomEnum.DINING_ROOM),
+        TaskStep(ActionType.PARK),
+        TaskStep(ActionType.THROW_AWAY, location="trash_can")]),
+
+    # --- common items (dining_table/extra_space) -> cabinet ----------------
+    # Pringles, when drawn as a common item rather than trash.
+    Task(id=10, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Pringles, uncertain=True, room=RoomEnum.DINING_ROOM),
+        TaskStep(ActionType.PARK),
+        TaskStep(ActionType.PLACE, object_annotations=Pringles, location="shelf_3"),
         TaskStep(ActionType.PARK)]),
 
-    # Place the milk in the cabinet.
-    9: Task(id=9, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Milk, uncertain=True),
+    # Apple, when drawn as a common item rather than trash.
+    Task(id=11, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Apple, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Milk, location="cabinet"),
+        TaskStep(ActionType.PLACE, object_annotations=Apple, location="shelf_3"),
         TaskStep(ActionType.PARK)]),
 
-    # Place the bowl on the table.
-    10: Task(id=10, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Bowl, uncertain=True),
+
+    # MustardBottle (common item, never eligible as trash).
+    Task(id=13, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=MustardBottle, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, object_annotations=Bowl, location="table"),
+        TaskStep(ActionType.PLACE, object_annotations=MustardBottle, location="shelf_3"),
         TaskStep(ActionType.PARK)]),
 
-    # Open the milk container.
-    11: Task(id=11, task_steps=[
-        TaskStep(ActionType.OPEN, object_annotations=Milk)]),
-
-    # Pour milk into the bowl.
-    12: Task(id=12, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Milk, uncertain=True),
+    # TomatoSoup (common item, never eligible as trash).
+    Task(id=14, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=TomatoSoup, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.POUR, object_annotations=Milk, location="bowl"),
+        TaskStep(ActionType.PLACE, object_annotations=TomatoSoup, location="shelf_3"),
         TaskStep(ActionType.PARK)]),
 
-    # Pour cereal into the bowl.
-    13: Task(id=13, task_steps=[
-        TaskStep(ActionType.PICKUP, object_annotations=Cereal, uncertain=True),
+    # Banana (common item, never eligible as trash).
+    Task(id=15, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Banana, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.POUR, object_annotations=Cereal, location="bowl"),
+        TaskStep(ActionType.THROW_AWAY, object_annotations=Banana, location="trash_can"),
+        TaskStep(ActionType.PARK)]),
+    Task(id=15, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Banana, uncertain=True, room=RoomEnum.DINING_ROOM),
+        TaskStep(ActionType.PARK),
+        TaskStep(ActionType.THROW_AWAY, object_annotations=Banana, location="trash_can"),
+        TaskStep(ActionType.PARK)]),
+    # --- lowerTable breakfast items -> dining_table -------------------------
+    # Bowl, spawned on lowerTable.
+    Task(id=16, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Bowl, uncertain=True, room=RoomEnum.DINING_ROOM),
+        TaskStep(ActionType.PARK),
+        TaskStep(ActionType.PLACE, object_annotations=Bowl, location="dining_table"),
         TaskStep(ActionType.PARK)]),
 
-    # Perceive the objects on the shelf and indicate the correct placement.
-    14: Task(id=14, task_steps=[
-        TaskStep(ActionType.DETECT, location="shelf", uncertain=True)]),
-
-    # Place a common object from the auxiliary table.
-    15: Task(id=15, task_steps=[
-        TaskStep(ActionType.PICKUP, location="auxiliary table", uncertain=True),
+    # Spoon, spawned on lowerTable.
+    Task(id=17, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Spoon, uncertain=True, room=RoomEnum.DINING_ROOM),
         TaskStep(ActionType.PARK),
-        TaskStep(ActionType.PLACE, location="cabinet"),
+        TaskStep(ActionType.PLACE, object_annotations=Spoon, location="dining_table"),
         TaskStep(ActionType.PARK)]),
+
+    # --- cabinet_objects -> dining_table -------------------------------------
+    # Milk, spawned near the cabinet.
+    Task(id=18, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Milk, uncertain=True, room=RoomEnum.DINING_ROOM),
+        TaskStep(ActionType.PARK),
+        TaskStep(ActionType.PLACE, object_annotations=Milk, location="dining_table"),
+        TaskStep(ActionType.PARK)]),
+
+    # Cereal, spawned near the cabinet.
+    Task(id=19, task_steps=[
+        TaskStep(ActionType.PICKUP, object_annotations=Cereal, uncertain=True, room=RoomEnum.DINING_ROOM),
+        TaskStep(ActionType.PARK),
+        TaskStep(ActionType.PLACE, object_annotations=Cereal, location="dining_table"),
+        TaskStep(ActionType.PARK)]),
+]
+
+CHALLENGE_TASKS : dict[ChallengeMode, list[Task]] = {
+    ChallengeMode.PP: PP_CANDIDATE_TASKS,
+    ChallengeMode.GPSR: CHALLENGE_GPSR,
+    ChallengeMode.FD: CHALLENGE_FD
 }
-
 
 def get_pp(number_tasks: int) -> list[Task]:
     tasks : list[Task] = []
     for i in range(number_tasks):
-        pp_task = PP_CANDIDATE_TASKS.get(randint(0,len(PP_CANDIDATE_TASKS)))
+        pp_task = random.choice(PP_CANDIDATE_TASKS)
         if tasks.__contains__(pp_task):
             i-=1
             continue

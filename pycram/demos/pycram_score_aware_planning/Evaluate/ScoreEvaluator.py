@@ -1,5 +1,6 @@
 from __future__ import annotations
 import time
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -10,7 +11,10 @@ from demos.pycram_score_aware_planning.common.cram_types import (
 from demos.pycram_score_aware_planning.common.values import (
     evaluation,
 )
+from helper_methods import NAVIGATION_POSES, nav_time
+from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus
+from semantic_digital_twin.spatial_types import Point3
 
 """
 This is the actual score event that is recorded.
@@ -53,16 +57,13 @@ class RobotScorer:
     _time: int = field(default=0, init=False, repr=False)
     _start_time_action: float = field(default=time.time(), init=False, repr=False)
 
-    # ------------------------------------------------------------------
-    # Core API
-    # ------------------------------------------------------------------
-
     """
     Estimating the expected time and score created by completing a task.
     """
 
     def estimate(
-        self, task_list: list[Task], finished_task_ids: Optional[list[int]] = [],
+        self, context:Context, task_list: list[Task], finished_task_ids: Optional[list[int]] = [],
+
     ) -> list[Task]:
         for task in task_list:
             total_score :int= 0
@@ -72,6 +73,9 @@ class RobotScorer:
 
             if task.id in finished_task_ids:
                 continue
+            robot = context.robot
+            temp_robot = deepcopy(robot)
+
             for step in task.task_steps:
                 base_score: int = 0
                 expected_time: int = 0
@@ -87,6 +91,17 @@ class RobotScorer:
                     base_score = step_profile.score
                     penalty = step_profile.penalty
                     expected_time = step_profile.time
+
+
+
+                    if step.location in NAVIGATION_POSES:
+                        x, y, _ = NAVIGATION_POSES[step.location]
+                        goal = Point3(x, y)
+                        point_robot = temp_robot.root.global_pose.to_position()
+                        nav_time(point_robot,step.location)
+
+                        temp_robot.root.global_pose.x = x
+                        temp_robot.root.global_pose.y = y
 
                     if step.uncertain:
                         expected_time += evaluation(ActionType.EXPLORE).time

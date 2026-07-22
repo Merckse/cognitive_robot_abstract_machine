@@ -22,7 +22,7 @@ class MoveMotion(BaseMotion):
     Keep the joint states of the robot during/at the end of the motion
     """
 
-    reference_linear_velocity: float = 0.5
+    reference_linear_velocity: float = 0.17
     """
     Reference speed for driving the base.
     """

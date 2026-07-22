@@ -1,6 +1,7 @@
 import math
 import time
 from copy import deepcopy
+from typing import Optional
 
 import rclpy
 
@@ -15,15 +16,14 @@ from demos.pycram_score_aware_planning.helper_methods import generic_object_spaw
 from helper_methods import generate_plan_taskstep_list, \
     NAVIGATION_POSES, at_location
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, Arms
+from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, Arms, ChallengeMode
 from pycram.motion_executor import simulated_robot
 
 from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
-from demos.pycram_score_aware_planning.common.cram_types import ChallengeMode
 from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
 from pycram.plans.factories import sequential
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
-from semantic_digital_twin.datastructures.definitions import TorsoState
+from semantic_digital_twin.datastructures.definitions import TorsoState, RoomEnum
 from semantic_digital_twin.robots.abstract_robot import Manipulator, AbstractRobot
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.spatial_types import Point3, Quaternion
@@ -107,17 +107,17 @@ def closest_location(locations: list[str], robot) -> str:
     return min(locations, key=lambda loc: math.dist(
         (rx, ry), (NAVIGATION_POSES[loc][0], NAVIGATION_POSES[loc][1])))
 
-def surfaces_in(room: str) -> list[str]:
+def surfaces_in(room: RoomEnum) -> list[str]:
     """The tables that can be scanned within a room (empty for an unknown room)."""
     return ROOM_SURFACES.get(room, [])
 
 
-def get_task_room(task: Task) -> str:
+def get_task_room(task: Task) -> Optional[RoomEnum]:
     """The coarse room prior of a task (first step that declares one)."""
     for ts in task.task_steps:
         if ts.room and ts.uncertain:
             return ts.room
-    return ""
+    return None
 
 
 
@@ -217,8 +217,7 @@ def main():
         current_task.status = Status.RUNNING
         target = get_target_object_by_task(current_task)
 
-        # ---- TOP TASK UNKNOWN -> scan ONE table, then loop back to RE-RANK (don't execute yet) ----
-        # A room prior scopes the search to a few tables; with no prior we consider every room.
+
         if is_uncertain(current_task, found_objects):
             prior = get_task_room(current_task)
             candidate_rooms = [prior] if prior else list(ROOM_SURFACES.keys())

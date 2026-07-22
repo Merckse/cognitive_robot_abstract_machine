@@ -76,11 +76,23 @@ class OpenAction(ActionDescription):
             return
 
         if self.assisted:
+            branch_connections = self.world.get_connections_of_branch(root=self.object_designator)
+            active_1dof_connections = self.world.get_connections_by_type(connection_type=ActiveConnection1DOF)
+
+            children_connections = []
+            for branch_connection in branch_connections:
+                if branch_connection in active_1dof_connections:
+                    children_connections.append(branch_connection)
+
+            if not children_connections:
+                children_connections = [connection]
+
             print("Could you help me open", self.object_designator.name, "?")
             time.sleep(5)
             with self.world.modify_world():
-                connection.position = upper_limit
-                return
+                for child_connection in children_connections:
+                    child_connection.position = child_connection.dof.limits.upper.position
+            return
         else:
             self.add_subplan(
                 sequential(

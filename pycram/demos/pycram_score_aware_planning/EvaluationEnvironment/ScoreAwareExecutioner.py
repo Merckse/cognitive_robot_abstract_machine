@@ -2,6 +2,7 @@
 import math
 import time
 from copy import deepcopy
+from typing import Optional
 
 import rclpy
 
@@ -11,20 +12,19 @@ from SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.events.event_handler import Eve
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
 from Stabilizer.PlanStabilizer import PlanStabilizer
 from common.cram_types import Task, TaskStep, ActionType, Status
-from common.values import CHALLENGE_TASKS, ROOM_SURFACES
+from common.values import CHALLENGE_TASKS, ROOM_SURFACES, ROOM_SURFACES_PP, get_surfaces, lookup_operators
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
 from helper_methods import generate_plan_taskstep_list, \
-    NAVIGATION_POSES, at_location
+    NAVIGATION_POSES, at_location, get_navigation_poses
 from pycram.datastructures.dataclasses import Context
-from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, Arms
+from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, Arms, ChallengeMode
 from pycram.motion_executor import simulated_robot
 
 from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
-from demos.pycram_score_aware_planning.common.cram_types import ChallengeMode
 from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
 from pycram.plans.factories import sequential
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
-from semantic_digital_twin.datastructures.definitions import TorsoState
+from semantic_digital_twin.datastructures.definitions import TorsoState, RoomEnum
 from semantic_digital_twin.robots.abstract_robot import Manipulator, AbstractRobot
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.spatial_types import Point3, Quaternion
@@ -52,28 +52,33 @@ def is_uncertain(task: Task, found: dict) -> bool:
     target = get_target_object_by_task(task)
     if target is None:
         return False
+    for ts in task.task_steps:
+        if ts.uncertain:
+            return True
+        if not ts.uncertain:
+            return False
     # `target` is the annotation *class* (e.g. Bowl); `seen` keys are perceived *instances*.
     return not any(isinstance(seen, target) for seen in found)
 
 
-def closest_location(locations: list[str], robot) -> str:
+def closest_location(challenge_mode: ChallengeMode, locations: list[str], robot) -> str:
     """Nearest navigable location to the robot's current base pose."""
     rx, ry = robot.root.global_pose.x, robot.root.global_pose.y
     return min(locations, key=lambda loc: math.dist(
-        (rx, ry), (NAVIGATION_POSES[loc][0], NAVIGATION_POSES[loc][1])))
+        (rx, ry), get_navigation_poses(challenge_mode, loc)[:2]))
 
 
-def surfaces_in(room: str) -> list[str]:
+def surfaces_in(challenge_mode : ChallengeMode, room: RoomEnum) -> list[str]:
     """The tables that can be scanned within a room (empty for an unknown room)."""
-    return ROOM_SURFACES.get(room, [])
+    return get_surfaces(challenge_mode, room)
 
 
-def get_task_room(task: Task) -> str:
+def get_task_room(task: Task) -> Optional[RoomEnum]:
     """The coarse room prior of a task (first step that declares one)."""
     for ts in task.task_steps:
         if ts.room and ts.uncertain:
             return ts.room
-    return ""
+    return None
 
 
 def scan_table(dispatcher: EventDispatcher, context: Context, surface: str, robot: AbstractRobot,
@@ -108,15 +113,6 @@ def get_objects_of_interest(task_list: list[Task]) -> list[SemanticAnnotation]:
     return objects_of_interest
 
 def update_tasks_from_belief(task_list: list[Task], found: dict) -> None:
-    """
-    Propagate the shared belief onto *every* task, not just the current one.
-
-    For each task whose target object has been perceived somewhere (it appears in `found`),
-    write that location onto the task's still-unlocated NAVIGATE/PICKUP steps and clear its
-    uncertainty. This is what makes perception opportunistic: spotting task B's object while
-    scanning for task A immediately resolves task B, so the next structurize() ranks it as
-    known instead of re-exploring for it later.
-    """
     for task in task_list:
         target = get_target_object_by_task(task)
         if target is None:
@@ -153,7 +149,6 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
 
     task_list: list[Task] = CHALLENGE_TASKS.get(challenge_mode)
 
-
     while task_list != []:
         with simulated_robot:
             sequential([ParkArmsAction(Arms.BOTH), MoveTorsoAction(TorsoState.LOW)], context).perform()
@@ -166,14 +161,15 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
         current_task.status = Status.RUNNING
         target = get_target_object_by_task(current_task)
 
-        # ---- TOP TASK UNKNOWN -> scan ONE table, then loop back to RE-RANK (don't execute yet) ----
         # A room prior scopes the search to a few tables; with no prior we consider every room.
         if is_uncertain(current_task, found_objects):
             prior = get_task_room(current_task)
-            candidate_rooms = [prior] if prior else list(ROOM_SURFACES.keys())
+            try:
+                candidate_rooms = [prior] if prior else list(get_surfaces(challenge_mode, prior))
             # every not-yet-scanned table across the candidate rooms
-            unscanned_tables = [s for r in candidate_rooms for s in surfaces_in(r) if s not in explored_locations]
-
+                unscanned_tables = [s for r in candidate_rooms for s in surfaces_in(challenge_mode,r) if s not in explored_locations]
+            except Exception as e:
+                continue
             # searched everywhere we could and still don't know where it is -> give up on it
             if not unscanned_tables:
                 print(
@@ -182,7 +178,7 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
                 continue
 
             # scan the single NEAREST unscanned table, fold what we see into the belief, then re-evaluate
-            scan_table(dispatcher, context, closest_location(unscanned_tables, hsrb), hsrb, explored_locations,
+            scan_table(dispatcher, context, closest_location(challenge_mode, unscanned_tables, hsrb), hsrb, explored_locations,
                        found_objects)
             # opportunistic: resolve EVERY task whose object we happened to perceive, not just this one
             update_tasks_from_belief(task_list, found_objects)
@@ -198,7 +194,7 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
         # otherwise re-processing the same task (re-rank / recovery) re-prepends navigation forever.
         exec_steps = []
         for ts in current_task.task_steps:
-            if ts.location != "" and not at_location(location=ts.location, robot=hsrb):
+            if ts.location != "" and not at_location(context=context,location=ts.location, robot=hsrb):
                 exec_steps.append(TaskStep(action_type=ActionType.NAVIGATE, location=ts.location))
             exec_steps.append(ts)
 
@@ -212,17 +208,27 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
             with simulated_robot:
                 sequential([ParkArmsAction(Arms.BOTH), MoveTorsoAction(TorsoState.LOW)], context).perform()
 
-            if plan.status == TaskStatus.INTERRUPTED or plan.status == TaskStatus.FAILED:
+            remaining_candidate_operators = lookup_operators(exception=plan.plan.root.reason)
+            while plan.status == TaskStatus.INTERRUPTED or plan.status == TaskStatus.FAILED:
+                if not remaining_candidate_operators:
+                    break
+
                 winning = stabilizer.stabilize(plan=plan, task=current_task, exception=plan.plan.root.reason,
-                                               scoretime_monitor=scoretime_monitor, context=context)
-                if winning is not None:
-                    operator, expected_value, repaired_plan, repaired_task_list = winning
-                    print(f"[stabilizer] {plan.reason} -> recover via {operator} "
-                          f"(expected value {expected_value:.1f}); re-performing {len(repaired_task_list)} step(s)")
-                    if operator == PlanTransformationOperator.SKIP:
-                        current_task.status = Status.SKIPPED
-                    else:
-                        repaired_plan.perform()
+                                               scoretime_monitor=scoretime_monitor, context=context,
+                                               remaining_candidate_operators=remaining_candidate_operators)
+                if winning is None:
+                    break
+
+                operator, expected_value, repaired_plan, repaired_task_list = winning
+                print(f"[stabilizer] {plan.reason} -> recover via {operator} "
+                      f"(expected value {expected_value:.1f}); re-performing {len(repaired_task_list)} step(s)")
+                remaining_candidate_operators = [op for op in remaining_candidate_operators if op != operator]
+                if operator == PlanTransformationOperator.SKIP:
+                    current_task.status = Status.SKIPPED
+                else:
+                    repaired_plan.perform()
+                    if repaired_plan.status == TaskStatus.SUCCEEDED:
+                        plan.status = TaskStatus.SUCCEEDED
 
 
         with simulated_robot:

@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing_extensions import Self, Dict, Type, TypeVar
 
+from pycram.datastructures.enums import ChallengeMode
 from krrood.symbolic_math.float_variable_data import FloatVariableData
 from krrood.symbolic_math.symbolic_math import FloatVariable
 from semantic_digital_twin.collision_checking.collision_manager import CollisionManager
@@ -51,6 +52,7 @@ class MotionStatechartContext:
     Dictionary of extensions used to augment the build context.
     Ros2 extensions are automatically added to the build context when using the Ros2Executor.
     """
+    challenge_mode : ChallengeMode = field(default=ChallengeMode.PP)
 
     @property
     def collision_manager(self) -> CollisionManager:

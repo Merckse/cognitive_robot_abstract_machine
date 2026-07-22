@@ -13,7 +13,7 @@ from demos.pycram_score_aware_planning.common.values import evaluation
 from demos.pycram_score_aware_planning.helper_methods import find_surface_of_object
 
 from semantic_digital_twin.reasoning.predicates import compute_euclidean_planar_distance
-from semantic_digital_twin.spatial_types import Vector3, HomogeneousTransformationMatrix
+from semantic_digital_twin.spatial_types import Vector3, HomogeneousTransformationMatrix, Point3
 from semantic_digital_twin.spatial_types.spatial_types import Pose
 from semantic_digital_twin.world_description.world_entity import SemanticAnnotation, Body
 
@@ -30,8 +30,7 @@ class RobotProbability:
     def p_pose(self):
         pass
 
-    # TODO: find perfect distance_max, bcs what even
-    def p_robot_distance(self, robot_body: Body, target_body: Body, distance_optimal=2.0, distance_max=5) -> float:
+    def p_robot_distance_obj(self, robot_body: Body, target_body: Body, distance_optimal=2.0, distance_max=5) -> float:
         """
         Calculates euclidean distance between robot and object
         :param context = context containing robot
@@ -46,6 +45,20 @@ class RobotProbability:
             return 1.0
         return 1.0 / (1.0 + math.exp(5 * (distance - distance_max)))
 
+    def p_robot_distance_nav(self, robot_point: Point3, target_point: Point3, distance_optimal=3.5, distance_max=8.6) -> float:
+        """
+        Calculates euclidean distance between robot and object
+        :param context = context containing robot
+        :param target_body = object for distance
+        :param distance_optimal = optimal distance
+        :param distance_max = max distance
+        """
+        # TODO: implement robots arm length to consider in optimality AND its dofs: Infos either from pose_validator, robot_predicates
+        distance = float(robot_point.euclidean_distance(target_point))
+        # Full probability up to distance_optimal, then sigmoid decay: 50% at distance_max (0.6 at 8 m)
+        if distance <= distance_optimal:
+            return 1.0
+        return 1.0 / (1.0 + math.exp(0.7 * (distance - distance_max)))
 
     def p_clutter_count(self, target_body: Body, radius=0.4) -> float:
         """
@@ -130,8 +143,13 @@ class RobotProbability:
                         # location known -> place the robot at the approach pose so distance is measured from there
                         if location in NAVIGATION_POSES:
                             x, y, _ = NAVIGATION_POSES[location]
+                            goal = Point3(x,y)
+
+                            step_probability *= self.p_robot_distance_nav(target_point=temp_robot.root.global_pose.to_position(),
+                                                                          robot_point=goal)
                             temp_robot.root.global_pose.x = x
                             temp_robot.root.global_pose.y = y
+
                         # fold in spatial penalties (distance, clutter) only when we can actually locate the body
                         if object_annotation is not None:
                             try:
@@ -139,7 +157,7 @@ class RobotProbability:
                             except Exception:
                                 object_body = None
                             if object_body is not None:
-                                step_probability *= self.p_robot_distance(target_body=object_body, robot_body=temp_robot.bodies[0])
+                                step_probability *= self.p_robot_distance_obj(target_body=object_body, robot_body=temp_robot.bodies[0])
                                 # clutter only matters for objects sharing a surface
                                 if find_surface_of_object(body=object_body, context=context) is not None:
                                     step_probability *= self.p_clutter_count(target_body=object_body)

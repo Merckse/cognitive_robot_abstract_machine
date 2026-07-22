@@ -64,8 +64,14 @@ def is_uncertain(task: Task, found: dict) -> bool:
 def closest_location(challenge_mode: ChallengeMode, locations: list[str], robot) -> str:
     """Nearest navigable location to the robot's current base pose."""
     rx, ry = robot.root.global_pose.x, robot.root.global_pose.y
-    return min(locations, key=lambda loc: math.dist(
-        (rx, ry), get_navigation_poses(challenge_mode, loc)[:2]))
+    best_location = locations[0]
+    best_distance = math.dist((rx, ry), get_navigation_poses(challenge_mode, best_location)[:2])
+    for loc in locations[1:]:
+        distance = math.dist((rx, ry), get_navigation_poses(challenge_mode, loc)[:2])
+        if distance < best_distance:
+            best_distance = distance
+            best_location = loc
+    return best_location
 
 
 def surfaces_in(challenge_mode : ChallengeMode, room: RoomEnum) -> list[str]:
@@ -117,7 +123,11 @@ def update_tasks_from_belief(task_list: list[Task], found: dict) -> None:
         target = get_target_object_by_task(task)
         if target is None:
             continue
-        found_at = next((loc for seen, loc in found.items() if isinstance(seen, target)), "")
+        found_at = ""
+        for seen, loc in found.items():
+            if isinstance(seen, target):
+                found_at = loc
+                break
         if not found_at:
             continue
         for ts in task.task_steps:
@@ -166,8 +176,12 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
             prior = get_task_room(current_task)
             try:
                 candidate_rooms = [prior] if prior else list(get_surfaces(challenge_mode, prior))
-            # every not-yet-scanned table across the candidate rooms
-                unscanned_tables = [s for r in candidate_rooms for s in surfaces_in(challenge_mode,r) if s not in explored_locations]
+                # every not-yet-scanned table across the candidate rooms
+                unscanned_tables = []
+                for r in candidate_rooms:
+                    for s in surfaces_in(challenge_mode, r):
+                        if s not in explored_locations:
+                            unscanned_tables.append(s)
             except Exception as e:
                 continue
             # searched everywhere we could and still don't know where it is -> give up on it
@@ -186,7 +200,6 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
                 f"scanned and updated beliefstate")  # TODO: take assistance instead of skipping
             continue  # re-rank now that the belief changed -- a different task may now be best
 
-        # ---- TOP TASK KNOWN -> execute it ----
         task_list.pop(0)
 
         # TODO: make cleaner with nice method

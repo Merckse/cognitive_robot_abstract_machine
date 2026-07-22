@@ -76,7 +76,7 @@ class RobotProbability:
             if obj.root != target_body and float(compute_euclidean_planar_distance(body1=obj.root, body2=target_body,ignore_dimension=Vector3.Z())) < radius:
                 nearby.append(obj)
         n = len(nearby)
-        return 1.0 / (1.0 + n)  # 0 objects - 1.0,  3 objects - 0.25
+        return 1.0 / (1.0 + n)
 
     def p_clutter_proximity(target_body: Body, nearby_objects: list,
                             min_dist=0.05) -> float:

@@ -2,6 +2,7 @@ import logging
 import math
 import os
 import random
+from copy import deepcopy
 from random import randint
 from time import sleep
 from typing import Optional
@@ -179,61 +180,6 @@ def generic_object_spawner(
             object_to_spawn = spawn_semantic_with_body(semantic_type=name,name=name.lower(),pose=pose_, scale=scale_,world=world, color = color)
 
         i+=1
-
-
-def perceive_and_spawn_all_objects(world: World):
-    """
-    Query all perceived objects via the robokudo interface, extracts the relevant information for each object,
-    and spawns them in the world using the spawn_semantic_with_body method.
-
-    :param world: The world in which to spawn the perceived objects
-    """
-
-    try:
-        from pycram.external_interfaces import robokudo
-    except ImportError:
-        raise ImportError()
-
-    # Fix because perception output is always one query behind
-    robokudo.send_query()
-    sleep(2)
-
-    perceived_objects_result = robokudo.query_all_objects().res
-    for perceived_object in perceived_objects_result:
-
-        object_dimensions = perceived_object.shape_size[0].dimensions
-        object_scale = Scale(
-            object_dimensions.x, object_dimensions.y, object_dimensions.z
-        )
-
-        object_pose_stamped = perceived_object.pose[0]
-        object_pose = Pose(
-            position=Point3(
-                object_pose_stamped.pose.position.x,
-                object_pose_stamped.pose.position.y,
-                object_pose_stamped.pose.position.z,
-            ),
-            orientation=Quaternion(
-                object_pose_stamped.pose.orientation.x,
-                object_pose_stamped.pose.orientation.y,
-                object_pose_stamped.pose.orientation.z,
-                object_pose_stamped.pose.orientation.w,
-            ),
-            reference_frame=world.get_kinematic_structure_entity_by_name(
-                object_pose_stamped.header.frame_id
-            ),
-        )
-
-        object_name = extract_name_from_json_string(perceived_object.attribute[0])
-        object_type = perceived_object.type
-
-        spawn_semantic_with_body(
-            semantic_type=object_type,
-            name=object_name,
-            scale=object_scale,
-            pose=object_pose,
-            world=world,
-        )
 
 def normalize(value, min_value, max_value):
     if min_value == max_value:
@@ -565,6 +511,25 @@ def find_surface_of_object(context:Context, body: Body) -> HasSupportingSurface 
         if is_supported_by(body, surface.bodies[0]):
             return surface
     return None
+
+def reposition_task_list(context: Context, task_list: list[TaskStep], robot: AbstractRobot) -> list[TaskStep]:
+    """
+    Prefix every step whose target location differs from the robot's (tracked)
+    pose with an explicit NAVIGATE, so a repaired or freshly generated plan
+    actually drives there instead of assuming the robot is already in position.
+    """
+    temp_robot = deepcopy(robot)
+    exec_steps: list[TaskStep] = []
+    for task_step in task_list:
+        if task_step.location != "" and not at_location(context=context, location=task_step.location, robot=temp_robot):
+            navigation_pose = get_navigation_poses(context.challenge_mode, task_step.location)
+            if navigation_pose is not None:
+                x, y, _ = navigation_pose
+                temp_robot.root.global_pose.x = x
+                temp_robot.root.global_pose.y = y
+            exec_steps.append(TaskStep(action_type=ActionType.NAVIGATE, location=task_step.location))
+        exec_steps.append(task_step)
+    return exec_steps
 
 # TODO : TO POSE
 

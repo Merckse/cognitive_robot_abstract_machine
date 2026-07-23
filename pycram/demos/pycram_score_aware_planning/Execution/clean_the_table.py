@@ -265,7 +265,8 @@ def main():
 
             if plan.status == TaskStatus.INTERRUPTED or plan.status == TaskStatus.FAILED:
                 winning = stabilizer.stabilize(plan=plan, task=current_task, exception=plan.plan.root.reason,
-                                               scoretime_monitor=scoretime_monitor, context=context)
+                                               scoretime_monitor=scoretime_monitor, context=context,
+                                               exec_steps=exec_steps)
                 if winning is not None:
                     operator, expected_value, repaired_plan, repaired_task_list = winning
                     print(f"[stabilizer] {plan.reason} -> recover via {operator} "

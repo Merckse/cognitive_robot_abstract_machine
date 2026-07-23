@@ -51,6 +51,7 @@ class PlanStabilizer:
                   task: Task,
                   exception: Exception,
                   scoretime_monitor : ScoreTimeMonitor,
+                  exec_steps: list[TaskStep],
                   remaining_candidate_operators : list[PlanTransformationOperator] = [],):
         """
         Stabilize works by taking the task and the exception and using it to match it to candidate solutions.
@@ -61,6 +62,8 @@ class PlanStabilizer:
         :param exception: The exception raised by the failed task, with all its TaskSteps
         :param evaluator: The evaluator, that is used to evaluate the tasks
         :param scoretime_monitor: Monitor for the scoring and time spent on the task
+        :param exec_steps: The task-step list actually used to build `plan` (may contain extra,
+            synthetic NAVIGATE steps not present in task.task_steps) -- aligns 1:1 with plan.plan.root.children.
         :param operator_list: List of PlanTransformationOperators
 
         # TOOD: add a constant probability decrease, on actually failed task, so the "hope", becomes less
@@ -70,7 +73,7 @@ class PlanStabilizer:
 
         # sorting out all Nodes, that have already succeeded, expecting, to not doing them again
         for i, child in enumerate(plan.plan.root.children):
-            task_step = task.task_steps[i]
+            task_step = exec_steps[i]
             if child.status == TaskStatus.SUCCEEDED:
                 task_step.action_outcome = Status.SUCCESS
             else:
@@ -191,7 +194,7 @@ class PlanStabilizer:
                                         world=world, assisted=step.action_assisted)
             case ActionType.PLACE:
                 action = place_subplan(challenge_mode=challenge_mode, object_annotation=step.object_annotations, arm=arm,
-                                       target_location=step.location, world=world, assisted=step.action_assisted)
+                                       target_location=step.location, world=world, assisted=step.action_assisted, robot=context.robot)
             case ActionType.PARK:
                 action = ParkArmsAction(Arms.LEFT)
             case ActionType.DETECT:

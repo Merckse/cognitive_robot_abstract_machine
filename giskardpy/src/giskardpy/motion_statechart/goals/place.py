@@ -107,7 +107,7 @@ class ApproachPlacement(Goal):
     object_geometry: Body = field(kw_only=True)
     goal: Union[HomogeneousTransformationMatrix, Point3] = field(kw_only=True)
     ft: bool = field(kw_only=True, default=False)
-    pre_place_distance: float = field(default=0.002, kw_only=True)
+    pre_place_distance: float = field(default=0.02, kw_only=True)
 
     def expand(self, context: MotionStatechartContext) -> None:
         super().expand(context)
@@ -179,14 +179,16 @@ class ApproachPlacement(Goal):
                 f"goal must be HomogeneousTransformationMatrix or Point3, got {type(self.goal)}"
             )
 
-        # stuck = LocalMinimumReached()
-        # self.add_node(stuck)
-        # cancel = CancelMotion(exception=PlacementNotReachableException("Placement position is not reachable"))
-        # cancel.start_condition = trinary_logic_and(
-        #     stuck.observation_variable,
-        #     trinary_logic_not(self.object_goal.observation_variable),
-        # )
-        # self.add_node(cancel)
+        self.add_node(ExternalCollisionAvoidance())
+
+        stuck = LocalMinimumReached()
+        self.add_node(stuck)
+        cancel = CancelMotion(exception=PlacementNotReachableException("Placement position is not reachable"))
+        cancel.start_condition = trinary_logic_and(
+            stuck.observation_variable,
+            trinary_logic_not(self.object_goal.observation_variable),
+        )
+        self.add_node(cancel)
 
     def build(self, context: MotionStatechartContext) -> NodeArtifacts:
         artifacts = super().build(context)

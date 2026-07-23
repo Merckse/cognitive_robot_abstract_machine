@@ -96,7 +96,16 @@ class ScoreTimeMonitor:
         Call at the start of each task execution so elapsed and overtime
         can be computed mid-task by the stabilizer.
         """
+        task.status = Status.RUNNING
         task.task_begin = datetime.datetime.now()
+
+    def record_task_interrupt(self, task: Task):
+        """
+        Call at the start of each task execution so elapsed and overtime
+        can be computed mid-task by the stabilizer.
+        """
+        task.status = Status.SKIPPED
+        task.duration += round((datetime.datetime.now() - task.task_begin).total_seconds())
 
     def record_task_end(self, task: Task):
         """

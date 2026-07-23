@@ -157,9 +157,18 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
     explored_locations = []
     found_objects: dict[Body, str] = {}
 
-    task_list: list[Task] = CHALLENGE_TASKS.get(challenge_mode)
+    plans = [] # consisting of all plans ever generated
+    repaired_plans = [] # consisting of (originalplan, repaired_plan)
 
+    task_list: list[Task] = CHALLENGE_TASKS.get(challenge_mode)
+    current_task = None
     while task_list != []:
+
+        if current_task and current_task.status == Status.SUCCESS:
+            scoretime_monitor.record_task_end(current_task)
+        elif current_task and current_task.status == Status.RUNNING:
+            scoretime_monitor.record_task_interrupt(current_task)
+
         with simulated_robot:
             sequential([ParkArmsAction(Arms.BOTH), MoveTorsoAction(TorsoState.LOW)], context).perform()
 
@@ -170,6 +179,8 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
         current_task = task_list[0]
         current_task.status = Status.RUNNING
         target = get_target_object_by_task(current_task)
+
+        scoretime_monitor.record_task_start(current_task)
 
         # A room prior scopes the search to a few tables; with no prior we consider every room.
         if is_uncertain(current_task, found_objects):
@@ -216,6 +227,7 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
 
         with (simulated_robot):
             scoretime_monitor.record_task_start(task=current_task)
+            plans.append(plan)
             plan.perform()
 
             with simulated_robot:
@@ -228,6 +240,7 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
 
                 winning = stabilizer.stabilize(plan=plan, task=current_task, exception=plan.plan.root.reason,
                                                scoretime_monitor=scoretime_monitor, context=context,
+                                               exec_steps=exec_steps,
                                                remaining_candidate_operators=remaining_candidate_operators)
                 if winning is None:
                     break
@@ -239,10 +252,14 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
                 if operator == PlanTransformationOperator.SKIP:
                     current_task.status = Status.SKIPPED
                 else:
+                    repaired_plans.append(repaired_plan)
                     repaired_plan.perform()
                     if repaired_plan.status == TaskStatus.SUCCEEDED:
                         plan.status = TaskStatus.SUCCEEDED
+                        current_task.status = Status.SUCCESS
 
 
         with simulated_robot:
             sequential([ParkArmsAction(Arms.BOTH), MoveTorsoAction(TorsoState.LOW)], context).perform()
+
+    return plans, repaired_plans

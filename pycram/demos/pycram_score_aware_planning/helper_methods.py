@@ -107,8 +107,6 @@ def spawn_semantic_with_body(
 
     pose.z -= 0.015  # To avoid spawning objects in the air due to small inaccuracies in the pose estimation.
 
-    # If the pose has a frame_id, we need to transform it to the world root frame.
-    # Otherwise, we assume it is already in the world root frame.
     if pose.reference_frame is not None and pose.reference_frame != world.root:
         world_root_T_self = world.transform(pose, world.root).to_homogeneous_matrix()
     else:
@@ -145,7 +143,7 @@ def generic_object_spawner(
             x, y, z = curr_pose[0], curr_pose[1], curr_pose[2]
         else:
             x, y, z = curr_pose.x, curr_pose.y, curr_pose.z
-        scale_: Scale = Scale(x=0.1, y=0.1, z=0.2)
+        scale_: Scale = Scale(x=0.05, y=0.05, z=0.2)
         try:
             if name.lower() == "bottle":
                 raise ValueError("bottle mesh disabled (ungraspable size)")
@@ -458,14 +456,6 @@ def find_free_placement_pose(
         object_clearance: float = 0.08,
         reference_point: Optional[tuple[float, float]] = None,
 ) -> Optional[tuple[float, float]]:
-    """
-    Find a free (x, y) position on the surface where object_body can be placed
-    without overlapping any object already on that surface.
-
-    Returns the (x, y) centre of the object's footprint in world frame, or None if
-    no free spot exists. The caller must compute z independently:
-        z = surface.z_surface + object_half_z
-    """
     # Object half-extents in its local frame (upright assumption)
     local_bbs = object_body.collision.as_bounding_box_collection_in_frame(object_body).bounding_boxes
     if local_bbs:
@@ -914,7 +904,7 @@ def nav_time(robot_pose: Point3, to_loc: str, speed: float = 0.55 / 3.6) -> floa
     (x2, y2) = NAVIGATION_POSES[to_loc][:2]
     return nav_time_between(x1, y1, x2, y2, speed)
 
-def challenge_setup(challenge_mode : ChallengeMode):
+def challenge_setup(challenge_mode : ChallengeMode, doors_open: bool = True):
     match challenge_mode:
         case ChallengeMode.PP:
             return setup_pp(challenge_mode, doors_open=doors_open)
@@ -994,8 +984,6 @@ def randomized_placement(supporting_surface : HasSupportingSurface, object_scale
 
             # If not overlapped at any pose, then append, else retry.
             if not overlap:
-                pose_temp.append((rand_x,rand_y,hx,hy))
-
                 # z is the surface top; generic_object_spawner lifts each object by its own geometry
                 pose = Pose(position=Point3(rand_x, rand_y, bb.max_z), reference_frame=region)
                 world_pose = world.transform(pose, world.root) # Transforming into the world root, since we are still in region frame.
@@ -1058,8 +1046,6 @@ def setup_pp(challenge_mode : ChallengeMode, doors_open: bool = True):
 
     context = Context(world=world, robot=hsrb, challenge_mode=challenge_mode)
     context.evaluate_conditions = False
-    dispatcher.known_furniture = world.bodies
-
 
     set_container_openings(world, opened=doors_open)
 

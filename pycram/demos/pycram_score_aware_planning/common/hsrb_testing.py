@@ -42,6 +42,16 @@ def setup_world():
 
 
 
+    # rclpy.create_node() requires rclpy.init() to have run first in this process, and nothing
+    # upstream of setup_world() guarantees that -- it's the first ROS call in the whole
+    # challenge_setup() chain. Whether this was needed used to depend on which other module
+    # happened to call rclpy.init() first as an import-time side effect (e.g.
+    # simulate_perception.get_perception_debug_node(), only reachable much later during a scan),
+    # which is why this failed intermittently (NotInitializedException) rather than consistently.
+    # rclpy.ok() is the correct guard: rclpy.init() raises if called twice in the same process
+    # without an intervening rclpy.shutdown(), so this has to be idempotent, not unconditional.
+    if not rclpy.ok():
+        rclpy.init()
     node = rclpy.create_node("kitchen_environment")
     publisher = VizMarkerPublisher(_world=KitchenEnvironment().get_world(), node=node, show_labels=True)
     (publisher.with_tf_publisher())

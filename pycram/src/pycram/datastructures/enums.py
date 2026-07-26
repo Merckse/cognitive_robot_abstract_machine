@@ -102,6 +102,9 @@ class PlanTransformationOperator(int, Enum):
     SUBSTITUTE_WITH_ASSISTANCE = 5
     REPLAN = 6
     REORDER = 7
+    REQUEST_OBJECT_REPOSITION = 8
+    REPOSITION_ROBOT = 9
+
 
 class JointType(Enum):
     """

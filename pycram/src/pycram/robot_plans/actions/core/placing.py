@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 import geometry_msgs
 import numpy as np
 from geometry_msgs.msg import PoseStamped
-from typing_extensions import Any, Dict
+from typing_extensions import Any, Callable, Dict, Optional
 
 from giskardpy.utils.math import point_to_caster_angles
 from krrood.entity_query_language.core.base_expressions import SymbolicExpression
@@ -20,6 +20,9 @@ from pycram.datastructures.enums import (
 from pycram.datastructures.grasp import GraspDescription
 from pycram.plans.factories import sequential, execute_single, code
 from pycram.querying.predicates import GripperIsFree
+from giskardpy.motion_statechart.exceptions import CollisionViolatedError
+from giskardpy.motion_statechart.goals.place import PlacementNotReachableException
+import random
 from pycram.robot_plans import RetractMotion, GiskardMoveGripperMotion, PointGripperForwardMotion
 from pycram.robot_plans.actions.base import ActionDescription, DescriptionType
 from pycram.robot_plans.actions.core.pick_up import PickUpAction, ReachAction
@@ -31,6 +34,7 @@ from pycram.robot_plans.motions.gripper import (
 from pycram.robot_plans.motions.transportation import ApproachPlacementMotion, GiskardReachMotion
 from pycram.view_manager import ViewManager
 from semantic_digital_twin.datastructures.definitions import GripperState, TorsoState
+from semantic_digital_twin.exceptions import WorldEntityNotFoundError
 from semantic_digital_twin.reasoning.predicates import allclose
 from semantic_digital_twin.reasoning.robot_predicates import is_body_in_gripper
 from semantic_digital_twin.robots.abstract_robot import Manipulator
@@ -67,9 +71,29 @@ class PlaceAction(ActionDescription):
     Decides if the robot takes assistance or not
     """
 
+    pose_resolver: Optional[Callable[[], tuple[Optional[Pose], bool]]] = field(default=None, kw_only=True)
+
+    success_probability: float = field(default=1.0, kw_only=True)
+
+
     def execute(self) -> None:
         arm = ViewManager.get_arm_view(self.arm, self.robot)
         manipulator = arm.manipulator
+
+        if self.target_location is None and self.pose_resolver is not None:
+            resolved_location, needs_assistance = self.pose_resolver()
+            self.target_location = resolved_location
+            if needs_assistance or resolved_location is None:
+                self.assisted = True
+
+        if not self.assisted and self.success_probability < 1.0:
+            if random.random() > self.success_probability:
+                self._detach_object()
+                errors = [
+                    PlacementNotReachableException(),
+                    CollisionViolatedError(violated_collisions=[], thresholds=[]),
+                ]
+                raise random.choice(errors)
 
         if self.assisted:
             self.add_subplan(sequential([HandedOverAction(self.arm)])).perform()
@@ -77,7 +101,6 @@ class PlaceAction(ActionDescription):
                 sequential([GiskardMoveGripperMotion(gripper_state=GripperState.OPEN, arm=self.arm)])).perform()
 
             self.place_target_location(manipulator)
-            return
         else:
             self.add_subplan(
                 sequential(
@@ -86,22 +109,34 @@ class PlaceAction(ActionDescription):
                         object_designator=self.object_designator,
                         arm=Arms.LEFT,
                         target_location=self.target_location,
+                        ignore_orientation=True,
                     ),
                     ]
                 )
             ).perform()
-            # Detaches the object from the robot
-            world_root = self.world.root
-            obj_transform = self.world.compute_forward_kinematics(
-                world_root, self.object_designator
+            self._detach_object()
+
+        try:
+            from pycram.robot_plans.actions.core.navigation import look_forward_action
+            self.add_subplan(sequential([look_forward_action(self.robot, self.world)])).perform()
+        except Exception:
+            pass
+
+    def _detach_object(self) -> None:
+        arm = ViewManager.get_arm_view(self.arm, self.robot)
+        manipulator = arm.manipulator
+
+        world_root = self.world.root
+        obj_transform = self.world.compute_forward_kinematics(
+            world_root, self.object_designator
+        )
+        with self.world.modify_world():
+            connection = Connection6DoF.create_with_dofs(
+                parent=world_root, child=self.object_designator, world=self.world
             )
-            with self.world.modify_world():
-                connection = Connection6DoF.create_with_dofs(
-                    parent=world_root, child=self.object_designator, world=self.world
-                )
-                self.world.remove_connection(self.object_designator.parent_connection)
-                self.world.add_connection(connection)
-                connection.origin = obj_transform
+            self.world.remove_connection(self.object_designator.parent_connection)
+            self.world.add_connection(connection)
+            connection.origin = obj_transform
 
 
         self.add_subplan(
@@ -226,27 +261,38 @@ class PlaceInTrashAction(ActionDescription):
                         object_designator=self.object_designator,
                         arm=Arms.LEFT,
                         target_location=target_location,
+                        ignore_orientation=True,
                     ),
                     ]
                 )
             ).perform()
 
-        # Detaches the object from the robot
-        world_root = self.world.root
-        obj_transform = self.world.compute_forward_kinematics(
-            world_root, self.object_designator
-        )
-        with self.world.modify_world():
-            connection = Connection6DoF.create_with_dofs(
-                parent=world_root, child=self.object_designator, world=self.world
-            )
-            connection.origin = obj_transform
-            self.world.remove_connection(self.object_designator.parent_connection)
-            self.world.add_connection(connection)
+        self.despawn_object()
 
         self.add_subplan(
             execute_single(RetractMotion(gripper=manipulator)
         )).perform()
+
+        # Reset the gaze straight ahead after the throw-away. Non-fatal + unscored.
+        try:
+            from pycram.robot_plans.actions.core.navigation import look_forward_action
+            self.add_subplan(sequential([look_forward_action(self.robot, self.world)])).perform()
+        except Exception:
+            pass
+
+    def despawn_object(self) -> None:
+        try:
+            annotation = self.world.get_semantic_annotation_by_name(
+                self.object_designator.name
+            )
+        except WorldEntityNotFoundError:
+            annotation = None
+
+        with self.world.modify_world():
+            if annotation is not None:
+                self.world.remove_semantic_annotation(annotation)
+            self.world.remove_connection(self.object_designator.parent_connection)
+            self.world.remove_kinematic_structure_entity(self.object_designator)
 
 @dataclass
 class HandedOverAction(ActionDescription):
@@ -297,7 +343,10 @@ class GiskardPlaceAction(ActionDescription):
         manipulator = arm.manipulator
 
         if isinstance(self.target_location, Pose):
-            goal = self.target_location = self.pose_to_ros(self.target_location)
+            if self.ignore_orientation:
+                goal = self.target_location.to_position()
+            else:
+                goal = self.target_location = self.pose_to_ros(self.target_location)
         elif self.ignore_orientation:
             goal = self.target_location.pose.to_spatial_type().to_position()
         else:
@@ -315,18 +364,8 @@ class GiskardPlaceAction(ActionDescription):
                 GiskardMoveGripperMotion(GripperState.OPEN, arm=self.arm),])
         ).perform()
 
-    def pose_to_ros(self, pose: Pose) -> Point3:
-        pose = pose.to_position()
-        pose_stamped = geometry_msgs.msg.PoseStamped()
-        pose_stamped.pose.position.x = float(pose.x)
-        pose_stamped.pose.position.y = float(pose.y)
-        pose_stamped.pose.position.z = float(pose.z)
-        # pose_stamped.pose.orientation.x = float(pose.to_quaternion().x)
-        # pose_stamped.pose.orientation.y = float(pose.to_quaternion().y)
-        # pose_stamped.pose.orientation.z = float(pose.to_quaternion().z)
-        # pose_stamped.pose.orientation.w = float(pose.to_quaternion().w)
-        pose_stamped.header.frame_id = pose.reference_frame.name.name
-        return pose
+    def pose_to_ros(self, pose: Pose) -> HomogeneousTransformationMatrix:
+        return pose.to_homogeneous_matrix()
 
     def point3_to_ros(self, point: Point3) -> HomogeneousTransformationMatrix:
         print("[place] point3_to_ros got:", type(point), repr(point))

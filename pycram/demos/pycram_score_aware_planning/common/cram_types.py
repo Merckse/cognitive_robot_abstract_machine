@@ -28,6 +28,7 @@ class ActionType(str, Enum):
     PARK = "park"
     CUSTOM = "custom"
     EXPLORE = "explore"
+    REQUEST_REPOSITION = "request_reposition"
 
 
 class Status(str, Enum):
@@ -54,7 +55,6 @@ class ScoreEvent:
     cumulative_time: float
     assisted : bool = False
 
-# The action step is equivilant to an action, just has been named TaskStep to find seperation, between the two
 @dataclass
 class TaskStep:
     # task_step_id: int = field(default_factory=lambda: next(_taskstep_id_counter), init=False)
@@ -71,7 +71,9 @@ class TaskStep:
     uncertain: bool = False # Meaning, if not all informations to a task are known, then there has to be something done
     room : Optional[RoomEnum] = None
     location : str = ""
+    nav_pose_override: Optional[tuple[float, float, tuple[float, float, float, float]]] = None
     object_annotations: SemanticAnnotation = None # SemanticAnnotations for the actions, that are used for, with action_type: Pick_Up
+    perceived_object: Optional[SemanticAnnotation] = None
     object_pickup: str = None # Possible: cooking_table, shelf, lowerTable, table, desk, dining_table, shelf_1, shelf_2
     object_placement: str = None # Possible:a
 
@@ -90,6 +92,10 @@ class Task:
     score_penalized: int = 0
     task_begin: Optional[datetime.datetime] = None
     duration: int = 0
+    """Estimated duration, summed from the steps' action_time. Stays an estimate, the measured
+    time goes into actual_duration."""
+    actual_duration: float = 0.0
+    """Seconds actually spent on this task, accumulated across every run of it."""
     score_per_seconds : float = 0
     normalized_score_per_seconds : float = 0
     probability : float = 1

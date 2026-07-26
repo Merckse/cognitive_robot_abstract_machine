@@ -165,9 +165,16 @@ def annotation_class_by_label(label: str) -> Optional[type]:
     :param label: The string input from perception (e.g., "bowl_collapsable_yellowgrey").
     :return: The matching class (e.g., Bowl) or None if no match is found.
     """
-    semantic_class = variable_from(recursive_subclasses(IsPerceivable))
-    matching_class = an(entity(semantic_class).where(contains(label.lower(), semantic_class.__name__.lower())))
-    return next(matching_class.evaluate(), None)
+    label = label.lower()
+    best_match: Optional[type] = None
+    for semantic_class in recursive_subclasses(IsPerceivable):
+        class_name = semantic_class.__name__.lower()
+        if not class_name or class_name not in label:
+            continue
+        # an exact match is by definition the longest possible containment, so this covers it too
+        if best_match is None or len(class_name) > len(best_match.__name__):
+            best_match = semantic_class
+    return best_match
 
 
 def sort_annotations_by_volume(annotations: List[HasRootBody], order: Optional[bool]=True) -> List[HasRootBody]:

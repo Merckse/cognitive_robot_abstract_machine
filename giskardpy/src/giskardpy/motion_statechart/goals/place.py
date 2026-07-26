@@ -111,6 +111,7 @@ class ApproachPlacement(Goal):
 
     def expand(self, context: MotionStatechartContext) -> None:
         super().expand(context)
+        robot = self.manipulator._robot
 
         if self.ft:
             self.ft_monitor = ForceImpactMonitor(threshold=5, topic_name="ft_irgendwas")
@@ -179,16 +180,25 @@ class ApproachPlacement(Goal):
                 f"goal must be HomogeneousTransformationMatrix or Point3, got {type(self.goal)}"
             )
 
-        self.add_node(ExternalCollisionAvoidance())
-
-        stuck = LocalMinimumReached()
-        self.add_node(stuck)
-        cancel = CancelMotion(exception=PlacementNotReachableException("Placement position is not reachable"))
-        cancel.start_condition = trinary_logic_and(
-            stuck.observation_variable,
-            trinary_logic_not(self.object_goal.observation_variable),
+        # Companion rules for the ExternalCollisionAvoidance
+        arm_buffer = 0.01
+        self.add_node(
+            UpdateTemporaryCollisionRules(
+                temporary_rules=[
+                    *make_external_collision_rules(
+                        robot=robot, arm_buffer_zone=arm_buffer
+                    ),
+                    _AllowObjectCollisions(_object_body=self.object_geometry),
+                ]
+            )
         )
-        self.add_node(cancel)
+        self.add_node(ExternalCollisionAvoidance(robot=robot))
+
+        # Deliberately no LocalMinimumReached -> CancelMotion backstop here. It looks like the
+        # right safety net for "arm parks short of the goal", but LocalMinimumReached declares
+        # windows_size and then never uses it in build(), so it trips on a *single* tick of low
+        # velocity -- and the Sequence above hands over from pre_pos to object_goal through
+        # exactly such a tick, which would abort placements that were about to succeed.
 
     def build(self, context: MotionStatechartContext) -> NodeArtifacts:
         artifacts = super().build(context)

@@ -102,7 +102,6 @@ class MotionExecutor:
             if self.plan_node.is_interrupted:
                 return
             elif self.plan_node.is_paused:
-                time.sleep(0.01)
                 continue
 
             executor.tick()

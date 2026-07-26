@@ -333,6 +333,35 @@ class KitchenEnvironment:
             left_door.add_handle(left_door_handle)
             left_door.add_hinge(cupboard_left_door_hinge)
 
+            # add_hinge only wires the hinge body's own hinge<-door connection; the hinge itself
+            # was created (via Hinge.create_with_new_body_in_world) as its own RevoluteConnection
+            # parented directly to world.root, not to the cupboard. That leaves
+            # object.get_first_parent_connection_of_type(ActiveConnection1DOF) resolving to a
+            # connection whose .parent is world.root instead of the cupboard case, so any code
+            # that scans "the branch under this connection's parent" for sibling movable parts
+            # (container_movable_connections, used by assisted open/close) walks the *entire*
+            # world instead of just this cupboard -- every hinge/drawer/slider anywhere in the
+            # kitchen gets forced to its limit, which is what made opening one cupboard door
+            # spin the whole robot and crash on any other joint with no configured limits.
+            # Re-parent each hinge to the cupboard case directly, same fix already applied to
+            # the dishwasher's door hinge and rack slider above.
+            root_T_cupboard = cupboard._offline_root_T_entity(cupboard.root)
+            for hinge_root, axis, limits in [
+                (cupboard_right_door_hinge.root, -Vector3.Z(), right_door_limits),
+                (cupboard_left_door_hinge.root, Vector3.Z(), left_door_limits),
+            ]:
+                old = hinge_root.parent_connection
+                root_T_hinge = cupboard._offline_root_T_entity(hinge_root)
+                cupboard_T_hinge = HomogeneousTransformationMatrix(
+                    (root_T_cupboard.inverse() @ root_T_hinge).evaluate()
+                )
+                world.remove_connection(old)
+                world.add_connection(RevoluteConnection.create_with_dofs(
+                    world=world, parent=cupboard.root, child=hinge_root,
+                    parent_T_connection_expression=cupboard_T_hinge,
+                    axis=axis, dof_limits=limits,
+                ))
+
             cupboard.add_shelf_layer(shelf_1)
             cupboard.add_shelf_layer(shelf_2)
             cupboard.add_shelf_layer(shelf_3)

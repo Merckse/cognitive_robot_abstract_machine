@@ -16,33 +16,34 @@ class CompositeEvaluator:
     def __init__(self):
         self.score_evaluator = RobotScorer()
         self.probability_evaluator = RobotProbability()
-        # self.plan_stability_evaluator = RobotPlanStability()
 
     def estimate(self, context : Context, task_list : list[Task], found_objects: dict, risk_aversion : float = 1) -> list[Task]:
-        # estimating score and probability, with score relying on probability
+        # score relies on probability, so probability runs first
         task_list_probability_evaluated = self.probability_evaluator.estimate(task_list=task_list, context=context, found_objects=found_objects)
         task_list_score_evaluated = self.score_evaluator.estimate(task_list=task_list_probability_evaluated, context=context)
         min_risk_aversion = 0.5
         max_risk_aversion = 4
 
         if not min_risk_aversion < risk_aversion < max_risk_aversion:
-            risk_aversion = 2
-            logger.info("risk_aversion set to", risk_aversion, "since it has been to high or too low")
-
+            risk_aversion = 1
+            logger.info("risk_aversion was out of range, reset to 1")
 
         for task in task_list_score_evaluated:
             cum_expected_score = 0
             for ts in task.task_steps:
-                safe_gain = ts.action_score * ts.action_probability ** risk_aversion
-                expected_penalty = abs(ts.action_penalty) * (1 - ts.action_probability)
-                ts.expected_score = (safe_gain - expected_penalty) / ts.action_time if ts.action_time else 0.0
+                if ts.action_assisted:
+                    # assistance forces p to 1, so the (1 - p) penalty term would be 0.
+                    # charge the certain cost of asking for help directly instead.
+                    ts.expected_score = -abs(ts.action_penalty) / ts.action_time if ts.action_time else 0.0
+                else:
+                    safe_gain = ts.action_score * ts.action_probability ** risk_aversion
+                    expected_penalty = abs(ts.action_penalty) * (1 - ts.action_probability)
+                    ts.expected_score = (safe_gain - expected_penalty) / ts.action_time if ts.action_time else 0.0
                 cum_expected_score += ts.expected_score
             task.cum_expected_score = cum_expected_score
         self.summary(task_list_score_evaluated)
 
-        # normalize list
         normalized_evaluated_task_list = normalize_task_estimation(task_list_score_evaluated)
-
         self.summary(normalized_evaluated_task_list)
         return normalized_evaluated_task_list
 
@@ -54,15 +55,7 @@ class CompositeEvaluator:
 
 
     def summary(self, task_list: list[Task]) -> None:
-        """
-        Prints the evaluation summary in three clearly separated sections:
-
-          1. RANKED TASKS  — every task ordered by E[score] (cum_expected_score), the
-             risk-weighted expected points/second that drives selection, with an inline bar.
-          2. TOP TASK · STEP BREAKDOWN — a full table of the chosen task's steps showing
-             how its value is built up (gain, expected penalty, per-step E), with a Σ total row.
-          3. LEGEND — what the columns mean and the formula behind E.
-        """
+        """Prints the ranked tasks, a step breakdown of the best one and a legend."""
         if not task_list:
             print("No tasks to summarize.")
             return
@@ -74,7 +67,7 @@ class CompositeEvaluator:
 
         lines: list[str] = []
 
-        # ── SECTION 1 · ranked overview ────────────────────────────────────────
+        # ranked overview
         ov_rows = []
         for i, task in enumerate(ranked, 1):
             ev = exp(task)
@@ -98,7 +91,7 @@ class CompositeEvaluator:
             subtitle="ranked by E[score] — risk-weighted expected points / second",
         )
 
-        # ── SECTION 2 · step breakdown of the chosen task ──────────────────────
+        # step breakdown of the chosen task
         st_rows = []
         tot_score = tot_pen = tot_time = 0.0
         tot_gain = tot_epen = 0.0
@@ -108,7 +101,7 @@ class CompositeEvaluator:
             t = step.action_time
             es = getattr(step, "expected_score", 0.0)
             epen = abs(pen) * (1 - p)          # expected penalty on failure
-            gain = es * t + epen               # reconstructed risk-weighted gain (E = (gain-epen)/t)
+            gain = es * t + epen               # risk-weighted gain, from E = (gain - epen) / t
             noop = step.action_score == 0 and pen == 0
             dim = ("dim",) if noop else ()
             obj = step.object_annotations.__name__ if step.object_annotations is not None else "·"
@@ -149,7 +142,6 @@ class CompositeEvaluator:
             footer=footer,
         )
 
-        # ── SECTION 3 · legend ─────────────────────────────────────────────────
         lines += [
             "",
             paint("  LEGEND", "bold"),

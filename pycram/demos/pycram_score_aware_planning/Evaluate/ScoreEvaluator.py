@@ -1,6 +1,5 @@
 from __future__ import annotations
 import time
-from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -9,57 +8,20 @@ from demos.pycram_score_aware_planning.common.cram_types import (
     Task, ScoreEvent,
 )
 from demos.pycram_score_aware_planning.common.values import (
-    evaluation,
+    evaluation, ASSISTANCE_PENALTY,
 )
-from helper_methods import NAVIGATION_POSES, nav_time
+from helper_methods import get_navigation_poses, nav_time_between
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus
-from semantic_digital_twin.spatial_types import Point3
 
-"""
-This is the actual score event that is recorded.
-
-:param timestamp:      The time at which the event occurred.
-:param action_type:    The type of action performed.
-:param outcome:        The outcome of the action.
-:param object_name:    Optional label for the object involved.
-:param base_points:    The base points earned for this action.
-:param penalty:        The penalty applied for this action.
-:param time_spent:     The actual time spent on the action.
-:param net_points:     The total points earned for this action.
-:param cumulative_score: The total score so far.
-:param cumulative_time: The total time so far.
-:param note:           Free-text note attached to this event.
-"""
-
-"""
-This is the estimator for the Expected Score.
-
-:param action_type:    The type of action performed.
-:param outcome:        The outcome of the action.
-:param object_name:    Optional label for the object involved.
-:param expected_time:  The expected time spent on the action.
-:param expected_score: The expected score created by completing the action.
-"""
 
 @dataclass(kw_only=True)
 class RobotScorer:
-    """
-    Central scoring tracker. Call record() after each action completes.
-    Thread-safe reads; not designed for concurrent writes.
-    """
-
-    """
-    The context providing world and robot.
-    """
+    """Estimates the expected score, penalty and duration of a task."""
 
     _score: int = field(default=0, init=False, repr=False)
     _time: int = field(default=0, init=False, repr=False)
     _start_time_action: float = field(default=time.time(), init=False, repr=False)
-
-    """
-    Estimating the expected time and score created by completing a task.
-    """
 
     def estimate(
         self, context:Context, task_list: list[Task], finished_task_ids: Optional[list[int]] = [],
@@ -74,14 +36,17 @@ class RobotScorer:
             if task.id in finished_task_ids:
                 continue
             robot = context.robot
-            temp_robot = deepcopy(robot)
+            challenge_mode = context.challenge_mode
+            # predicted robot position after the steps so far, as a plain (x, y)
+            robot_position = robot.root.global_pose.to_position()
+            predicted_x, predicted_y = float(robot_position.x), float(robot_position.y)
 
             for step in task.task_steps:
                 base_score: int = 0
                 expected_time: int = 0
                 penalty: int = 0
 
-                # if action is already successful, dont give score, else as expected
+                # an already successful step costs and earns nothing
                 if step.action_outcome == Status.SUCCESS:
                     pass
                 else:
@@ -92,16 +57,16 @@ class RobotScorer:
                     penalty = step_profile.penalty
                     expected_time = step_profile.time
 
-
-
-                    if step.location in NAVIGATION_POSES:
-                        x, y, _ = NAVIGATION_POSES[step.location]
-                        goal = Point3(x, y)
-                        point_robot = temp_robot.root.global_pose.to_position()
-                        nav_time(point_robot,step.location)
-
-                        temp_robot.root.global_pose.x = x
-                        temp_robot.root.global_pose.y = y
+                    # a step without a location must not be charged travel: the "" -> (0,0)
+                    # fallback pose would price it as a round trip to the world origin and drag
+                    # the predicted position along with it
+                    navigation_pose = (get_navigation_poses(challenge_mode, step.location)
+                                       if step.location else None)
+                    if navigation_pose is not None:
+                        x, y, _ = navigation_pose
+                        # travel time from where the previous steps leave the robot
+                        expected_time += round(nav_time_between(predicted_x, predicted_y, x, y))
+                        predicted_x, predicted_y = x, y
 
                     if step.uncertain:
                         expected_time += evaluation(ActionType.EXPLORE).time
@@ -109,23 +74,20 @@ class RobotScorer:
                     if step.action_assisted:
                         outcome = Status.SUCCESS_WITH_ASSIST
                         base_score : int = 0
+                        # assistance is charged, not free: the probability side already reset the
+                        # step to p=1, so without a cost here asking for help would always look
+                        # better than attempting a risky step
+                        penalty = ASSISTANCE_PENALTY
 
-
-
-
-                # calculation of total scores
                 total_score += base_score
                 total_time += expected_time
                 total_score_penalized += base_score + penalty
 
-                # Asserting  evaluated score and time
                 step.action_score = base_score
                 step.action_penalty = penalty
                 step.action_time = expected_time
                 step.task_score_penalized = base_score+penalty
 
-
-            # asserting all needed values on the task
             task.score = total_score
             task.duration = total_time
             task.score_penalized = total_score_penalized

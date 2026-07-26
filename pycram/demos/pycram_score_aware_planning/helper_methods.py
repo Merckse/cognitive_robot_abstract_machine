@@ -23,7 +23,7 @@ from pycram.plans.plan_node import PlanNode
 from pycram.robot_plans.actions.base import ActionDescription
 from pycram.robot_plans.actions.core.container import OpenAction
 from pycram.robot_plans.actions.core.navigation import NavigateAction
-from pycram.robot_plans.actions.core.pick_up import PickUpAction
+from pycram.robot_plans.actions.core.pick_up import PickUpAction, RequestObjectRepositionAction
 from pycram.robot_plans.actions.core.placing import PlaceAction, PlaceInTrashAction
 from pycram.robot_plans.actions.core.robot_body import ParkArmsAction, MoveTorsoAction
 from demos.pycram_score_aware_planning.common.cram_types import Task, ActionType, SurfaceSpace, TaskStep
@@ -33,7 +33,8 @@ from semantic_digital_twin.exceptions import WorldEntityNotFoundError
 from semantic_digital_twin.reasoning.predicates import is_supported_by
 from semantic_digital_twin.reasoning.queries import annotation_class_by_label
 from semantic_digital_twin.robots.abstract_robot import Manipulator, AbstractRobot
-from semantic_digital_twin.semantic_annotations.mixins import HasRootBody, HasSupportingSurface
+from semantic_digital_twin.semantic_annotations.mixins import HasRootBody, HasSupportingSurface, HasDoors, HasDrawers, \
+    IsPerceivable
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Knife, Fork, Spoon, DishwasherTab, Milk, \
     Bowl, Plate, Table, Mug, Cup, Cereal, Bottle, Pringles, Apple, Sofa, Dishwasher
 from semantic_digital_twin.spatial_types import (
@@ -146,6 +147,8 @@ def generic_object_spawner(
             x, y, z = curr_pose.x, curr_pose.y, curr_pose.z
         scale_: Scale = Scale(x=0.1, y=0.1, z=0.2)
         try:
+            if name.lower() == "bottle":
+                raise ValueError("bottle mesh disabled (ungraspable size)")
             object = STLParser(
                 os.path.join(
                     os.path.dirname(__file__), "..", "..", "resources", "objects", name.lower()+".stl"
@@ -212,8 +215,11 @@ def normalize_task_estimation(task_list : list[Task]) -> list[Task]:
     return task_list
 
 
-def navigation_subplan(challenge_mode : ChallengeMode, target_location: str, world):
-    x, y, (qx, qy, qz, qw) = get_navigation_poses(challenge_mode, target_location)
+def navigation_subplan(challenge_mode : ChallengeMode, target_location: str, world, pose_override=None):
+    if pose_override is not None:
+        x, y, (qx, qy, qz, qw) = pose_override
+    else:
+        x, y, (qx, qy, qz, qw) = get_navigation_poses(challenge_mode, target_location)
     pose = Pose(
         position=Point3(x, y, 0.0, reference_frame=world.root),
         orientation=Quaternion(qx, qy, qz, qw, reference_frame=world.root),
@@ -221,13 +227,123 @@ def navigation_subplan(challenge_mode : ChallengeMode, target_location: str, wor
     )
     return NavigateAction(target_location=pose, keep_joint_states=True)
 
-def pickup_subplan(object_annotation: SemanticAnnotation, arm: Arms, world: World, assisted : bool=False):
-    object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
-    return PickUpAction(object_geometry=object_body, arm=arm, assisted=assisted)
+class ObjectNotInWorldError(Exception):
+    """
+    Raised when a task names an object type that has no instance in the world at all.
+    """
+
+
+def find_object_annotation(world: World, object_annotation: SemanticAnnotation):
+    if not isinstance(object_annotation, type):
+        return None
+    annotations = world.get_semantic_annotations_by_type(object_annotation)
+    return annotations[0] if annotations else None
+
+
+def remove_object_from_world(world, object_name: str) -> bool:
+    try:
+        annotation = world.get_semantic_annotation_by_name(object_name)
+    except WorldEntityNotFoundError:
+        return False
+    if annotation is None:
+        return False
+
+    body = annotation.root
+    with world.modify_world():
+        world.remove_semantic_annotation(annotation)
+        parent_connection = getattr(body, "parent_connection", None)
+        if parent_connection is not None:
+            world.remove_connection(parent_connection)
+        world.remove_kinematic_structure_entity(body)
+    return True
+
+
+def perceived_instance(found: dict, object_annotation: SemanticAnnotation):
+    for seen in found:
+        if type(seen) is object_annotation:
+            return seen
+    for seen in found:
+        if isinstance(seen, object_annotation):
+            return seen
+    return None
+
+
+def body_of(perceived_object, world: World, object_annotation: SemanticAnnotation) -> Body:
+    if perceived_object is not None:
+        return perceived_object.bodies[0]
+    name = getattr(object_annotation, "__name__", object_annotation)
+    logger.warning(
+        f"no perceived instance recorded for {name}; falling back to a by-class world lookup, "
+        f"which may return an object the robot has never actually seen"
+    )
+    return find_object_body(world, object_annotation)
+
+
+def find_object_body(world: World, object_annotation: SemanticAnnotation) -> Body:
+    annotation = find_object_annotation(world, object_annotation)
+    if annotation is None:
+        name = getattr(object_annotation, "__name__", object_annotation)
+        raise ObjectNotInWorldError(f"no {name} exists in the world")
+    return annotation.bodies[0]
+
+
+def pickup_subplan(object_annotation: SemanticAnnotation, arm: Arms, world: World, assisted : bool=False,
+                   perceived_object=None, location: str = ""):
+    object_body : Body = body_of(perceived_object, world, object_annotation)
+    success_probability = evaluation(ActionType.PICKUP, object_annotation, location).probability
+    return PickUpAction(object_geometry=object_body, arm=arm, assisted=assisted,
+                        success_probability=success_probability)
+
+
+def request_reposition_subplan(object_annotation: SemanticAnnotation, arm: Arms, world: World,
+                               perceived_object=None):
+    object_body : Body = body_of(perceived_object, world, object_annotation)
+    return RequestObjectRepositionAction(object_designator=object_body, arm=arm)
+
+def openable_body(annotation) -> Body:
+    if isinstance(annotation, HasDoors) and annotation.doors:
+        return annotation.doors[0].root
+    if isinstance(annotation, HasDrawers) and annotation.drawers:
+        return annotation.drawers[0].root
+    return annotation.bodies[0]
 
 def open_subplan(object_annotation, arm, world, assisted):
-    object_body: Body = world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
+    annotation = find_object_annotation(world, object_annotation)
+    if annotation is None:
+        name = getattr(object_annotation, "__name__", object_annotation)
+        raise ObjectNotInWorldError(f"no {name} exists in the world")
+    object_body: Body = openable_body(annotation)
     return OpenAction(object_designator=object_body, arm=arm, assisted=assisted)
+
+
+def origin_to_bottom_offset(object_body: Body) -> float:
+    local_bbs = object_body.collision.as_bounding_box_collection_in_frame(object_body).bounding_boxes
+    if local_bbs:
+        return float(min(bb.z_interval.lower for bb in local_bbs))
+
+    combined_mesh = getattr(object_body, "combined_mesh", None)
+    mesh_bounds = getattr(combined_mesh, "bounds", None) if combined_mesh is not None else None
+    if mesh_bounds is not None and len(mesh_bounds):
+        mesh_offset = float(mesh_bounds[0][2])
+        logger.warning(
+            f"{object_body.name} exposes no collision bounding boxes (every collision shape has "
+            f"an origin without a reference_frame, so they were all skipped); falling back to the "
+            f"visual mesh bottom {mesh_offset:.4f} to seat it"
+        )
+        return mesh_offset
+
+    logger.warning(
+        f"{object_body.name} has neither collision bounding boxes nor a visual mesh; assuming its "
+        f"origin sits at its bottom. If the object is modelled around its centre it will be "
+        f"placed half its own height too low."
+    )
+    return 0.0
+
+
+def body_is_upright(body: Body, upward_threshold: float = 0.95) -> bool:
+    world_T_body = body.global_pose.to_np()
+    # third column of the rotation block = the body's local Z axis expressed in world coordinates
+    return float(world_T_body[2, 2]) > upward_threshold
 
 
 def compute_surface_spaces(world) -> list[SurfaceSpace]:
@@ -235,9 +351,11 @@ def compute_surface_spaces(world) -> list[SurfaceSpace]:
     result = []
 
     for surface in surfaces:
-        # Prefer the pre-calculated supporting_surface Region (upward-facing geometry only)
-        # over the full structural bounding box, which includes legs and support frames.
-        if surface.supporting_surface is not None:
+        if surface.root is None or surface.root._world is None:
+            # dangling annotation whose body was removed from the world (e.g. the sofa)
+            continue
+
+        if surface.supporting_surface is not None and body_is_upright(surface.root):
             bb_collection = surface.supporting_surface.area.as_bounding_box_collection_in_frame(world.root)
         else:
             bb_collection = surface.as_bounding_box_collection_in_frame(world.root)
@@ -267,23 +385,18 @@ def objects_on_surface(
     surface: SurfaceSpace,
     world,
     z_tolerance: float = 0.05,
+    stack_tolerance: float = 0.15,
 ) -> list[tuple[Body, list]]:
-    """
-    Return (body, bounding_boxes) for every body currently resting on the given surface.
-
-    A body is considered "on" the surface when its bottom face is within z_tolerance
-    above the surface's top (z_surface) and its x/y centre falls within the surface footprint.
-    Furniture bodies that make up the supporting surfaces themselves are excluded.
-    """
-    furniture_bodies: set[Body] = {
-        b
-        for ann in world.get_semantic_annotations_by_type(HasSupportingSurface)
-        for b in ann.bodies
-    }
+    structural_bodies: set[Body] = set()
+    for annotation in world.get_semantic_annotations_by_type(HasSupportingSurface):
+        if isinstance(annotation, IsPerceivable):
+            continue
+        for body in annotation.bodies:
+            structural_bodies.add(body)
 
     result = []
     for body in world.bodies_with_collision:
-        if body in furniture_bodies:
+        if body in structural_bodies:
             continue
 
         world_T_body = world.compute_forward_kinematics(world.root, body)
@@ -297,18 +410,53 @@ def objects_on_surface(
         if (
             surface.x_min <= cx <= surface.x_max
             and surface.y_min <= cy <= surface.y_max
-            and surface.z_surface - z_tolerance <= z_bot
+            and surface.z_surface - z_tolerance <= z_bot <= surface.z_surface + stack_tolerance
         ):
             result.append((body, bbs))
     return result
 
+
+def blocks_reach_to(
+    candidate: tuple[float, float],
+    candidate_half: tuple[float, float],
+    occupied_box: tuple[float, float, float, float],
+    reference_point: tuple[float, float],
+) -> bool:
+    reference_x, reference_y = reference_point
+    box_x_min, box_x_max, box_y_min, box_y_max = occupied_box
+    object_x = (box_x_min + box_x_max) / 2
+    object_y = (box_y_min + box_y_max) / 2
+
+    to_object_x = object_x - reference_x
+    to_object_y = object_y - reference_y
+    distance_to_object = math.hypot(to_object_x, to_object_y)
+    if distance_to_object < 1e-6:
+        return False
+    direction_x = to_object_x / distance_to_object
+    direction_y = to_object_y / distance_to_object
+
+    to_candidate_x = candidate[0] - reference_x
+    to_candidate_y = candidate[1] - reference_y
+    along = to_candidate_x * direction_x + to_candidate_y * direction_y
+    if not 0.0 < along < distance_to_object:
+        # behind the other object, or behind the robot -- either way it is not in the way
+        return False
+
+    lateral = abs(to_candidate_x * direction_y - to_candidate_y * direction_x)
+    corridor = (
+        max(candidate_half)
+        + max(box_x_max - box_x_min, box_y_max - box_y_min) / 2
+    )
+    return lateral < corridor
+
 def find_free_placement_pose(
         surface: SurfaceSpace,
         object_body: Body,
-        world: object,
+        world: World,
         grid_step: float = 0.05,
-        x_padding: float = 0.05,
-        y_padding: float = 0.02,
+        edge_margin: float = 0.10,
+        object_clearance: float = 0.08,
+        reference_point: Optional[tuple[float, float]] = None,
 ) -> Optional[tuple[float, float]]:
     """
     Find a free (x, y) position on the surface where object_body can be placed
@@ -321,11 +469,11 @@ def find_free_placement_pose(
     # Object half-extents in its local frame (upright assumption)
     local_bbs = object_body.collision.as_bounding_box_collection_in_frame(object_body).bounding_boxes
     if local_bbs:
-        half_x = (max(bb.x_interval.upper for bb in local_bbs) - min(bb.x_interval.lower for bb in local_bbs)) / 2 + x_padding
-        half_y = (max(bb.y_interval.upper for bb in local_bbs) - min(bb.y_interval.lower for bb in local_bbs)) / 2 + y_padding
+        half_x = (max(bb.x_interval.upper for bb in local_bbs) - min(bb.x_interval.lower for bb in local_bbs)) / 2
+        half_y = (max(bb.y_interval.upper for bb in local_bbs) - min(bb.y_interval.lower for bb in local_bbs)) / 2
     else:
-        half_x = 0.1 + x_padding
-        half_y = 0.05 + y_padding
+        half_x = 0.1
+        half_y = 0.05
 
     # Collect footprints of all objects already on the surface, excluding the object itself
     occupied: list[tuple[float, float, float, float]] = []
@@ -339,74 +487,113 @@ def find_free_placement_pose(
             max(bb.y_interval.upper for bb in bbs),
         ))
 
-    # Candidate region: inset by the object's half-extents so the object stays on the surface
-    x_lo = surface.x_min + half_x
-    x_hi = surface.x_max - half_x
-    y_lo = surface.y_min + half_y
-    y_hi = surface.y_max - half_y
+    if reference_point is not None:
+        x_centre, y_centre = reference_point
+    else:
+        x_centre = (surface.x_min + surface.x_max) / 2
+        y_centre = (surface.y_min + surface.y_max) / 2
 
-    if x_lo > x_hi or y_lo > y_hi:
+    def search(margin: float, clearance: float, avoid_blocking: bool) -> Optional[tuple[float, float]]:
+        # Candidate region: inset so the whole footprint plus the margin stays on the surface
+        x_lo = surface.x_min + half_x + margin
+        x_hi = surface.x_max - half_x - margin
+        y_lo = surface.y_min + half_y + margin
+        y_hi = surface.y_max - half_y - margin
+        if x_lo > x_hi or y_lo > y_hi:
+            return None
+
+        # Candidates ordered by distance to the reference point, not raster-scan order --
+        # a raster scan always returns the first free cell it hits, which is always the
+        # same (x_lo, y_lo) corner whenever that corner happens to be free. That biases
+        # every placement into one corner of the surface instead of looking natural.
+        candidates = [
+            (float(x), float(y))
+            for x in np.arange(x_lo, x_hi + grid_step, grid_step)
+            for y in np.arange(y_lo, y_hi + grid_step, grid_step)
+        ]
+        candidates.sort(key=lambda xy: (xy[0] - x_centre) ** 2 + (xy[1] - y_centre) ** 2)
+
+        for x, y in candidates:
+            obj_x_min, obj_x_max = x - half_x - clearance, x + half_x + clearance
+            obj_y_min, obj_y_max = y - half_y - clearance, y + half_y + clearance
+            free = True
+            for occupied_box in occupied:
+                ox_min, ox_max, oy_min, oy_max = occupied_box
+                if (obj_x_min < ox_max and obj_x_max > ox_min
+                        and obj_y_min < oy_max and obj_y_max > oy_min):
+                    free = False
+                    break
+                if avoid_blocking and reference_point is not None and blocks_reach_to(
+                    (x, y), (half_x, half_y), occupied_box, reference_point
+                ):
+                    free = False
+                    break
+            if free:
+                return x, y
         return None
 
-    for x in np.arange(x_lo, x_hi + grid_step, grid_step):
-        for y in np.arange(y_lo, y_hi + grid_step, grid_step):
-            obj_x_min, obj_x_max = x - half_x, x + half_x
-            obj_y_min, obj_y_max = y - half_y, y + half_y
-            overlaps = any(
-                obj_x_min < ox_max and obj_x_max > ox_min
-                and obj_y_min < oy_max and obj_y_max > oy_min
-                for ox_min, ox_max, oy_min, oy_max in occupied
-            )
-            if not overlaps:
-                return float(x), float(y)
+    attempts = [
+        (edge_margin, object_clearance, True),   # everything we want
+        (edge_margin, object_clearance, False),  # crowded surface: accept blocking a neighbour
+        (0.0, object_clearance, False),          # narrow surface: accept sitting near the rim
+        (0.0, 0.0, False),                       # last resort: only refuse actual overlap
+    ]
+    for attempt_margin, attempt_clearance, attempt_avoid_blocking in attempts:
+        spot = search(
+            margin=attempt_margin,
+            clearance=attempt_clearance,
+            avoid_blocking=attempt_avoid_blocking,
+        )
+        if spot is not None:
+            return spot
 
     return None
 
 
 
-def place_subplan(challenge_mode : ChallengeMode, object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world, assisted : bool):
-    object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
+def place_subplan(challenge_mode : ChallengeMode, object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world, assisted : bool, robot: AbstractRobot, perceived_object=None):
+    object_body : Body = body_of(perceived_object, world, object_annotation)
 
-    surface_spaces = compute_surface_spaces(world=world)
+    def resolve_placement_pose() -> tuple[Optional[Pose], bool]:
+        surface_spaces = compute_surface_spaces(world=world)
+        matched_surface = next((s for s in surface_spaces if s.name == target_location), None)
+        if matched_surface is None:
+            logger.warning(ValueError(f"No surface named '{target_location}' found in the world."))
+            return None, True
 
-    free_spot = None
-    matched_surface = None
-    for surface_space in surface_spaces:
-        if surface_space.name == target_location:
-            matched_surface = surface_space
-            free_spot = find_free_placement_pose(surface=surface_space, world=world, object_body=object_body)
-            break
+        robot_position = robot.root.global_pose.to_position()
+        free_spot = find_free_placement_pose(
+            surface=matched_surface, world=world, object_body=object_body,
+            reference_point=(float(robot_position.x), float(robot_position.y)),
+        )
+        if free_spot is None:
+            logger.warning(f"No free placement spot found on '{target_location}'.")
+            return None, True
 
-    if matched_surface is None:
-        logger.warning(ValueError(f"No surface named '{target_location}' found in the world."))
-        assisted = True
-        return PlaceAction(object_designator=object_body, arm=arm, assisted=assisted)
-    if free_spot is None:
-        logger.warning(f"No free placement spot found on '{target_location}'.")
-        assisted = True
-        return PlaceAction(object_designator=object_body, arm=arm, assisted=assisted)
+        origin_to_bottom = origin_to_bottom_offset(object_body)
+        x, y = free_spot
+        z = matched_surface.z_surface - origin_to_bottom + 0.002
 
-    local_bbs = object_body.collision.as_bounding_box_collection_in_frame(object_body).bounding_boxes
-    origin_to_bottom = min(bb.z_interval.lower for bb in local_bbs) if local_bbs else 0.0
-    x, y = free_spot
-    z = matched_surface.z_surface - origin_to_bottom + 0.002
-    if z > 1.1:
-        assisted=True
+        _, _, (qx, qy, qz, qw) = get_navigation_poses(challenge_mode, target_location)
+        pose = Pose(
+            position=Point3(x, y, z, reference_frame=world.root),
+            orientation=Quaternion(qx, qy, qz, qw, reference_frame=world.root),
+            reference_frame=world.root,
+        )
+        return pose, z > 1.1
 
-    _, _, (qx, qy, qz, qw) = get_navigation_poses(challenge_mode, target_location)
-    pose = Pose(
-        position=Point3(x, y, z, reference_frame=world.root),
-        orientation=Quaternion(qx, qy, qz, qw, reference_frame=world.root),
-        reference_frame=world.root,
-    )
-    return PlaceAction(object_designator=object_body, arm=arm, target_location=pose, assisted=assisted)
+    success_probability = evaluation(ActionType.PLACE, object_annotation, target_location).probability
+    return PlaceAction(object_designator=object_body, arm=arm, assisted=assisted, pose_resolver=resolve_placement_pose,
+                       success_probability=success_probability)
 
-def throw_away_subplan(object_annotation: SemanticAnnotation, arm: Arms, world: World, assisted : bool=False):
-    object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
+def throw_away_subplan(object_annotation: SemanticAnnotation, arm: Arms, world: World, assisted : bool=False,
+                       perceived_object=None):
+    object_body : Body = body_of(perceived_object, world, object_annotation)
     return PlaceInTrashAction(object_designator=object_body, arm=arm, assisted=assisted)
 
-def place_in_trash_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world, assisted : bool):
-    object_body : Body= world.get_semantic_annotations_by_type(object_annotation)[0].bodies[0]
+def place_in_trash_subplan(object_annotation: SemanticAnnotation, arm: Arms, target_location: str, world, assisted : bool,
+                           perceived_object=None):
+    object_body : Body = body_of(perceived_object, world, object_annotation)
 
     return PlaceInTrashAction(object_designator=object_body, arm=arm, assisted=assisted)
 
@@ -442,7 +629,11 @@ def generate_plan(tasks: list[Task], context: Context):
 
 def at_location(context : Context, location : str, robot: AbstractRobot, threshold: float = 0.5, yaw_threshold: float = math.radians(20)) -> bool:
     challenge_mode = context.challenge_mode
-    x_goal, y_goal, (qx, qy, qz, qw) = get_navigation_poses(challenge_mode=challenge_mode,location=location)
+    navigation_pose = get_navigation_poses(challenge_mode=challenge_mode, location=location)
+    if navigation_pose is None:
+        # unknown location -> we cannot claim the robot is standing there
+        return False
+    x_goal, y_goal, (qx, qy, qz, qw) = navigation_pose
     point3_goal : Point3 = Point3(x=x_goal, y=y_goal, z=0)
     robot_pose : Pose = robot.root.global_pose
     robot_position : Point3 = robot_pose.to_position()
@@ -450,8 +641,6 @@ def at_location(context : Context, location : str, robot: AbstractRobot, thresho
     if float(robot_position.euclidean_distance(point3_goal)) >= threshold:
         return False
 
-    # Quaternion heading orientation, since the robot can only spin vertically. That means
-    # qz and qw are the only ones impacted
     goal_yaw = 2.0 * math.atan2(qz, qw)
     pose_matrix = robot_pose.to_np()
 
@@ -459,32 +648,52 @@ def at_location(context : Context, location : str, robot: AbstractRobot, thresho
     yaw_error = math.atan2(math.sin(robot_yaw - goal_yaw), math.cos(robot_yaw - goal_yaw))
     return abs(yaw_error) < yaw_threshold
 
+def resolve_step_objects(task_steps: list[TaskStep]) -> None:
+    last_pickup_object: Optional[SemanticAnnotation] = None
+    for task_step in task_steps:
+        if task_step.object_annotations is not None:
+            if task_step.action_type == ActionType.PICKUP:
+                last_pickup_object = task_step.object_annotations
+            continue
+        if task_step.action_type in (ActionType.PLACE, ActionType.THROW_AWAY):
+            task_step.object_annotations = last_pickup_object
+
 def generate_plan_taskstep_list(taskstep_list: list[TaskStep], context: Context) -> PlanNode:
     from pycram.plans.factories import make_node
     challenge_mode: ChallengeMode = context.challenge_mode
     plan = sequential(children=[], context=context)
     arm = Arms.LEFT
     action = None
+    resolve_step_objects(taskstep_list)
     last_pickup_object: Optional[SemanticAnnotation] = None
     action_list : list[ActionDescription] = []
     for task_step in taskstep_list:
+        action = None
         # TODO: add assisted tasks
         match task_step.action_type:
             case ActionType.NAVIGATE:
-                action = navigation_subplan(challenge_mode=challenge_mode, target_location=task_step.location, world=context.world)
+                action = navigation_subplan(challenge_mode=challenge_mode, target_location=task_step.location, world=context.world,
+                                            pose_override=task_step.nav_pose_override)
             case ActionType.PICKUP:
                 last_pickup_object : SemanticAnnotation= task_step.object_annotations
-                action = pickup_subplan(object_annotation=last_pickup_object, arm=arm, world=context.world, assisted=task_step.action_assisted)
+                action = pickup_subplan(object_annotation=last_pickup_object, arm=arm, world=context.world, assisted=task_step.action_assisted,
+                                        perceived_object=task_step.perceived_object, location=task_step.location)
             case ActionType.PLACE:
-                action = place_subplan(challenge_mode=challenge_mode, object_annotation=last_pickup_object, arm=arm, target_location=task_step.location, world=context.world, assisted=task_step.action_assisted)
+                action = place_subplan(challenge_mode=challenge_mode, object_annotation=last_pickup_object, arm=arm, target_location=task_step.location, world=context.world, assisted=task_step.action_assisted, robot=context.robot,
+                                       perceived_object=task_step.perceived_object)
             case ActionType.THROW_AWAY:
                 action = place_in_trash_subplan(object_annotation=last_pickup_object, arm=arm,
                                        target_location=task_step.location, world=context.world,
-                                       assisted=task_step.action_assisted)
+                                       assisted=task_step.action_assisted,
+                                       perceived_object=task_step.perceived_object)
             case ActionType.OPEN:
                 action = open_subplan(object_annotation=task_step.object_annotations, arm=arm, world=context.world, assisted=task_step.action_assisted)
             case ActionType.PARK:
                 action = ParkArmsAction(Arms.LEFT)
+            case ActionType.REQUEST_REPOSITION:
+                action = request_reposition_subplan(object_annotation=task_step.object_annotations,
+                                                   arm=arm, world=context.world,
+                                                   perceived_object=task_step.perceived_object)
 
             case ActionType.DETECT:
                 pass
@@ -512,24 +721,121 @@ def find_surface_of_object(context:Context, body: Body) -> HasSupportingSurface 
             return surface
     return None
 
+def navigation_location_names(challenge_mode: ChallengeMode) -> list[str]:
+    """Every location name this challenge mode knows an approach pose for."""
+    match challenge_mode:
+        case ChallengeMode.PP:
+            return list(NAVIGATION_POSES_PP.keys())
+        case _:
+            return list(NAVIGATION_POSES.keys())
+
+
+def closest_navigation_location(challenge_mode: ChallengeMode, position: Point3) -> Optional[str]:
+    best_location = None
+    best_distance = math.inf
+    for location in navigation_location_names(challenge_mode):
+        if location == "":
+            continue
+        navigation_pose = get_navigation_poses(challenge_mode, location)
+        if navigation_pose is None:
+            continue
+        x, y, _ = navigation_pose
+        distance = math.dist((float(position.x), float(position.y)), (x, y))
+        if distance < best_distance:
+            best_distance = distance
+            best_location = location
+    return best_location
+
+
+def ground_step_location(context: Context, task_step: TaskStep) -> Optional[str]:
+    if task_step.object_annotations is None:
+        return None
+    world = context.world
+    body = body_of(task_step.perceived_object, world, task_step.object_annotations)
+    if body is None:
+        return None
+    return closest_navigation_location(context.challenge_mode, body.global_pose.to_position())
+
+
 def reposition_task_list(context: Context, task_list: list[TaskStep], robot: AbstractRobot) -> list[TaskStep]:
-    """
-    Prefix every step whose target location differs from the robot's (tracked)
-    pose with an explicit NAVIGATE, so a repaired or freshly generated plan
-    actually drives there instead of assuming the robot is already in position.
-    """
-    temp_robot = deepcopy(robot)
+    challenge_mode = context.challenge_mode
     exec_steps: list[TaskStep] = []
+    predicted_pose = None
+
     for task_step in task_list:
-        if task_step.location != "" and not at_location(context=context, location=task_step.location, robot=temp_robot):
-            navigation_pose = get_navigation_poses(context.challenge_mode, task_step.location)
-            if navigation_pose is not None:
-                x, y, _ = navigation_pose
-                temp_robot.root.global_pose.x = x
-                temp_robot.root.global_pose.y = y
-            exec_steps.append(TaskStep(action_type=ActionType.NAVIGATE, location=task_step.location))
+        location = task_step.location
+
+        override = task_step.nav_pose_override
+        if override is not None:
+            if predicted_pose != override:
+                exec_steps.append(TaskStep(action_type=ActionType.NAVIGATE, location=location,
+                                           nav_pose_override=override))
+            predicted_pose = override
+            exec_steps.append(task_step)
+            continue
+
+        navigation_pose = get_navigation_poses(challenge_mode, location) if location else None
+
+        if navigation_pose is None:
+            grounded_location = ground_step_location(context=context, task_step=task_step)
+            if grounded_location is None:
+                exec_steps.append(task_step)
+                continue
+            logger.warning(
+                f"{task_step.action_type} step names location '{location}', which this challenge "
+                f"mode has no approach pose for -> navigating to '{grounded_location}' instead, "
+                f"the closest known location to the step's own object"
+            )
+            location = grounded_location
+            task_step.location = grounded_location
+            navigation_pose = get_navigation_poses(challenge_mode, location)
+
+        if predicted_pose is None:
+            already_there = False
+        else:
+            already_there = predicted_pose == navigation_pose
+
+        if not already_there:
+            exec_steps.append(TaskStep(action_type=ActionType.NAVIGATE, location=location))
+        predicted_pose = navigation_pose
         exec_steps.append(task_step)
+
     return exec_steps
+
+
+def compute_reposition_pose(context: Context, task_step: TaskStep, standoff: float = 0.55):
+    world = context.world
+    challenge_mode = context.challenge_mode
+
+    default_pose = get_navigation_poses(challenge_mode, task_step.location) if task_step.location else None
+    if default_pose is None:
+        return None
+
+    candidate = task_step.perceived_object or task_step.object_annotations
+    if isinstance(candidate, type):
+        annotation = find_object_annotation(world, candidate)
+    elif candidate is not None and getattr(candidate, "bodies", None):
+        annotation = candidate
+    else:
+        annotation = None
+    if annotation is None or not annotation.bodies:
+        return None
+
+    object_pose = annotation.bodies[0].global_pose
+    object_x, object_y = float(object_pose.x), float(object_pose.y)
+
+    base_x, base_y = default_pose[0], default_pose[1]
+    direction_x, direction_y = object_x - base_x, object_y - base_y
+    distance = math.hypot(direction_x, direction_y)
+    if distance < 1e-3:
+        # already essentially on top of the object -- no meaningful reposition to make
+        return None
+    unit_x, unit_y = direction_x / distance, direction_y / distance
+
+    new_x = object_x - unit_x * standoff
+    new_y = object_y - unit_y * standoff
+    yaw = math.atan2(direction_y, direction_x)
+    return (new_x, new_y, _quat(yaw))
 
 # TODO : TO POSE
 
@@ -571,8 +877,8 @@ tuple[float, float, float, float]]] = {
     "dishwasher_rack": (3.40, 3.05, _quat(-math.pi / 2)), # same approach pose as "dishwasher"
     "lowerTable":    (3.05, 4.05, _quat( math.pi)),     # east of the moved table
     "extra_space":   (3.95, 3.70, _quat( 0.1)),         # west of extra_space table
-    "trash_can":     (1, 1.70, _quat( 0.1)),         # west of the can, facing east; outside the trash-object spawn band
-    "trash":         (1.25, 1.70, _quat( 0.1)),         # alias used by place-in-trash task steps
+    "trash_can":     (2.1975, 3, _quat(-math.pi / 2)),  # north of the (moved) can, facing south
+    "trash":         (2.1975, 3, _quat(-math.pi / 2)),  # alias used by place-in-trash task steps
     "desk":          (1.3, 1.2, _quat( math.pi)),        # east of desk,   facing west
     "cabinet":       (3.55, 4.72, _quat( 0.1)),          # same approach for every shelf layer
     "shelf_1":       (3.55, 4.72, _quat( 0.1)),          # west of cupboard, facing east, clear of the opened doors
@@ -599,21 +905,34 @@ def get_remaining_task_steps(task: Task) -> list[TaskStep]:
 
     return failed_taskstep
 
+def nav_time_between(x1: float, y1: float, x2: float, y2: float, speed: float = 0.5) -> float:
+    return math.dist((x1, y1), (x2, y2)) / speed
+
+
 def nav_time(robot_pose: Point3, to_loc: str, speed: float = 0.55 / 3.6) -> float:
     (x1, y1) = robot_pose.x, robot_pose.y
     (x2, y2) = NAVIGATION_POSES[to_loc][:2]
-    return math.dist((x1, y1), (x2, y2)) / speed
+    return nav_time_between(x1, y1, x2, y2, speed)
 
 def challenge_setup(challenge_mode : ChallengeMode):
     match challenge_mode:
         case ChallengeMode.PP:
-            return setup_pp(challenge_mode)
+            return setup_pp(challenge_mode, doors_open=doors_open)
         case ChallengeMode.GPSR:
             setup_gpsr()
         case ChallengeMode.FD:
             setup_fd()
 
-def randomized_placement(supporting_surface : HasSupportingSurface, object_scales : list[Scale], max_attempts: int = 100) -> list[Pose]:
+
+def setup_pp_all_doors_open(challenge_mode : ChallengeMode = ChallengeMode.PP):
+    return setup_pp(challenge_mode, doors_open=True)
+
+
+def setup_pp_all_doors_closed(challenge_mode : ChallengeMode = ChallengeMode.PP):
+    return setup_pp(challenge_mode, doors_open=False)
+
+def randomized_placement(supporting_surface : HasSupportingSurface, object_scales : list[Scale], max_attempts: int = 100,
+                         front_clearance: float = 0.0, approach_xy: Optional[tuple[float, float]] = None) -> list[Pose]:
     world = supporting_surface._world # retrieving world for later transformation.
     region = supporting_surface.supporting_surface
 
@@ -668,7 +987,37 @@ def randomized_placement(supporting_surface : HasSupportingSurface, object_scale
 
 
 
-def setup_pp(challenge_mode : ChallengeMode):
+def set_container_openings(world: World, opened: bool) -> list[str]:
+    containers = []
+    for annotation in list(world.get_semantic_annotations_by_type(HasDoors)) + \
+                      list(world.get_semantic_annotations_by_type(HasDrawers)):
+        # a Dishwasher is both HasDoors and HasDrawers, so it turns up twice
+        if annotation not in containers:
+            containers.append(annotation)
+
+    moved: list[str] = []
+    for annotation in containers:
+        movable_parts = []
+        if isinstance(annotation, HasDoors):
+            movable_parts += [door.root for door in annotation.doors]
+        if isinstance(annotation, HasDrawers):
+            movable_parts += [drawer.root for drawer in annotation.drawers]
+
+        for part in movable_parts:
+            try:
+                connection = part.get_first_parent_connection_of_type(ActiveConnection1DOF)
+            except Exception as error:
+                logger.warning(f"cannot open/close {part.name}: {error}")
+                continue
+            limits = connection.dof.limits
+            connection.position = limits.upper.position if opened else limits.lower.position
+            moved.append(str(part.name))
+
+    logger.info(f"containers set to {'open' if opened else 'closed'}: {moved}")
+    return moved
+
+
+def setup_pp(challenge_mode : ChallengeMode, doors_open: bool = True):
     world, dispatcher = setup_world()
 
     hsrb = HSRB.from_world(world)
@@ -678,15 +1027,7 @@ def setup_pp(challenge_mode : ChallengeMode):
     dispatcher.known_furniture = world.bodies
 
 
-    # Opening doors -------------------------------------------------
-    left_door : Body= world.get_body_by_name("cupboard_left_door")
-    right_door : Body= world.get_body_by_name("cupboard_right_door")
-
-    left_door_connection = left_door.get_first_parent_connection_of_type(ActiveConnection1DOF)
-    right_door_connection = right_door.get_first_parent_connection_of_type(ActiveConnection1DOF)
-
-    left_door_connection.position = left_door_connection.dof.limits.upper.position
-    right_door_connection.position = right_door_connection.dof.limits.upper.position
+    set_container_openings(world, opened=doors_open)
 
     # Removing sofa -------------------------------------------------
     sofa: Body = world.get_body_by_name("sofa")
@@ -760,23 +1101,18 @@ def setup_pp(challenge_mode : ChallengeMode):
             except Exception as e:
                 print(f"ignoring {s.name}: {e}")
 
-    # 6 on dining table, 1 cuttlery, 1 mug, 1 trash, 3 random
-    # 2 objects common_objects on surface
-    # Washing tab on some static spot
-    # 1 trash object on floor near trash bin
-    # each cabinet space has one object
-    # Breakfast objects = Bowl , spoon On surface
-    # Breakfast , milk, ceral, in cabinet
+    dispatcher.known_furniture = world.bodies
+
     cutlery = ["Knife", "Fork"]
     tableware = ["Cup"]
-    trash = ["Bottle", "Banana"]
     common_objects = ["Pringles", "Apple", "Bottle", "MustardBottle", "TomatoSoup"]
     breakfast_objects = ["Bowl", "Spoon"]
 
     cabinet_objects = ["Milk", "Cereal"]
 
     # Autogenerating object lists ----------------------------------
-    trash_obj1, trash_obj2 = random.sample(trash, 2)
+    trash_obj2 = "Bottle"
+    trash_obj1 = "Banana"
     # both trash picks get spawned elsewhere, so the table picks must not duplicate them
     common_obj1, common_obj2 = random.sample(
         [o for o in common_objects if o not in (trash_obj1, trash_obj2)], 2
@@ -796,8 +1132,12 @@ def setup_pp(challenge_mode : ChallengeMode):
     dining_table : SemanticAnnotation = world.get_semantic_annotation_by_name("dining_table")
     extra_space : SemanticAnnotation = world.get_semantic_annotation_by_name("extra_space")
     lower_table : SemanticAnnotation = world.get_semantic_annotation_by_name("lowerTable")
-    # cooking_t_ss = dining_table.supporting.
-    placement_dining_table = randomized_placement(dining_table, scales_table_obj)
+    dining_nav_x, dining_nav_y, _ = get_navigation_poses(challenge_mode, "dining_table")
+    milk_front_clearance = 0.28
+    placement_dining_table = randomized_placement(
+        dining_table, scales_table_obj,
+        front_clearance=milk_front_clearance, approach_xy=(dining_nav_x, dining_nav_y),
+    )
     placement_extra_space = randomized_placement(extra_space, scales_extra_obj)
     placement_lower_table = randomized_placement(lower_table, scales_lower_table)
 
@@ -812,9 +1152,18 @@ def setup_pp(challenge_mode : ChallengeMode):
     trashcan_lx, trashcan_ly = trashcan_x - can_hx, trashcan_y - can_hy
     trashcan_ux, trashcan_uy = trashcan_x + can_hx, trashcan_y + can_hy
 
+    nav_x, nav_y, _ = get_navigation_poses(challenge_mode, "trash_can")
+    approach_dx, approach_dy = nav_x - trashcan_x, nav_y - trashcan_y
+    approach_distance = math.hypot(approach_dx, approach_dy)
+    facing_x, facing_y = approach_dx / approach_distance, approach_dy / approach_distance
+    lateral_x, lateral_y = -facing_y, facing_x
+
     overlap = True
     while overlap:
-        rand_x, rand_y = random.uniform(trashcan_lx - threshold, trashcan_ux + threshold), random.uniform(trashcan_ly - threshold, trashcan_uy + threshold)
+        standoff = max(can_hx, can_hy) + obj_hx + random.uniform(0.05, threshold)
+        lateral = random.uniform(-0.15, 0.15)
+        rand_x = trashcan_x + facing_x * standoff + lateral_x * lateral
+        rand_y = trashcan_y + facing_y * standoff + lateral_y * lateral
 
         place_lx, place_ly = rand_x - obj_hx, rand_y - obj_hy
         place_ux, place_uy = rand_x + obj_hx, rand_y + obj_hy

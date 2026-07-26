@@ -638,3 +638,15 @@ STATIC_CHALLENGE_TASKS: dict[ChallengeMode, list[StaticTask]] = {
     ChallengeMode.PP: STATIC_PP_TASKS,
 }
 
+def get_pp(number_tasks: int) -> list[Task]:
+    tasks : list[Task] = []
+    for i in range(number_tasks):
+        pp_task = random.choice(PP_CANDIDATE_TASKS)
+        if tasks.__contains__(pp_task):
+            i-=1
+            continue
+        tasks.append(pp_task)
+    return tasks
+
+CHALLENGE_PP : list[Task] = get_pp(3)
+

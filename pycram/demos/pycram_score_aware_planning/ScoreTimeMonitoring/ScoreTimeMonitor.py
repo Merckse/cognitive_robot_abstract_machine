@@ -7,7 +7,7 @@ import time
 
 from dataclasses import asdict, dataclass, field
 
-from common.cram_types import TaskStep, ScoreEvent, Task, Status
+from common.cram_types import ActionType, TaskStep, ScoreEvent, Task, Status
 from common.values import CHALLENGE_DURATION, CHALLENGE_TASKS
 from helper_methods import get_values
 from pycram.datastructures.enums import TaskStatus, ChallengeMode
@@ -17,64 +17,67 @@ logger = logging.getLogger(__name__)
 
 
 def _json_default(o):
-    """Fallback encoder for values json can't handle natively.
-
-    SemanticAnnotations are carried as the annotation class itself (e.g. ``Bowl``),
-    which json can't serialize — emit its name instead.
-    """
+    """Fallback encoder: SemanticAnnotations are carried as the class itself, emit its name."""
     if isinstance(o, type):
         return o.__name__
     return str(o)
 
 @dataclass
 class ScoreTimeMonitor:
+
     challenge_mode: ChallengeMode = field(default=None)
-    """
-    Challenge mode, that is being executed.
-    """
     _score_events: list[ScoreEvent] = field(default_factory=list)
-    """
-    List of all score events.
-    """
     _start_time : datetime.datetime = field(default_factory=datetime.datetime.now)
-    """
-    The starting time of the entire challenge, this is also used for naming the log file.
-    """
+    """Start of the challenge, also used for naming the log file."""
     _score: int = field(default=0)
-    """
-    The total score of the entire challenge.
-    """
     _time: int = field(default=0)
-    """
-    The total time of the entire challenge.
-    """
     _challenge_duration: int = field(default=0, init=False)
-    """
-    the duration that the challenge has run for.
-    """
 
     def __post_init__(self):
         self._challenge_duration = CHALLENGE_DURATION.get(self.challenge_mode, 0)
 
-    def record_score(self, task_step: TaskStep, plan: SequentialNode):
+    @staticmethod
+    def _carries_failure_reason(node) -> bool:
+        """
+        Whether this node or anything below it actually raised. This separates the one step that
+        really failed from the downstream steps that were interrupted before they ever ran.
+        """
+        for candidate in [node] + node.descendants:
+            if candidate.reason is not None:
+                return True
+        return False
+
+    def record_score(self, task_step: TaskStep, plan: SequentialNode, duration: float = None):
+
+        outcome = plan.status
+        succeeded = outcome == TaskStatus.SUCCEEDED
+        failed = outcome in (TaskStatus.FAILED, TaskStatus.INTERRUPTED)
+        if not succeeded and not failed:
+            return
+
+        if outcome == TaskStatus.INTERRUPTED and not self._carries_failure_reason(plan):
+            return
+
         penalty : int = 0
         points : int = 0
         action_start_time = (plan.start_time - self._start_time).total_seconds()
-        duration = (plan.end_time - plan.start_time).total_seconds()
-        self._time += duration
+        if duration is None:
+            # an interrupted node never stamps end_time, so fall back to now
+            end_time = plan.end_time if plan.end_time is not None else datetime.datetime.now()
+            duration = (end_time - plan.start_time).total_seconds()
+        self._time = self.time_taken_seconds_total()
 
-        outcome = plan.status
         max_points, max_penalty, _, _ = get_values(action_type=task_step.action_type, semantic_annotation=task_step.object_annotations, location=task_step.location)
 
-        if outcome == TaskStatus.SUCCEEDED:
-            self._score += max_points
-            points = max_points
-        elif outcome == TaskStatus.FAILED:
-            # TODO: replace with proper Reference
-            self._score -= max_penalty
-            penalty = max_penalty
+        if succeeded:
+            if task_step.action_assisted:
+                points = 0
+            else:
+                self._score += max_points
+                points = max_points
         else:
-            return
+            self._score += max_penalty
+            penalty = max_penalty
 
         event = ScoreEvent(
             assisted=task_step.action_assisted,
@@ -91,29 +94,42 @@ class ScoreTimeMonitor:
         self._score_events.append(event)
         self._log(event=event, start_time=self._start_time)
 
+    def record_plan_scores(self, task_steps: list[TaskStep], plan: SequentialNode):
+        executed_steps = []
+        for task_step in task_steps:
+            if task_step.action_type != ActionType.DETECT:
+                executed_steps.append(task_step)
+        previous_end = plan.start_time
+        for task_step, node in zip(executed_steps, plan.plan.root.children):
+            node_end = node.end_time if node.end_time is not None else datetime.datetime.now()
+            duration = max(0.0, (node_end - previous_end).total_seconds())
+            self.record_score(task_step=task_step, plan=node, duration=duration)
+            previous_end = node_end
+
     def record_task_start(self, task: Task):
-        """
-        Call at the start of each task execution so elapsed and overtime
-        can be computed mid-task by the stabilizer.
-        """
+        if task.status == Status.RUNNING and task.task_begin is not None:
+            return
         task.status = Status.RUNNING
         task.task_begin = datetime.datetime.now()
 
     def record_task_interrupt(self, task: Task):
-        """
-        Call at the start of each task execution so elapsed and overtime
-        can be computed mid-task by the stabilizer.
-        """
         task.status = Status.SKIPPED
-        task.duration += round((datetime.datetime.now() - task.task_begin).total_seconds())
+        task.actual_duration += self.task_elapsed_seconds(task)
+        task.task_begin = None
 
     def record_task_end(self, task: Task):
-        """
-        Call at the start of each task execution so elapsed and overtime
-        can be computed mid-task by the stabilizer.
-        """
         task.status = Status.SUCCESS
-        task.duration = round((datetime.datetime.now() - task.task_begin).total_seconds())
+        task.actual_duration += self.task_elapsed_seconds(task)
+        task.task_begin = None
+
+    @property
+    def score(self) -> int:
+        return self._score
+
+    @property
+    def score_events(self) -> list[ScoreEvent]:
+        return list(self._score_events)
+
     def task_elapsed_seconds(self, task: Task) -> float:
         """Seconds since this task started executing."""
         if task.task_begin is None:
@@ -129,7 +145,7 @@ class ScoreTimeMonitor:
         return remaining_time
 
     def time_remaining_seconds_task(self, task: Task):
-        remaining_time = task.duration - (datetime.datetime.now() - task.task_begin).total_seconds()
+        remaining_time = task.duration - self.task_elapsed_seconds(task)
         return remaining_time
 
     def time_taken_seconds_total(self):
@@ -171,25 +187,21 @@ class ScoreTimeMonitor:
         """
         mean of time taken for tasks in challenge
         """
-        tasks = CHALLENGE_TASKS.get(challenge_mode)
-        task_number = len(tasks)
+        tasks = CHALLENGE_TASKS.get(challenge_mode) or []
+        if not tasks:
+            return 0.0
         ts_times: list[int] = []
         for t in tasks:
-            task_steps = len(t.task_steps)
             ts_time : int = 0
             for ts in t.task_steps:
                 ts_time += ts.action_time
             ts_times.append(ts_time)
-        avg_time = sum(ts_times) / task_number
+        avg_time = sum(ts_times) / len(tasks)
         return avg_time
 
     def limited_time(self) -> bool:
-        """
-        A function, that just returns if there is limited time. Limited time is here defined by a limit
-        of 10 percent of the overall time and the median of all task durations.
-        """
         avg_task_duration = self.mean_tasks(self.challenge_mode)
-        challenge_remaining = self._total_time - self._challenge_duration
-        limited : bool = False if challenge_remaining > avg_task_duration else True
+        challenge_remaining = self.time_remaining_seconds_total()
+        limited : bool = challenge_remaining <= avg_task_duration
 
         return limited

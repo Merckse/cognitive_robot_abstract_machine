@@ -9,8 +9,11 @@ from krrood.entity_query_language.core.base_expressions import SymbolicExpressio
 from krrood.entity_query_language.factories import variable_from, and_
 from pycram.config.action_conf import ActionConfig
 from pycram.datastructures.dataclasses import Context
+import math
 from pycram.plans.factories import execute_single
 from pycram.robot_plans.actions.base import ActionDescription
+from semantic_digital_twin.spatial_types.spatial_types import Pose
+from semantic_digital_twin.spatial_types import Point3
 from pycram.robot_plans.motions.navigation import MoveMotion
 from pycram.robot_plans.motions.robot_body import LookingMotion
 from semantic_digital_twin.reasoning.predicates import allclose
@@ -65,6 +68,18 @@ class NavigateAction(ActionDescription):
             kwargs["target_location"],
             atol=0.03,
         )
+
+
+def look_forward_action(robot, world) -> "LookAtAction":
+    base = robot.root.global_pose
+    matrix = base.to_np()
+    yaw = math.atan2(matrix[1, 0], matrix[0, 0])
+    target = Pose(
+        position=Point3(float(base.x) + math.cos(yaw), float(base.y) + math.sin(yaw), 0.9,
+                        reference_frame=world.root),
+        reference_frame=world.root,
+    )
+    return LookAtAction(target=target)
 
 
 @dataclass

@@ -11,9 +11,32 @@ from semantic_digital_twin.world_description.world_entity import (
 )
 from giskardpy.motion_statechart.context import MotionStatechartContext
 from giskardpy.motion_statechart.data_types import DefaultWeights
+from giskardpy.motion_statechart.goals.collision_avoidance import (
+    ExternalCollisionAvoidance,
+    UpdateTemporaryCollisionRules,
+    make_external_collision_rules,
+)
+from giskardpy.motion_statechart.goals.pick_up import _AllowObjectCollisions
 from giskardpy.motion_statechart.graph_node import Goal, NodeArtifacts
 from giskardpy.motion_statechart.tasks.cartesian_tasks import CartesianPose
 from giskardpy.motion_statechart.tasks.joint_tasks import JointPositionList, JointState
+from semantic_digital_twin.robots.abstract_robot import AbstractRobot
+
+
+def _add_container_collision_rules(goal: Goal, context: MotionStatechartContext,
+                                   environment_link: KinematicStructureEntity) -> None:
+    robots = context.world.get_semantic_annotations_by_type(AbstractRobot)
+    robot = robots[0]
+    arm_buffer = 0.01
+    goal.add_node(
+        UpdateTemporaryCollisionRules(
+            temporary_rules=[
+                *make_external_collision_rules(robot=robot, arm_buffer_zone=arm_buffer),
+                _AllowObjectCollisions(_object_body=environment_link),
+            ]
+        )
+    )
+    goal.add_node(ExternalCollisionAvoidance(robot=robot))
 
 
 @dataclass(eq=False, repr=False)
@@ -65,6 +88,7 @@ class Open(Goal):
                 ),
             ]
         )
+        _add_container_collision_rules(self, context, self.environment_link)
 
     def build(self, context: MotionStatechartContext) -> NodeArtifacts:
         return NodeArtifacts(
@@ -123,6 +147,7 @@ class Close(Open):
                 ),
             ]
         )
+        _add_container_collision_rules(self, context, self.environment_link)
 
     def build(self, context: MotionStatechartContext) -> NodeArtifacts:
         return NodeArtifacts(

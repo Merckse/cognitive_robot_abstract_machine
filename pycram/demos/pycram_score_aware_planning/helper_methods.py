@@ -938,6 +938,32 @@ def randomized_placement(supporting_surface : HasSupportingSurface, object_scale
 
     bb = region.area.as_bounding_box_collection_in_frame(region).bounding_box() # get bounding box to use upper and lower bound
 
+    reserve_front_edge = front_clearance > 0.0 and approach_xy is not None
+    front_unit_x = front_unit_y = 0.0
+    surface_center_x = surface_center_y = 0.0
+    front_edge_limit = 0.0
+    if reserve_front_edge:
+        corner_specs = [(bb.min_x, bb.min_y), (bb.min_x, bb.max_y),
+                        (bb.max_x, bb.min_y), (bb.max_x, bb.max_y)]
+        corners_world_xy: list[tuple[float, float]] = []
+        for corner_x, corner_y in corner_specs:
+            corner_pose = Pose(position=Point3(corner_x, corner_y, bb.max_z), reference_frame=region)
+            corner_world = world.transform(corner_pose, world.root)
+            corners_world_xy.append((float(corner_world.x), float(corner_world.y)))
+        surface_center_x = sum(cx for cx, _ in corners_world_xy) / 4
+        surface_center_y = sum(cy for _, cy in corners_world_xy) / 4
+        front_dx = approach_xy[0] - surface_center_x
+        front_dy = approach_xy[1] - surface_center_y
+        front_len = math.hypot(front_dx, front_dy)
+        front_unit_x, front_unit_y = front_dx / front_len, front_dy / front_len
+        # how far the surface itself reaches toward the robot from its centre, along the approach
+        front_extent = 0.0
+        for corner_x_w, corner_y_w in corners_world_xy:
+            reach = (corner_x_w - surface_center_x) * front_unit_x + (corner_y_w - surface_center_y) * front_unit_y
+            if reach > front_extent:
+                front_extent = reach
+        front_edge_limit = front_extent - front_clearance
+
     pose_temp = [] # used to store the temp_poses for easier collision comparasion.
     poses : list[Pose]= []
     threshold = 0.05
@@ -973,6 +999,14 @@ def randomized_placement(supporting_surface : HasSupportingSurface, object_scale
                 # z is the surface top; generic_object_spawner lifts each object by its own geometry
                 pose = Pose(position=Point3(rand_x, rand_y, bb.max_z), reference_frame=region)
                 world_pose = world.transform(pose, world.root) # Transforming into the world root, since we are still in region frame.
+
+                if reserve_front_edge:
+                    toward_robot = ((float(world_pose.x) - surface_center_x) * front_unit_x
+                                    + (float(world_pose.y) - surface_center_y) * front_unit_y)
+                    if toward_robot > front_edge_limit:
+                        continue
+
+                pose_temp.append((rand_x,rand_y,hx,hy))
                 poses.append(world_pose)
                 break
         else:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import random
 import time
 from copy import deepcopy
@@ -20,6 +21,8 @@ from pycram.datastructures.enums import (
 from pycram.datastructures.grasp import GraspDescription
 from pycram.plans.factories import sequential, execute_single, code
 from pycram.plans.failures import ObjectNotGrasped
+from giskardpy.motion_statechart.exceptions import CollisionViolatedError
+from giskardpy.motion_statechart.goals.pick_up import ObjectDoesntFitException, ObjectNotReachableException
 from pycram.pose_validator import (
     pose_sequence_reachability_validator,
 )
@@ -37,9 +40,9 @@ from semantic_digital_twin.datastructures.definitions import GripperState
 from semantic_digital_twin.reasoning.predicates import allclose
 from semantic_digital_twin.reasoning.robot_predicates import is_body_in_gripper
 from semantic_digital_twin.robots.abstract_robot import ParallelGripper, Manipulator
-from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix
+from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix, Point3
 from semantic_digital_twin.spatial_types.spatial_types import Pose
-from semantic_digital_twin.world_description.connections import FixedConnection, ActiveConnection1DOF
+from semantic_digital_twin.world_description.connections import FixedConnection, ActiveConnection1DOF, Connection6DoF
 from semantic_digital_twin.world_description.world_entity import Body
 
 logger = logging.getLogger(__name__)
@@ -285,9 +288,20 @@ class PickUpAction(ActionDescription):
     If True, constrains the gripper to stay vertically aligned during the reach.
     """
 
-    probability : float= 0
+    success_probability: float = field(default=1.0, kw_only=True)
     """
-    The simulated probability of a event failing
+    Simulated chance, in [0, 1], that this pickup succeeds. At execute() time (unassisted only),
+    a uniform draw against this rolls a failure at rate (1 - success_probability) and raises one
+    of the exceptions below instead of running the real motion. Default 1.0 means "never fails",
+    so any caller that does not set this explicitly (tests, other demos) is unaffected.
+
+    Callers wanting this to simulate a specific object/location's real failure rate should pass
+    the *same* probability their evaluator uses to estimate this action -- see
+    pycram/demos/pycram_score_aware_planning/helper_methods.py's pickup_subplan(), which sources
+    it from common/values.py's evaluation() table (the same table ProbabilityEvaluator reads for
+    RQ1 estimation). A ground truth that disagrees with what the estimator assumes makes any
+    score/success comparison partly a calibration artefact instead of a real ordering/repair
+    effect.
     """
 
     assisted : bool = False
@@ -297,14 +311,21 @@ class PickUpAction(ActionDescription):
     """
 
     def execute(self) -> None:
-        # if not self.assisted:
-        #     errors = [ObjectNotGrasped, CollisionViolatedError, ObjectDoesntFitException, TimeoutError, ObjectNotReachableException]
-        #     n = 100
-        #     failure = random.randint(0,n)
-        #     error_type = random.randint(0,3)
-        #     failure_range = n * self.probability
-        #     if failure < failure_range:
-        #         raise errors[error_type]
+        if not self.assisted and self.success_probability < 1.0:
+            if random.random() > self.success_probability:
+                # Instances, not bare classes: `raise SomeExceptionClass` implicitly calls
+                # SomeExceptionClass() with no arguments, which is fine for the two plain
+                # Exception subclasses here but crashes for the two dataclass-based ones
+                # (ObjectNotGrasped needs body/arm, CollisionViolatedError needs
+                # violated_collisions/thresholds) with a TypeError that masked the intended
+                # simulated failure as an unrelated missing-arguments crash.
+                errors = [
+                    ObjectNotGrasped(body=self.object_geometry, arm=self.arm),
+                    CollisionViolatedError(violated_collisions=[], thresholds=[]),
+                    ObjectDoesntFitException(),
+                    ObjectNotReachableException(),
+                ]
+                raise random.choice(errors)
 
         # manipulators[0] = LEFT, manipulators[1] = RIGHT
 
@@ -344,6 +365,14 @@ class PickUpAction(ActionDescription):
                 ]
             )
         ).perform()
+
+        # Reset the gaze straight ahead so the head is not left pointing off to the side after the
+        # grasp (which otherwise makes perception look at the wrong place). Non-fatal + unscored.
+        try:
+            from pycram.robot_plans.actions.core.navigation import look_forward_action
+            self.add_subplan(sequential([look_forward_action(self.robot, self.world)])).perform()
+        except Exception:
+            pass
 
 
     @staticmethod
@@ -438,6 +467,66 @@ class HandedOverAction(ActionDescription):
         self.add_subplan(sequential([PointGripperForwardMotion(arm=self.arm),
                                      GiskardMoveGripperMotion(gripper_state=GripperState.OPEN,
                                                               arm=self.arm)])).perform()
+
+
+@dataclass
+class RequestObjectRepositionAction(ActionDescription):
+
+    wait_seconds: float = field(default=5.0, kw_only=True)
+    """
+    How long the human is given to actually move the object.
+    """
+
+    def execute(self) -> None:
+        object_body = self.object_designator
+        robot_position = self.robot.root.global_pose.to_position()
+        object_pose = object_body.global_pose
+        object_position = object_pose.to_position()
+
+        offset_x = float(object_position.x) - float(robot_position.x)
+        offset_y = float(object_position.y) - float(robot_position.y)
+        distance = math.hypot(offset_x, offset_y)
+
+        if distance <= self.reach_distance:
+            # Already close; whatever made the pickup fail is not the standing distance, so
+            # moving it would only disturb the scene for nothing.
+            logger.info(
+                f"{object_body.name} is already {distance:.2f}m away -> nothing to reposition"
+            )
+            return
+
+        print("Could you place", object_body.name, "closer to me?")
+        time.sleep(self.wait_seconds)
+
+        # Straight along the line back towards the robot, keeping z: the object stays on whatever
+        # surface it is resting on, it just ends up at the near edge instead of out of reach.
+        scale = self.reach_distance / distance
+        target_x = float(robot_position.x) + offset_x * scale
+        target_y = float(robot_position.y) + offset_y * scale
+
+        world_root = self.world.root
+        # Orientation is carried over unchanged -- a human sliding something closer does not
+        # turn it over, and re-deriving the rotation risks laying an upright object on its side.
+        repositioned = HomogeneousTransformationMatrix.from_point_rotation_matrix(
+            point=Point3(target_x, target_y, object_position.z, reference_frame=world_root),
+            rotation_matrix=object_pose.to_rotation_matrix(),
+            reference_frame=world_root,
+        )
+
+        with self.world.modify_world():
+            connection = Connection6DoF.create_with_dofs(
+                parent=world_root, child=object_body, world=self.world
+            )
+            # add_connection before .origin: the setter needs the connection to be in the world
+            # already, see PlaceAction for the same ordering requirement.
+            self.world.remove_connection(object_body.parent_connection)
+            self.world.add_connection(connection)
+            connection.origin = repositioned
+
+        logger.info(
+            f"{object_body.name} repositioned from {distance:.2f}m to "
+            f"{self.reach_distance:.2f}m in front of the robot"
+        )
 
 # @dataclass
 # class GiskardPickUpAction(ActionDescription):

@@ -33,15 +33,6 @@ except ImportError:
         "Could not import VizMarkerPublisher. This is probably because you are not running ROS."
     )
 
-## apartment lab #######################################################################################################
-rclpy.init()
-node = rclpy.create_node("kitchen_environment")
-publisher = VizMarkerPublisher(_world=KitchenEnvironment().get_world(), node=node)
-publisher.with_tf_publisher()
-
-
-########################################################################################################################
-
 
 
 

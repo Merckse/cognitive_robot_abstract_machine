@@ -1,4 +1,5 @@
 
+import datetime
 import math
 import time
 from copy import deepcopy
@@ -10,15 +11,20 @@ from Evaluate.CompositeEvaluator import CompositeEvaluator
 from SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.actions.simulate_perception import simulate_perception
 from SIMULATED_LASERSCANNER_CREDITS_HANNA_BECKER.events.event_handler import EventDispatcher
 from ScoreTimeMonitoring.ScoreTimeMonitor import ScoreTimeMonitor
+from StaticExecution import navigation_distance
 from Stabilizer.PlanStabilizer import PlanStabilizer
 from common.cram_types import Task, TaskStep, ActionType, Status
-from common.values import CHALLENGE_TASKS, ROOM_SURFACES, ROOM_SURFACES_PP, get_surfaces, lookup_operators
+from common.values import CHALLENGE_TASKS, ROOM_SURFACES, ROOM_SURFACES_PP, get_surfaces, get_rooms, lookup_operators
 from demos.pycram_score_aware_planning.helper_methods import generic_object_spawner
+from evaluation_metrics import RunMetrics
+from time_budget import TimeBudget, task_cost_seconds
 from helper_methods import generate_plan_taskstep_list, \
-    NAVIGATION_POSES, at_location, get_navigation_poses
+    NAVIGATION_POSES, at_location, get_navigation_poses, reposition_task_list, find_object_annotation, \
+    perceived_instance, remove_object_from_world
 from pycram.datastructures.dataclasses import Context
 from pycram.datastructures.enums import TaskStatus, PlanTransformationOperator, Arms, ChallengeMode
 from pycram.motion_executor import simulated_robot
+from task_attempt_builder import build_task_attempt
 
 from demos.pycram_score_aware_planning.common.hsrb_testing import setup_world
 from demos.pycram_score_aware_planning.Structurizer.structurizer import PlanStructurizer
@@ -57,8 +63,8 @@ def is_uncertain(task: Task, found: dict) -> bool:
             return True
         if not ts.uncertain:
             return False
-    # `target` is the annotation *class* (e.g. Bowl); `seen` keys are perceived *instances*.
-    return not any(isinstance(seen, target) for seen in found)
+
+    return perceived_instance(found, target) is None
 
 
 def closest_location(challenge_mode: ChallengeMode, locations: list[str], robot) -> str:
@@ -87,6 +93,76 @@ def get_task_room(task: Task) -> Optional[RoomEnum]:
     return None
 
 
+def unscanned_locations_for(challenge_mode: ChallengeMode, task: Task,
+                            explored: list[str]) -> list[str]:
+    rooms = [get_task_room(task)] if get_task_room(task) else get_rooms(challenge_mode)
+    locations = []
+    for room in rooms:
+        for surface in surfaces_in(challenge_mode, room) or []:
+            if surface not in explored and surface not in locations:
+                locations.append(surface)
+    return locations
+
+
+def unscanned_search_locations(challenge_mode: ChallengeMode, task_list: list[Task],
+                               explored: list[str], found: dict) -> list[str]:
+    locations = []
+    for task in task_list:
+        if not is_uncertain(task, found):
+            continue
+        for surface in unscanned_locations_for(challenge_mode, task, explored):
+            if surface not in locations:
+                locations.append(surface)
+    return locations
+
+
+OPPORTUNISTIC_MIN_TASK_PROBABILITY: float = 0.25
+
+
+
+def first_planned_location(challenge_mode: ChallengeMode, task: Task) -> Optional[str]:
+    for task_step in task.task_steps:
+        if task_step.location and get_navigation_poses(challenge_mode, task_step.location) is not None:
+            return task_step.location
+    return None
+
+
+def opportunistic_exploration_target(challenge_mode: ChallengeMode, task_list: list[Task],
+                                     current_task: Task, robot: AbstractRobot,
+                                     explored: list[str], found: dict) -> Optional[str]:
+    planned_location = first_planned_location(challenge_mode, current_task)
+    if planned_location is None:
+        return None
+
+    robot_x, robot_y = robot.root.global_pose.x, robot.root.global_pose.y
+    best_distance = math.dist((robot_x, robot_y),
+                              get_navigation_poses(challenge_mode, planned_location)[:2])
+    best_surface = None
+
+    for task in task_list:
+        if task is current_task:
+            continue
+        if not is_uncertain(task, found):
+            continue
+        if task.probability < OPPORTUNISTIC_MIN_TASK_PROBABILITY:
+            continue
+        if task.cum_expected_score <= 0:
+            continue
+
+        for surface in surfaces_in(challenge_mode, get_task_room(task)) or []:
+            if surface in explored:
+                continue
+            navigation_pose = get_navigation_poses(challenge_mode, surface)
+            if navigation_pose is None:
+                continue
+            distance = math.dist((robot_x, robot_y), navigation_pose[:2])
+            if distance < best_distance:
+                best_distance = distance
+                best_surface = surface
+
+    return best_surface
+
+
 def scan_table(dispatcher: EventDispatcher, context: Context, surface: str, robot: AbstractRobot,
                explored: list[str], found: dict) -> None:
     """
@@ -110,6 +186,15 @@ def scan_table(dispatcher: EventDispatcher, context: Context, surface: str, robo
             found[world.get_semantic_annotation_by_name(body.name)] = surface
 
 
+def task_objects_exist(task: Task, world) -> bool:
+    for task_step in task.task_steps:
+        if task_step.object_annotations is None:
+            continue
+        if find_object_annotation(world, task_step.object_annotations) is None:
+            return False
+    return True
+
+
 def get_objects_of_interest(task_list: list[Task]) -> list[SemanticAnnotation]:
     objects_of_interest: list[SemanticAnnotation] = []
     for t in task_list:
@@ -123,36 +208,50 @@ def update_tasks_from_belief(task_list: list[Task], found: dict) -> None:
         target = get_target_object_by_task(task)
         if target is None:
             continue
-        found_at = ""
-        for seen, loc in found.items():
-            if isinstance(seen, target):
-                found_at = loc
-                break
+        seen = perceived_instance(found, target)
+        if seen is None:
+            continue
+        found_at = found[seen]
         if not found_at:
             continue
         for ts in task.task_steps:
             if ts.action_type in (ActionType.NAVIGATE, ActionType.PICKUP) and not ts.location:
                 ts.location = found_at
+            if ts.object_annotations is not None and isinstance(seen, ts.object_annotations):
+                ts.perceived_object = seen
         task.uncertain = False
-def add_navigation(context: Context, explored ,task_list: list[TaskStep]) -> None:
-    temp_robot = deepcopy(context.robot)
-    exec_steps = []
-    for ts in task_list:
-        if ts.location != "" and not at_location(location=ts.location, robot=temp_robot):
-            # location known -> place the robot at the approach pose so distance is measured from there
-            if ts.location in NAVIGATION_POSES:
-                x, y, _ = NAVIGATION_POSES[ts.location]
-                temp_robot.root.global_pose.x = x
-                temp_robot.root.global_pose.y = y
-            exec_steps.append(TaskStep(action_type=ActionType.NAVIGATE, location=ts.location))
-        exec_steps.append(ts)
 
-def score_aware_execution(dispatcher : EventDispatcher, context: Context, challenge_mode : ChallengeMode):
+def commit_to_prior(challenge_mode: ChallengeMode, task: Task) -> None:
+    room = get_task_room(task)
+    surfaces = surfaces_in(challenge_mode, room) if room else []
+    guess = surfaces[0] if surfaces else ""
+    for task_step in task.task_steps:
+        if task_step.action_type in (ActionType.NAVIGATE, ActionType.PICKUP) and not task_step.location:
+            task_step.location = guess
+    task.uncertain = False
+
+
+def _reset_task_for_retry(task: Task) -> None:
+    task.status = Status.NOT_ASSIGNED
+    for step in task.task_steps:
+        step.action_outcome = Status.NOT_ASSIGNED
+        step.action_assisted = False
+        step.nav_pose_override = None
+
+
+def score_aware_execution(dispatcher : EventDispatcher, context: Context, challenge_mode : ChallengeMode,
+                          enable_exploration: bool = True,
+                          enabled_repair_operators: Optional[set] = None,
+                          max_defers: int = 1,
+                          time_budget_seconds: Optional[float] = None):
+
     hsrb = context.robot
     evaluator = CompositeEvaluator()
     structurizer = PlanStructurizer()
+    budget = TimeBudget(time_budget_seconds)
     stabilizer = PlanStabilizer()
-    scoretime_monitor = ScoreTimeMonitor()
+    # without the mode the challenge duration stays 0 and limited_time() is always True
+    scoretime_monitor = ScoreTimeMonitor(challenge_mode=challenge_mode)
 
     explored_locations = []
     found_objects: dict[Body, str] = {}
@@ -160,9 +259,24 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
     plans = [] # consisting of all plans ever generated
     repaired_plans = [] # consisting of (originalplan, repaired_plan)
 
+    run_start = datetime.datetime.now()
+    run_metrics = RunMetrics()
+
     task_list: list[Task] = CHALLENGE_TASKS.get(challenge_mode)
+    defer_counts: dict = {}
     current_task = None
     while task_list != []:
+
+        unachievable_tasks = []
+        for task in task_list:
+            if not task_objects_exist(task, context.world):
+                unachievable_tasks.append(task)
+        for unachievable_task in unachievable_tasks:
+            print(f"[skip] task {unachievable_task.id}: object no longer in the world")
+            unachievable_task.status = Status.SKIPPED
+            task_list.remove(unachievable_task)
+        if not task_list:
+            break
 
         if current_task and current_task.status == Status.SUCCESS:
             scoretime_monitor.record_task_end(current_task)
@@ -176,84 +290,149 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
                                                          found_objects=found_objects, risk_aversion=1)
         task_list: list[Task] = structurizer.structurize(task_list=evaluated_tasks)
 
+
+        if not budget.unlimited:
+            if budget.exhausted:
+                for remaining in task_list:
+                    remaining.status = Status.SKIPPED
+                break
+            candidate_cost = task_cost_seconds(task_list[0])
+            if not budget.fits(candidate_cost):
+                over_budget_task = task_list.pop(0)
+                budget.note_skipped(f"task {over_budget_task.id}", candidate_cost)
+                over_budget_task.status = Status.SKIPPED
+                continue
+
         current_task = task_list[0]
         current_task.status = Status.RUNNING
         target = get_target_object_by_task(current_task)
 
         scoretime_monitor.record_task_start(current_task)
 
-        # A room prior scopes the search to a few tables; with no prior we consider every room.
         if is_uncertain(current_task, found_objects):
-            prior = get_task_room(current_task)
-            try:
-                candidate_rooms = [prior] if prior else list(get_surfaces(challenge_mode, prior))
-                # every not-yet-scanned table across the candidate rooms
-                unscanned_tables = []
-                for r in candidate_rooms:
-                    for s in surfaces_in(challenge_mode, r):
-                        if s not in explored_locations:
-                            unscanned_tables.append(s)
-            except Exception as e:
-                continue
-            # searched everywhere we could and still don't know where it is -> give up on it
-            if not unscanned_tables:
-                print(
-                    f"[explore] no location found for task {current_task.id} -> skipping")  # TODO: take assistance instead of skipping
-                task_list.remove(current_task)
-                continue
+            if enable_exploration:
+                own_unscanned = unscanned_locations_for(challenge_mode, current_task, explored_locations)
 
-            # scan the single NEAREST unscanned table, fold what we see into the belief, then re-evaluate
-            scan_table(dispatcher, context, closest_location(challenge_mode, unscanned_tables, hsrb), hsrb, explored_locations,
-                       found_objects)
-            # opportunistic: resolve EVERY task whose object we happened to perceive, not just this one
-            update_tasks_from_belief(task_list, found_objects)
-            print(
-                f"scanned and updated beliefstate")  # TODO: take assistance instead of skipping
-            continue  # re-rank now that the belief changed -- a different task may now be best
+                search_unscanned = unscanned_search_locations(
+                    challenge_mode, task_list, explored_locations, found_objects)
+
+                # searched everywhere we could and still don't know where it is -> give up on it
+                if not own_unscanned:
+                    print(
+                        f"[explore] no location found for task {current_task.id} -> skipping")  # TODO: take assistance instead of skipping
+                    task_list.remove(current_task)
+                    continue
+
+                # scan the single NEAREST unscanned table, fold what we see into the belief, then re-evaluate
+                scan_table(dispatcher, context,
+                           closest_location(challenge_mode, search_unscanned or own_unscanned, hsrb),
+                           hsrb, explored_locations,
+                           found_objects)
+                # opportunistic: resolve EVERY task whose object we happened to perceive, not just this one
+                update_tasks_from_belief(task_list, found_objects)
+                print(
+                    f"scanned and updated beliefstate")  # TODO: take assistance instead of skipping
+                continue  # re-rank now that the belief changed -- a different task may now be best
+            else:
+                commit_to_prior(challenge_mode, current_task)
+
+        if enable_exploration and not scoretime_monitor.limited_time():
+            detour_surface = opportunistic_exploration_target(
+                challenge_mode=challenge_mode, task_list=task_list, current_task=current_task,
+                robot=hsrb, explored=explored_locations, found=found_objects,
+            )
+            if detour_surface is not None:
+                print(f"[explore] {detour_surface} is closer than the next step of task "
+                      f"{current_task.id} -> scanning it on the way")
+                scan_table(dispatcher, context, detour_surface, hsrb, explored_locations, found_objects)
+                update_tasks_from_belief(task_list, found_objects)
+                continue  # re-rank: what we just saw may promote a different task
 
         task_list.pop(0)
+        budget.spend(task_cost_seconds(current_task))
 
-        # TODO: make cleaner with nice method
-        # Build navigation-inserted steps in a LOCAL list -- do NOT mutate current_task.task_steps,
-        # otherwise re-processing the same task (re-rank / recovery) re-prepends navigation forever.
-        exec_steps = []
-        for ts in current_task.task_steps:
-            if ts.location != "" and not at_location(context=context,location=ts.location, robot=hsrb):
-                exec_steps.append(TaskStep(action_type=ActionType.NAVIGATE, location=ts.location))
-            exec_steps.append(ts)
+        exec_steps = reposition_task_list(context=context, task_list=current_task.task_steps, robot=hsrb)
 
         plan = generate_plan_taskstep_list(taskstep_list=exec_steps, context=context)
         print("going for", target)
 
+        task_wall_start = datetime.datetime.now()
+        final_plan, final_exec_steps = plan, exec_steps
+        task_navigation_distance = 0.0
+
         with (simulated_robot):
-            scoretime_monitor.record_task_start(task=current_task)
             plans.append(plan)
             plan.perform()
+            scoretime_monitor.record_plan_scores(task_steps=exec_steps, plan=plan)
+            task_navigation_distance += navigation_distance(plan)
 
             with simulated_robot:
                 sequential([ParkArmsAction(Arms.BOTH), MoveTorsoAction(TorsoState.LOW)], context).perform()
 
-            remaining_candidate_operators = lookup_operators(exception=plan.plan.root.reason)
+            task_hit_error = plan.status in (TaskStatus.INTERRUPTED, TaskStatus.FAILED)
+
+
+            if (task_hit_error
+                    and enabled_repair_operators is not None
+                    and PlanTransformationOperator.REORDER in enabled_repair_operators
+                    and defer_counts.get(current_task.id, 0) < max_defers):
+                defer_counts[current_task.id] = defer_counts.get(current_task.id, 0) + 1
+                _reset_task_for_retry(current_task)
+                task_list.append(current_task)
+                run_metrics.operator_usage[PlanTransformationOperator.REORDER.name] = (
+                    run_metrics.operator_usage.get(PlanTransformationOperator.REORDER.name, 0) + 1)
+                scoretime_monitor.record_task_interrupt(current_task)
+                print(f"[defer] task {current_task.id} failed -> deferring "
+                      f"(#{defer_counts[current_task.id]}) and re-estimating")
+                continue
+
+            if enabled_repair_operators is None:
+                # default behaviour: the exception's own candidate list
+                remaining_candidate_operators = lookup_operators(exception=plan.plan.root.reason)
+            else:
+                repair_priority = [
+                    PlanTransformationOperator.REPOSITION_ROBOT,
+                    PlanTransformationOperator.RETRY,
+                    PlanTransformationOperator.SKIP,
+                ]
+                remaining_candidate_operators = [
+                    op for op in repair_priority
+                    if op == PlanTransformationOperator.SKIP or op in enabled_repair_operators
+                ]
             while plan.status == TaskStatus.INTERRUPTED or plan.status == TaskStatus.FAILED:
                 if not remaining_candidate_operators:
                     break
 
-                winning = stabilizer.stabilize(plan=plan, task=current_task, exception=plan.plan.root.reason,
-                                               scoretime_monitor=scoretime_monitor, context=context,
-                                               exec_steps=exec_steps,
-                                               remaining_candidate_operators=remaining_candidate_operators)
-                if winning is None:
+                repair = stabilizer.stabilize(plan=plan, task=current_task, exception=plan.plan.root.reason,
+                                              scoretime_monitor=scoretime_monitor, context=context,
+                                              exec_steps=exec_steps,
+                                              remaining_candidate_operators=remaining_candidate_operators)
+                if repair is None:
                     break
 
-                operator, expected_value, repaired_plan, repaired_task_list = winning
+                operator = repair.operator
+                repaired_plan = repair.plan
+                repaired_task_list = repair.task_steps
                 print(f"[stabilizer] {plan.reason} -> recover via {operator} "
-                      f"(expected value {expected_value:.1f}); re-performing {len(repaired_task_list)} step(s)")
-                remaining_candidate_operators = [op for op in remaining_candidate_operators if op != operator]
+                      f"(expected value {repair.expected_value:.1f}); "
+                      f"re-performing {len(repaired_task_list)} step(s)")
+                still_untried = []
+                for candidate_operator in remaining_candidate_operators:
+                    if candidate_operator != operator:
+                        still_untried.append(candidate_operator)
+                remaining_candidate_operators = still_untried
+                run_metrics.operator_usage[operator.name] = run_metrics.operator_usage.get(operator.name, 0) + 1
+                run_metrics.plan_stability_distances.append(repair.stability_distance)
+                run_metrics.probability_stability_before.append(repair.probability_stability_before)
+                run_metrics.probability_stability_after.append(repair.probability_stability_after)
                 if operator == PlanTransformationOperator.SKIP:
                     current_task.status = Status.SKIPPED
                 else:
                     repaired_plans.append(repaired_plan)
                     repaired_plan.perform()
+                    scoretime_monitor.record_plan_scores(task_steps=repaired_task_list, plan=repaired_plan)
+                    task_navigation_distance += navigation_distance(repaired_plan)
+                    final_plan, final_exec_steps = repaired_plan, repaired_task_list
                     if repaired_plan.status == TaskStatus.SUCCEEDED:
                         plan.status = TaskStatus.SUCCEEDED
                         current_task.status = Status.SUCCESS
@@ -262,4 +441,29 @@ def score_aware_execution(dispatcher : EventDispatcher, context: Context, challe
         with simulated_robot:
             sequential([ParkArmsAction(Arms.BOTH), MoveTorsoAction(TorsoState.LOW)], context).perform()
 
-    return plans, repaired_plans
+        run_metrics.navigation_distance_meters += task_navigation_distance
+        task_duration = (datetime.datetime.now() - task_wall_start).total_seconds()
+        attempt = build_task_attempt(
+            exec_steps=final_exec_steps, plan=final_plan, context=context, duration_seconds=task_duration,
+            error_during_execution=task_hit_error)
+        if attempt is not None:
+            run_metrics.task_attempts.append(attempt)
+            if attempt.place_failed and remove_object_from_world(context.world, attempt.object_name):
+                print(f"[cleanup] removed {attempt.object_name}: place failed, was blocking positions")
+
+    # the loop books a task's time on the next iteration, so the last task needs closing here
+    if current_task and current_task.status == Status.SUCCESS:
+        scoretime_monitor.record_task_end(current_task)
+    elif current_task and current_task.status == Status.RUNNING:
+        scoretime_monitor.record_task_interrupt(current_task)
+
+    print(f"[score] final score {scoretime_monitor.score} over "
+          f"{len(scoretime_monitor.score_events)} recorded step(s), "
+          f"{scoretime_monitor.time_taken_seconds_total()}s elapsed")
+
+    run_metrics.completed = True
+    run_metrics.run_duration_seconds = (datetime.datetime.now() - run_start).total_seconds()
+    run_metrics.time_budget_seconds = budget.total_seconds
+    run_metrics.modelled_seconds_spent = budget.spent_seconds
+    run_metrics.tasks_skipped_over_budget = budget.skipped_over_budget
+    return plans, repaired_plans, run_metrics

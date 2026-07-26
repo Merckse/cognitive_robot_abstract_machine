@@ -28,10 +28,26 @@ from pycram.robot_plans.motions.gripper import MoveGripperMotion
 from pycram.view_manager import ViewManager
 from semantic_digital_twin.datastructures.definitions import GripperState
 from semantic_digital_twin.reasoning.robot_predicates import is_body_in_gripper
+from semantic_digital_twin.semantic_annotations.mixins import HasDoors, HasDrawers
 from semantic_digital_twin.world_description.connections import ActiveConnection1DOF
 from semantic_digital_twin.world_description.world_entity import Body
 
 logger = logging.getLogger(__name__)
+
+
+def container_movable_connections(world, connection: ActiveConnection1DOF) -> list[ActiveConnection1DOF]:
+    active_connections = world.get_connections_by_type(connection_type=ActiveConnection1DOF)
+    branch_connections = world.get_connections_of_branch(root=connection.parent)
+
+    movable_connections = []
+    for branch_connection in branch_connections:
+        if branch_connection in active_connections:
+            movable_connections.append(branch_connection)
+
+    if not movable_connections:
+        movable_connections = [connection]
+    return movable_connections
+
 
 @dataclass
 class OpenAction(ActionDescription):
@@ -67,33 +83,30 @@ class OpenAction(ActionDescription):
         )
 
         connection = self.object_designator.get_first_parent_connection_of_type(ActiveConnection1DOF)
-        connection_pose = connection.position
-        upper_limit = connection.dof.limits.upper.position
-        lower_limit = connection.dof.limits.lower.position
+        connections_to_open = container_movable_connections(self.world, connection)
 
-        if connection_pose == upper_limit:
+        if all(c.position == c.dof.limits.upper.position for c in connections_to_open):
             logger.info("The Object is already opened.")
             return
 
         if self.assisted:
-            branch_connections = self.world.get_connections_of_branch(root=self.object_designator)
-            active_1dof_connections = self.world.get_connections_by_type(connection_type=ActiveConnection1DOF)
+            connections_to_open = container_movable_connections(self.world, connection)
 
-            children_connections = []
-            for branch_connection in branch_connections:
-                if branch_connection in active_1dof_connections:
-                    children_connections.append(branch_connection)
-
-            if not children_connections:
-                children_connections = [connection]
+            if all(c.position == c.dof.limits.upper.position for c in connections_to_open):
+                logger.info("The Object is already opened.")
+                return
 
             print("Could you help me open", self.object_designator.name, "?")
             time.sleep(5)
             with self.world.modify_world():
-                for child_connection in children_connections:
-                    child_connection.position = child_connection.dof.limits.upper.position
+                for connection_to_open in connections_to_open:
+                    connection_to_open.position = connection_to_open.dof.limits.upper.position
             return
         else:
+            if connection.position == connection.dof.limits.upper.position:
+                logger.info("The Object is already opened.")
+                return
+
             self.add_subplan(
                 sequential(
                     [
@@ -186,16 +199,24 @@ class CloseAction(ActionDescription):
         connection_pose = connection.position
         lower_limit = connection.dof.limits.lower.position
 
-        if connection_pose == lower_limit:
-            logger.info("The Object is already closed.")
-            return
+        if self.assisted:
+            connections_to_close = container_movable_connections(self.world, connection)
+
+            if all(c.position == c.dof.limits.lower.position for c in connections_to_close):
+                logger.info("The Object is already closed.")
+                return
 
         if self.assisted:
             print("Could you help me close", self.object_designator.name, "?")
             time.sleep(5)
             with self.world.modify_world():
-                connection.position = lower_limit
-                return
+                for connection_to_close in connections_to_close:
+                    connection_to_close.position = connection_to_close.dof.limits.lower.position
+            return
+
+        if connection.position == connection.dof.limits.lower.position:
+            logger.info("The Object is already closed.")
+            return
 
         self.add_subplan(
             sequential(

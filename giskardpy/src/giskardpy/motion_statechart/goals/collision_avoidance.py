@@ -8,7 +8,8 @@ from semantic_digital_twin.collision_checking.collision_matrix import (
     CollisionRule,
     CollisionMatrix,
 )
-from semantic_digital_twin.collision_checking.collision_rules import AvoidSelfCollisions, AvoidExternalCollisions
+from semantic_digital_twin.collision_checking.collision_rules import AvoidSelfCollisions, AvoidExternalCollisions, \
+    AllowCollisionRule
 from semantic_digital_twin.collision_checking.collision_variable_managers import (
     SelfCollisionVariableManager,
     ExternalCollisionVariableManager,
@@ -241,17 +242,26 @@ class _ExternalCollisionAvoidanceTask(_ExternalCollisionAvoidanceNode):
         return artifacts
 
 
+@dataclass
+class AllowNeckCollisions(AllowCollisionRule):
+    robot: AbstractRobot = field(kw_only=True)
+
+    def _update(self, world) -> None:
+        neck = getattr(self.robot, "neck", None)
+        self.allowed_collision_bodies = (
+            set(neck.bodies_with_collision) if neck is not None else set()
+        )
+
+
 def make_external_collision_rules(
     robot: AbstractRobot,
     arm_buffer_zone: float,
     base_buffer_zone: float = 0.05,
 ) -> list:
-    """
-    Returns a list of AvoidExternalCollisions rules that apply a larger buffer zone to base
-    bodies (to prevent the base from clipping furniture) and a smaller one to the arm.
-    """
     base_bodies = set(robot.base.bodies_with_collision) if robot.base is not None else set()
-    arm_bodies = set(robot.bodies_with_collision) - base_bodies
+    neck = getattr(robot, "neck", None)
+    neck_bodies = set(neck.bodies_with_collision) if neck is not None else set()
+    arm_bodies = set(robot.bodies_with_collision) - base_bodies - neck_bodies
     rules = []
     if base_bodies:
         rules.append(AvoidExternalCollisions(
@@ -265,6 +275,8 @@ def make_external_collision_rules(
             body_subset=arm_bodies,
             buffer_zone_distance=arm_buffer_zone,
         ))
+    if neck_bodies:
+        rules.append(AllowNeckCollisions(robot=robot))
     return rules
 
 

@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass, field
 
 import numpy as np
-from typing_extensions import Dict, Optional, Union, List
 from urdf_parser_py import urdf as urdfpy
 from xacro import process_file
 
@@ -68,7 +66,7 @@ connection_type_map = {  # 'unknown': JointType.UNKNOWN,
 }
 
 
-def urdf_joint_axis(urdf_joint: urdfpy.Joint) -> List[float]:
+def urdf_joint_axis(urdf_joint: urdfpy.Joint) -> list[float]:
     """
     The axis a URDF joint moves along, as the unit vector the connections expect.
 
@@ -144,7 +142,7 @@ class URDFParser(WorldModelParser):
     The URDF string.
     """
 
-    prefix: Optional[str] = None
+    prefix: str | None = None
     """
     The prefix for every name used in this world.
     """
@@ -163,12 +161,11 @@ class URDFParser(WorldModelParser):
     @classmethod
     def from_file(
         cls,
-        file_path: str | os.PathLike[str],
-        prefix: Optional[str] = None,
-        path_resolver: Optional[PathResolver] = None,
+        file_path: str,
+        prefix: str | None = None,
+        path_resolver: PathResolver | None = None,
         use_visual_as_collision_backup: bool = False,
     ) -> URDFParser:
-        file_path = os.fspath(file_path)
         if file_path.endswith(".xacro"):
             return cls.from_xacro(
                 file_path,
@@ -196,8 +193,8 @@ class URDFParser(WorldModelParser):
     def from_xacro(
         cls,
         xacro_path: str,
-        prefix: Optional[str] = None,
-        mappings: Optional[Dict[str, str]] = None,
+        prefix: str | None = None,
+        mappings: dict[str, str] | None = None,
         use_visual_as_collision_backup: bool = False,
     ) -> URDFParser:
         """
@@ -380,7 +377,7 @@ class URDFParser(WorldModelParser):
             body.inertial = inertial
         return body
 
-    def parse_inertial(self, link: urdfpy.Link, body: Body) -> Optional[Inertial]:
+    def parse_inertial(self, link: urdfpy.Link, body: Body) -> Inertial | None:
         """
         Parses the inertial properties of a URDF link.
 
@@ -419,7 +416,7 @@ class URDFParser(WorldModelParser):
 
     def parse_geometry(
         self,
-        geometry: Union[List[urdfpy.Collision], List[urdfpy.Visual]],
+        geometry: list[urdfpy.Collision] | list[urdfpy.Visual],
         body: Body,
     ) -> ShapeCollection:
         """
@@ -463,7 +460,7 @@ class URDFParser(WorldModelParser):
 
     def color_of(
         self, geometry_element: urdfpy.Visual | urdfpy.Collision, shape: Shape
-    ) -> Optional[Color]:
+    ) -> Color | None:
         """
         :param geometry_element: A visual or collision element of the description.
         :param shape: The shape parsed from the element.
@@ -479,7 +476,7 @@ class URDFParser(WorldModelParser):
         if material is None:
             return None
         if material.color is not None:
-            color = Color(*material.color.rgba)
+            color = Color.from_rgba(*material.color.rgba)
         else:
             named_colors = {
                 named.name: named.color
@@ -488,7 +485,7 @@ class URDFParser(WorldModelParser):
             }
             if material.name not in named_colors:
                 return None
-            color = Color(*named_colors[material.name].rgba)
+            color = Color.from_rgba(*named_colors[material.name].rgba)
         # The mesh's file is read only when there is a color to give.
         if isinstance(shape, Mesh) and shape.is_textured:
             return None

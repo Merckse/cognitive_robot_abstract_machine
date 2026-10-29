@@ -65,7 +65,7 @@ from semantic_digital_twin.specifications.semantic_annotations import (
 )
 from semantic_digital_twin.specifications.worlds import WorldSpecification
 from semantic_digital_twin.world import World
-from suturo_resources.suturo_map_new import SuturoLabWithSuturoMapKitchen
+from suturo_resources.suturo_map import SuturoLabWithSuturoMapKitchen
 
 # %% what the scene is built from
 

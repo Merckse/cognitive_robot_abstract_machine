@@ -1,3 +1,4 @@
+import copy
 import enum
 from abc import abstractmethod
 from dataclasses import dataclass, field
@@ -33,6 +34,7 @@ class Variable(CPPWrapper):
     domain: AbstractCompositeSet = field(kw_only=True, default=None)
     """
     The domain of the variable.
+
     The domain is a composite set that can be used to create values of the variable.
     """
 
@@ -41,6 +43,15 @@ class Variable(CPPWrapper):
 
     def __hash__(self) -> int:
         return self.name.__hash__()
+
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Self:
+        """
+        Variables are immutable, so a deep copy shares them.
+
+        :param memo: The objects already copied during this deep copy, by their id.
+        :return: This variable.
+        """
+        return self
 
     def __eq__(self, other):
         return self.cpp_object == other.cpp_object
@@ -76,6 +87,7 @@ class Variable(CPPWrapper):
     def make_value(self, value: Any) -> AbstractCompositeSet:
         """
         Create a value of the domain from an arbitrary value.
+
         This method tries to parse the value and wrap it in a composite set.
 
         :param value: The value.
@@ -129,7 +141,7 @@ class Symbolic(Variable):
     domain: Set = field(kw_only=True)
 
     def __post_init__(self):
-        self.domain = self.domain.__deepcopy__()
+        self.domain = copy.deepcopy(self.domain)
         self.cpp_object = rl.Symbolic(self.name, self.domain.cpp_object)
 
     @property
@@ -143,7 +155,7 @@ class Symbolic(Variable):
         )
 
     def make_value(self, value) -> Set:
-        if not isinstance(value, Iterable):
+        if self.names_one_element(value):
             value = [value]
 
         parsed_value = []
@@ -168,6 +180,21 @@ class Symbolic(Variable):
                 parsed_value += matches
 
         return Set.from_simple_sets(*parsed_value)
+
+    @staticmethod
+    def names_one_element(value: Any) -> bool:
+        """
+        Whether a value stands for one element of this variable's domain rather than for
+        a collection of them.
+
+        A string is one value rather than the characters it iterates as, which is what a
+        member of a string-valued enum is; so is anything that is not iterable at all,
+        and an element itself.
+
+        :param value: The value given where this variable's value is expected.
+        :return: Whether it names one element.
+        """
+        return isinstance(value, (str, SetElement)) or not isinstance(value, Iterable)
 
 
 @dataclass(eq=False, repr=False)
@@ -203,7 +230,6 @@ def variable_from_name_and_type(name: str, type_: Type) -> Variable:
     :param type_: The type of the variable
     :return: The created variable
     """
-
     if issubclass(type_, enum.Enum):
         result = Symbolic(name=name, domain=Set.from_iterable(type_))
     elif issubclass(type_, bool):
@@ -223,12 +249,12 @@ def most_appropriate_variable_type(
 ) -> Optional[Type[Union[*compatible_types]]]:
     """
     Get the most appropriate type for a random events variable from a union of types.
-    The most appropriate type is the one, where the mathematical interpretation as set has the highest cardinality.
+    The most appropriate type is the one, where the mathematical interpretation as set
+    has the highest cardinality.
 
     :param union: The union of types.
     :return: The most appropriate type.
     """
-
     if float in union:
         return float
 

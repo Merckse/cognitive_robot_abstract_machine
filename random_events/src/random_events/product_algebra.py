@@ -1,19 +1,18 @@
 from __future__ import annotations
 
+import copy
 import itertools
+import math
 import textwrap
 from dataclasses import field, dataclass
 from typing import Any, Iterable, Self, Dict, Optional, Tuple, Mapping
 
-import numpy as np
-import plotly.graph_objects as go
 from sortedcontainers import SortedDict, SortedValuesView, SortedSet
 from typing_extensions import List, TYPE_CHECKING, Union, Set as teSet
 
 from krrood.adapters.json_serializer import SubclassJSONSerializer, from_json, to_json
-from random_events.interval import Interval, SimpleInterval
 from random_events.sigma_algebra import AbstractSimpleSet, AbstractCompositeSet
-from random_events.variable import Variable, Continuous, Symbolic
+from random_events.variable import Variable, Continuous
 import random_events_lib as rl
 
 # Type definitions
@@ -48,7 +47,6 @@ class VariableMap(VariableMapSuperClassType):
         :param key: The variable or its name.
         :return: The matching variable.
         """
-
         if isinstance(key, Variable):
             return key
 
@@ -125,11 +123,39 @@ class SimpleEvent(AbstractSimpleSet, VariableMap):
                 return False
         return True
 
+    def is_singleton(self) -> bool:
+        """
+        :return: Whether the event assigns exactly one value to each of its variables.
+        """
+        return all(assignment.is_singleton() for assignment in self.values())
+
+    @property
+    def size(self) -> float:
+        """
+        The size of the box this event describes, as the product over its variables of
+        the size of the values it assigns them.
+
+        A variable left out of the event is left out of the product, so the size is the
+        one taken over the variables the event constrains. An event that constrains no
+        variable at all is the empty event rather than an empty product, so it has no
+        size.
+
+        :return: The size of this event, which is zero as soon as one variable is
+            assigned nothing of size and infinite when one is unbounded.
+        """
+        if self.is_empty():
+            return 0.0
+        factors = [assignment.size for assignment in self.assignments]
+        if any(factor == 0.0 for factor in factors):
+            return 0.0
+        return math.prod(factors)
+
     def __setitem__(self, key: VariableMapKey, value: Any):
         """
         Set the value of a variable in the event.
-        Also allows for assigning variables to values outside the classes of this package.
-        If this is the case, this tries to convert the value to a CompositeSet.
+
+        Also allows for assigning variables to values outside the classes of this
+        package. If this is the case, this tries to convert the value to a CompositeSet.
 
         :param key: The variable (or its name) to set the value for
         :param value: The value to set
@@ -215,8 +241,9 @@ class SimpleEvent(AbstractSimpleSet, VariableMap):
 
     def update_variables(self, new_variables: Dict[Variable, Variable]) -> Self:
         """
-        Construct a new simple event where the own variables are replaced with the new variables.
-        If the new variables are missing mappings, the old variables are kept for the missing updates.
+        Construct a new simple event where the own variables are replaced with the new
+        variables. If the new variables are missing mappings, the old variables are kept
+        for the missing updates.
 
         :param new_variables: A dictionary mapping current variables to new variables
         :return: A new SimpleEvent with the updated variables
@@ -227,151 +254,6 @@ class SimpleEvent(AbstractSimpleSet, VariableMap):
                 for variable, value in self.items()
             }
         )
-
-    def plot(self) -> Union[List[go.Scatter], List[go.Mesh3d]]:
-        """
-        Plot the event.
-        """
-        assert all(
-            not isinstance(variable, Symbolic) for variable in self.keys()
-        ), "Plotting is only supported for events that consist of only continuous variables."
-        if len(self.keys()) == 1:
-            return self.plot_1d()
-        if len(self.keys()) == 2:
-            return self.plot_2d()
-        elif len(self.keys()) == 3:
-            return self.plot_3d()
-        else:
-            raise NotImplementedError(
-                "Plotting is only supported for two and three dimensional events"
-            )
-
-    def plot_1d(self) -> List[go.Scatter]:
-        """
-        Plot the event in 1D.
-        """
-        xs = []
-        ys = []
-
-        interval: Interval = list(self.values())[0]
-        for simple_interval in interval.simple_sets:
-            simple_interval: SimpleInterval
-            xs.extend([simple_interval.lower, simple_interval.upper, None])
-            ys.extend([0, 0, None])
-
-        return [go.Scatter(x=xs, y=ys, mode="lines", name="Event", fill="toself")]
-
-    def plot_2d(self) -> List[go.Scatter]:
-        """
-        Plot the event in 2D.
-        """
-
-        # form cartesian product of all intervals
-        intervals = [value.simple_sets for value in self.values()]
-        interval_combinations = list(itertools.product(*intervals))
-
-        xs = []
-        ys = []
-
-        # for every atomic interval
-        for interval_combination in interval_combinations:
-            # plot a rectangle
-            points = np.asarray(
-                list(
-                    itertools.product(
-                        *[[axis.lower, axis.upper] for axis in interval_combination]
-                    )
-                )
-            )
-            y_points = points[:, 1]
-            y_points[len(y_points) // 2 :] = y_points[len(y_points) // 2 :][::-1]
-            xs.extend(points[:, 0].tolist() + [points[0, 0], None])
-            ys.extend(y_points.tolist() + [y_points[0], None])
-
-        return [go.Scatter(x=xs, y=ys, mode="lines", name="Event", fill="toself")]
-
-    def plot_3d(self) -> List[go.Mesh3d]:
-        """
-        Plot the event in 3D.
-        """
-
-        # form cartesian product of all intervals
-        intervals = [value.simple_sets for _, value in sorted(self.items())]
-        simple_events = list(itertools.product(*intervals))
-        traces = []
-
-        # shortcut for the dimensions
-        x, y, z = 0, 1, 2
-
-        # for every atomic interval
-        for simple_event in simple_events:
-            # Create a 3D mesh trace for the rectangle
-            traces.append(
-                go.Mesh3d(  # 8 vertices of a cube
-                    x=[
-                        simple_event[x].lower,
-                        simple_event[x].lower,
-                        simple_event[x].upper,
-                        simple_event[x].upper,
-                        simple_event[x].lower,
-                        simple_event[x].lower,
-                        simple_event[x].upper,
-                        simple_event[x].upper,
-                    ],
-                    y=[
-                        simple_event[y].lower,
-                        simple_event[y].upper,
-                        simple_event[y].upper,
-                        simple_event[y].lower,
-                        simple_event[y].lower,
-                        simple_event[y].upper,
-                        simple_event[y].upper,
-                        simple_event[y].lower,
-                    ],
-                    z=[
-                        simple_event[z].lower,
-                        simple_event[z].lower,
-                        simple_event[z].lower,
-                        simple_event[z].lower,
-                        simple_event[z].upper,
-                        simple_event[z].upper,
-                        simple_event[z].upper,
-                        simple_event[z].upper,
-                    ],
-                    # i, j and k give the vertices of triangles
-                    i=[7, 0, 0, 0, 4, 4, 6, 6, 4, 0, 3, 2],
-                    j=[3, 4, 1, 2, 5, 6, 5, 2, 0, 1, 6, 3],
-                    k=[0, 7, 2, 3, 6, 7, 1, 1, 5, 5, 7, 6],
-                    flatshading=True,
-                )
-            )
-        return traces
-
-    def plotly_layout(self) -> Dict:
-        """
-        Create a layout for the plotly plot.
-        """
-        if len(self.variables) == 1:
-            result = {"xaxis_title": self.variables[0].name}
-        elif len(self.variables) == 2:
-            result = {
-                "xaxis_title": self.variables[0].name,
-                "yaxis_title": self.variables[1].name,
-            }
-        elif len(self.variables) == 3:
-            result = dict(
-                scene=dict(
-                    xaxis_title=self.variables[0].name,
-                    yaxis_title=self.variables[1].name,
-                    zaxis_title=self.variables[2].name,
-                )
-            )
-        else:
-            raise NotImplementedError(
-                "Plotting is only supported for two and three dimensional events"
-            )
-
-        return result
 
     def fill_missing_variables(self, variables: Iterable[Variable]):
         """
@@ -390,16 +272,17 @@ class SimpleEvent(AbstractSimpleSet, VariableMap):
     def fill_missing_variables_pure(self, variables: Iterable[Variable]):
         """
         Fill this with the variables that are not in self but in `variables`.
+
         The variables are mapped to their domain.
         """
         return SimpleEvent.from_data(
             {variable: self.get(variable, variable.domain) for variable in variables}
         )
 
-    def __deepcopy__(self):
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Self:
         return SimpleEvent.from_data(
             {
-                variable: assignment.__deepcopy__()
+                variable: copy.deepcopy(assignment, memo)
                 for variable, assignment in self.items()
             }
         )
@@ -489,7 +372,6 @@ class Event(AbstractCompositeSet):
         :param key: The variable or its name.
         :return: The matching variable.
         """
-
         if isinstance(key, Variable):
             return key
 
@@ -501,6 +383,7 @@ class Event(AbstractCompositeSet):
     def update_simple_set_example(self):
         """
         Update the simple set example to the first simple set in the event.
+
         Use this whenever the simple sets change in-place
         """
         simple_sets = self.simple_sets
@@ -512,7 +395,8 @@ class Event(AbstractCompositeSet):
         """
         Fill all simple sets with the missing variables in-place.
 
-        :param variables: The variables to fill the event with. If None, all variables are used.
+        :param variables: The variables to fill the event with. If None, all variables
+            are used.
         """
         if variables is None:
             variables = set()
@@ -541,7 +425,6 @@ class Event(AbstractCompositeSet):
 
         :param variables: The variables to fill the event with.
         """
-
         if variables is None:
             variables = set()
 
@@ -586,11 +469,30 @@ class Event(AbstractCompositeSet):
         instance._variables = SortedSet(self.get_variable(v.name) for v in variables)
         return instance
 
+    def is_box(self) -> bool:
+        """
+        :return: Whether this event is a single simple event that assigns exactly one
+            simple set to each of its variables.
+        """
+        if len(self.simple_sets) != 1:
+            return False
+        [simple_event] = self.simple_sets
+        return all(
+            len(assignment.simple_sets) == 1 for assignment in simple_event.values()
+        )
+
+    def is_singleton(self) -> bool:
+        """
+        :return: Whether the event contains exactly one point.
+        """
+        return len(self.simple_sets) == 1 and self.simple_sets[0].is_singleton()
+
     def bounding_box(self) -> SimpleEvent:
         """
         Compute the bounding box of the event.
-        The bounding box is the smallest simple event that contains this event. It is computed by taking the union
-        of all simple events variable wise.
+
+        The bounding box is the smallest simple event that contains this event. It is
+        computed by taking the union of all simple events variable wise.
 
         :return: The bounding box as a simple event
         """
@@ -609,7 +511,7 @@ class Event(AbstractCompositeSet):
 
     def update_variables(self, new_variables: Dict[Variable, Variable]) -> Event:
         """
-        see :func:`~random_events.product_algebra.SimpleEvent.update_variables`
+        See :func:`~random_events.product_algebra.SimpleEvent.update_variables`
         """
         return Event.from_simple_sets(
             *[
@@ -617,41 +519,6 @@ class Event(AbstractCompositeSet):
                 for simple_event in self.simple_sets
             ]
         )
-
-    def plot(self, color="#636EFA") -> Union[List[go.Scatter], List[go.Mesh3d]]:
-        """
-        Plot the complex event.
-
-        :param color: The color to use for this event
-        """
-        traces = []
-        show_legend = True
-        for index, event in enumerate(self.simple_sets):
-            event_traces = event.plot()
-            for event_trace in event_traces:
-                if len(event.keys()) == 2:
-                    event_trace.update(
-                        name="Event",
-                        legendgroup=id(self),
-                        showlegend=show_legend,
-                        line=dict(color=color),
-                    )
-                if len(event.keys()) == 3:
-                    event_trace.update(
-                        name="Event",
-                        legendgroup=id(self),
-                        showlegend=show_legend,
-                        color=color,
-                    )
-                show_legend = False
-                traces.append(event_trace)
-        return traces
-
-    def plotly_layout(self) -> Dict:
-        """
-        Create a layout for the plotly plot.
-        """
-        return self.simple_sets[0].plotly_layout()
 
     def add_simple_set(self, simple_set: AbstractSimpleSet):
         """

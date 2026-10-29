@@ -1,24 +1,27 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing_extensions import Type
+from typing_extensions import Any, Type
 
+from krrood.adapters.json_field import JSONField
 from krrood.exceptions import DataclassException
-
-JSON_TYPE_NAME = "__json_type__"  # the key used in JSON dicts to identify the class
 
 
 @dataclass
 class JSONSerializationError(DataclassException):
-    """Base exception for JSON (de)serialization errors."""
+    """
+    Base exception for JSON (de)serialization errors.
+    """
 
 
 @dataclass
 class MissingTypeError(JSONSerializationError):
-    """Raised when the 'type' field is missing in the JSON data."""
+    """
+    Raised when :attr:`JSONField.TYPE` is missing in the JSON data.
+    """
 
     def error_message(self) -> str:
-        return f"Missing {JSON_TYPE_NAME} field in JSON data"
+        return f"Missing {JSONField.TYPE} field in JSON data"
 
     def suggest_correction(self) -> str:
         return ""
@@ -26,7 +29,9 @@ class MissingTypeError(JSONSerializationError):
 
 @dataclass
 class InvalidTypeFormatError(JSONSerializationError):
-    """Raised when the 'type' field value is not a fully qualified class name."""
+    """
+    Raised when the value of :attr:`JSONField.TYPE` is not a fully qualified class name.
+    """
 
     invalid_type_value: str
 
@@ -39,7 +44,9 @@ class InvalidTypeFormatError(JSONSerializationError):
 
 @dataclass
 class UnknownModuleError(JSONSerializationError):
-    """Raised when the module specified in the 'type' field cannot be imported."""
+    """
+    Raised when the module named by :attr:`JSONField.TYPE` cannot be imported.
+    """
 
     module_name: str
 
@@ -52,15 +59,15 @@ class UnknownModuleError(JSONSerializationError):
 
 @dataclass
 class ClassNotFoundError(JSONSerializationError):
-    """Raised when the class specified in the 'type' field cannot be found in the module."""
+    """
+    Raised when the class named by :attr:`JSONField.TYPE` cannot be found in the module.
+    """
 
     class_name: str
     module_name: str
 
     def error_message(self) -> str:
-        return (
-            f"Class '{self.class_name}' not found in module '{self.module_name}'"
-        )
+        return f"Class '{self.class_name}' not found in module '{self.module_name}'"
 
     def suggest_correction(self) -> str:
         return ""
@@ -68,7 +75,9 @@ class ClassNotFoundError(JSONSerializationError):
 
 @dataclass
 class ClassNotSerializableError(JSONSerializationError):
-    """Raised when the class specified cannot be JSON-serialized."""
+    """
+    Raised when the class specified cannot be JSON-serialized.
+    """
 
     clazz: Type
 
@@ -81,7 +90,9 @@ class ClassNotSerializableError(JSONSerializationError):
 
 @dataclass
 class ClassNotDeserializableError(JSONSerializationError):
-    """Raised when the class specified cannot be JSON-deserialized."""
+    """
+    Raised when the class specified cannot be JSON-deserialized.
+    """
 
     clazz: Type
 
@@ -90,3 +101,25 @@ class ClassNotDeserializableError(JSONSerializationError):
 
     def suggest_correction(self) -> str:
         return ""
+
+
+@dataclass
+class UntrackedObjectError(JSONSerializationError):
+    """
+    Raised when a JSON document refers to an object by a key that no object was
+    deserialized with.
+    """
+
+    key: Any
+    """
+    The key the document refers to the object with.
+    """
+
+    def error_message(self) -> str:
+        return f"No object was deserialized with the key '{self.key}'."
+
+    def suggest_correction(self) -> str:
+        return (
+            "Deserialize the referenced object before the objects that refer to it, "
+            "within the same JSON document."
+        )

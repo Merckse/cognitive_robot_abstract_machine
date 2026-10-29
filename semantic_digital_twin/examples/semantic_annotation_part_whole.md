@@ -40,58 +40,59 @@ Used Concepts:
 
 ## Composing built-in annotations with `add`
 
-Let's build a dresser whose drawer has a handle and a slider. We use the factories
+Let's build a dresser whose drawer has a handle and slides on rails. We use the factories
 (`create_with_new_body_in_world`) to quickly spawn each part with geometry, then wire them
-together with `add`.
+together with `add`. The rails are no part of their own: they are the prismatic connection the
+drawer hangs from, which `drawer.movable_joint` returns.
 
 ```{code-cell} ipython3
-from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
+import numpy as np
+
 from semantic_digital_twin.spatial_types.spatial_types import HomogeneousTransformationMatrix, Vector3
-from semantic_digital_twin.semantic_annotations.semantic_annotations import Drawer, Handle, Slider, Dresser
+from semantic_digital_twin.specifications.connections import (
+    PrismaticConnectionSpecification,
+)
+from semantic_digital_twin.semantic_annotations.semantic_annotations import Drawer, Handle, Dresser
 from semantic_digital_twin.spatial_computations.raytracer import RayTracer
 from semantic_digital_twin.world_description.geometry import Scale
-from semantic_digital_twin.world_description.world_entity import Body
 from semantic_digital_twin.world import World
 
-world = World()
-root = Body(name=PrefixedName("root"))
-
-with world.modify_world():
-    world.add_body(root)
+world = World.create_with_root_body()
 
 with world.modify_world():
     dresser = Dresser.create_with_new_body_in_world(
-        name=PrefixedName("dresser"),
+        name="dresser",
         scale=Scale(0.31, 0.31, 0.21),
         world=world,
         world_root_T_self=HomogeneousTransformationMatrix(),
     )
     drawer = Drawer.create_with_new_body_in_world(
-        name=PrefixedName("drawer"),
+        name="drawer",
         scale=Scale(0.3, 0.3, 0.2),
         world=world,
         world_root_T_self=HomogeneousTransformationMatrix(),
+        parent_connection_specification=PrismaticConnectionSpecification(
+            axis=Vector3.X()
+        ),
     )
     handle = Handle.create_with_new_body_in_world(
-        name=PrefixedName("drawer_handle"),
+        name="drawer_handle",
         world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=-0.15),
         world=world,
     )
-    slider = Slider.create_with_new_body_in_world(
-        name=PrefixedName("drawer_slider"),
-        world_root_T_self=HomogeneousTransformationMatrix(),
-        world=world,
-        active_axis=Vector3.X(),
-    )
 
-    # One method, routed by type: handle -> drawer.handle, slider -> drawer.mechanical_joint
+    # One method, routed by type: handle -> drawer.handle
     drawer.add(handle)
-    drawer.add(slider)
     # drawer -> dresser.drawers (a list field, so it is appended)
     dresser.add(drawer)
 
+# add routed each part to the field whose element type it matches.
+assert drawer.handle is handle
+assert drawer in dresser.drawers
+# Mounting the drawer kept the rails it slides on, now anchored at the dresser.
+assert drawer.movable_joint.parent is dresser.root
 print("drawer.handle:", drawer.handle)
-print("drawer.mechanical_joint:", drawer.mechanical_joint)
+print("drawer.movable_joint:", drawer.movable_joint)
 print("dresser.drawers:", dresser.drawers)
 
 rt = RayTracer(world)
@@ -102,58 +103,77 @@ rt.scene.show("jupyter")
 `add` raised nothing and put each part in the right place, because every part type matched
 exactly one part-whole relationship field of its target.
 
-## Declaring your own part-whole relationship field
+## Part-whole relationship fields for your own annotations
 
-To give a custom annotation its own part-whole relationship field, declare it with
-`field(metadata=FieldMetadata(other_metadata=[IsPartWholeRelationship()]).as_dict())` and inherit
-from `PartWholeRelationship`. The `IsPartWholeRelationship` marker in the field's metadata — not
-where the field sits in the class hierarchy — is what makes it a part-whole relationship field, so a
-plain `field(...)` on the same class is simply *not* one and is ignored by `add`.
+Part kinds the library already models come with ready-made mixins — `HasHandle`, `HasDrawers`,
+`HasDoors`, `HasApertures`, `HasLegs`, `HasSink`. Inheriting the mixin
+gives your annotation the field, its metadata, and the `add` routing for free; do not re-declare
+such a field yourself. Only a part kind that no mixin covers needs its own field, declared with
+`field(metadata=IsPartWholeRelationship().as_dict())`. That marker in the field's metadata — not
+where the field sits in the class hierarchy — is what makes it a part-whole relationship field,
+so a plain `field(...)` on the same class is simply *not* one and is ignored by `add`.
+
+The `ControlPanel` below combines both: its handle field comes from `HasHandle` (the same mixin
+`Drawer` inherits it from), and only the emergency button — a part kind no mixin models — gets a
+field of its own.
 
 ```{code-cell} ipython3
 from dataclasses import dataclass, field
 from typing import Optional
 
-from krrood.patterns.field_metadata import FieldMetadata
-from semantic_digital_twin.semantic_annotations.mixins import (
-    IsPartWholeRelationship,
-    PartWholeRelationship,
-    HasRootBody,
-)
+from semantic_digital_twin.semantic_annotations.mixins import HasHandle, HasRootBody
+from semantic_digital_twin.semantic_annotations.part_whole import IsPartWholeRelationship
 
 @dataclass(eq=False)
-class ControlPanel(HasRootBody, PartWholeRelationship):
-    """A custom annotation that can hold a single handle as a structural part."""
+class EmergencyButton(HasRootBody):
+    """A part kind none of the built-in mixins cover."""
 
-    handle: Optional[Handle] = field(
+@dataclass(eq=False)
+class ControlPanel(HasHandle):
+    """A custom annotation with a handle and an emergency button as structural parts."""
+
+    emergency_button: Optional[EmergencyButton] = field(
         default=None,
-        metadata=FieldMetadata(other_metadata=[IsPartWholeRelationship()]).as_dict(),
+        metadata=IsPartWholeRelationship().as_dict(),
     )
-    """A part-whole relationship field: parts of type ``Handle`` are routed here by ``add``."""
+    """A part-whole relationship field: parts of type ``EmergencyButton`` are routed here by ``add``."""
 
     label: Optional[str] = field(default=None)
     """A plain field — *not* a part-whole relationship field, so ``add`` never touches it."""
 ```
 
-Now we can build a `ControlPanel` and add a handle to it exactly like the built-in annotations:
+Now we can build a `ControlPanel` and add its parts exactly like the built-in annotations —
+`add` routes the handle into the inherited mixin field and the button into the declared one:
 
 ```{code-cell} ipython3
 with world.modify_world():
     panel = ControlPanel.create_with_new_body_in_world(
-        name=PrefixedName("panel"),
+        name="panel",
         scale=Scale(0.3, 0.2, 0.02),
         world=world,
         world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(z=0.5),
     )
     panel_handle = Handle.create_with_new_body_in_world(
-        name=PrefixedName("panel_handle"),
-        world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=0.1, z=0.5),
+        name="panel_handle",
+        world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(
+            x=0.1, z=0.5, roll=np.pi / 2
+        ),
         world=world,
-        scale=Scale(0.05, 0.1, 0.02),
+        scale=Scale(0.05, 0.02, 0.1),
+    )
+    panel_button = EmergencyButton.create_with_new_body_in_world(
+        name="panel_button",
+        world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=-0.1, z=0.5),
+        world=world,
+        scale=Scale(0.03, 0.03, 0.02),
     )
     panel.add(panel_handle)
+    panel.add(panel_button)
 
+assert panel.handle is panel_handle
+assert panel.emergency_button is panel_button
 print("panel.handle is panel_handle:", panel.handle is panel_handle)
+print("panel.emergency_button is panel_button:", panel.emergency_button is panel_button)
 ```
 
 If you try to add a part whose type matches none of the part-whole relationship fields, `add`
@@ -166,13 +186,20 @@ from semantic_digital_twin.exceptions import CannotBeAPartOf
 
 with world.modify_world():
     stray_drawer = Drawer.create_with_new_body_in_world(
-        name=PrefixedName("stray_drawer"),
+        name="stray_drawer",
         scale=Scale(0.2, 0.2, 0.2),
         world=world,
         world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(y=0.6),
     )
+    rejected = False
     try:
         panel.add(stray_drawer)
     except CannotBeAPartOf as error:
+        rejected = True
         print("Rejected as expected:", error)
+
+assert rejected
 ```
+
+If you think you have understood everything in this tutorial, you may try out
+[our self-assessment quiz for this user guide](semantic-annotation-part-whole-quiz)

@@ -9,7 +9,7 @@ from krrood.ormatic.data_access_objects.dao import selectin_loading
 from krrood.ormatic.data_access_objects.from_dao import FromDataAccessObjectState
 from krrood.ormatic.data_access_objects.helper import (
     to_dao,
-    get_dao_class,
+    get_data_access_object_class,
 )
 from krrood.ormatic.data_access_objects.to_dao import ToDataAccessObjectState
 from krrood.ormatic.exceptions import NoDAOFoundError, UncallableFunction
@@ -622,6 +622,23 @@ def test_json_integration(session, database):
     assert reconstructed == obj
 
 
+def test_custom_type_from_foreign_package(session, database):
+    """
+    Regression test for a bug where a JSON-mapped field whose type lives in a package
+    nothing else in the generated interface imports (here, ``random_events``) tripped a
+    ``MappedAnnotationError`` at class-definition time, because
+    ``WrappedTable.create_custom_type`` never registered that module as an import.
+    """
+    obj = HolderOfSimpleInterval()
+    dao = to_dao(obj)
+    session.add(dao)
+    session.commit()
+
+    queried = session.scalars(select(HolderOfSimpleIntervalDAO)).one()
+    reconstructed = queried.from_dao()
+    assert reconstructed == obj
+
+
 def test_many_to_many_with_same_type(session, database):
 
     state = ToDataAccessObjectState()
@@ -695,7 +712,7 @@ def test_persons(session, database):
 
 
 def test_underspecified_types():
-    dao_class = get_dao_class(UnderspecifiedTypesContainer)
+    dao_class = get_data_access_object_class(UnderspecifiedTypesContainer)
     assert dao_class is not None
     inst = inspect(dao_class)
     column_names = [c_attr.key for c_attr in inst.mapper.column_attrs]
@@ -816,8 +833,42 @@ def test_generic_class(session, database):
     assert reconstructed.associated_value == obj.associated_value
     assert len(reconstructed.associated_value_list) == 2
     assert reconstructed.associated_value_list == obj.associated_value_list
-    assert reconstructed.associated_value_not_parametrized is None
-    assert reconstructed.associated_value_not_parametrized_list == []
+    assert reconstructed.associated_value_not_parametrized == generic_position
+    [reconstructed_bare_value] = reconstructed.associated_value_not_parametrized_list
+    assert not hasattr(reconstructed_bare_value, "value")
+    assert reconstructed_bare_value.optional_value is None
+    assert reconstructed_bare_value.container == []
+
+
+def test_shared_parametrization_resolves_the_same_whichever_field_reaches_it_first():
+    """
+    A parametrized instance carries its own type argument, so it resolves to its
+    concrete DAO even when the first field to reach it is typed to the bare generic.
+
+    The conversion state keeps the DAO it resolves for an object the first time it sees
+    it, and objects are reachable from several owners, so a resolution that depended on
+    which field got there first would pin a shared object to the ambiguous base DAO and
+    drop everything the concrete table holds.
+    """
+    shared = GenericClass[KRROODPosition](KRROODPosition(1.0, 2.0, 3.0))
+    reached_through_bare_field = GenericClassAssociation(
+        associated_value=GenericClass[float](1.0),
+        associated_value_list=[],
+        associated_value_not_parametrized=shared,
+    )
+    reached_through_parametrized_field = GenericClassAssociation(
+        associated_value=GenericClass[float](9.0),
+        associated_value_list=[shared],
+    )
+
+    state = ToDataAccessObjectState()
+    bare_first_dao = to_dao(reached_through_bare_field, state)
+    parametrized_second_dao = to_dao(reached_through_parametrized_field, state)
+
+    shared_dao = bare_first_dao.associated_value_not_parametrized
+    assert isinstance(shared_dao, GenericClass_KRROODPositionDAO)
+    assert shared_dao.value.z == 3.0
+    assert parametrized_second_dao.associated_value_list[0].target is shared_dao
 
 
 def test_consistent_hashes_of_association_object_table_names():
@@ -869,11 +920,22 @@ def test_path_custom_type(session, database):
     assert reconstructed == path
 
 
+def test_duration_keeps_sub_second_resolution(session, database):
+    duration = DurationAssociation(timedelta(seconds=3, microseconds=12500))
+
+    dao = to_dao(duration)
+    session.add(dao)
+    session.commit()
+
+    queried = session.scalars(select(DurationAssociationDAO)).one()
+    assert queried.from_dao() == duration
+
+
 def test_selectin_loading_preloads_relationships(session, database):
     """
     Relationship attributes are loaded eagerly (the generated relationships use
-    lazy='selectin') and remain accessible after the instance is detached from
-    the session, with or without the selectin_loading() context manager.
+    lazy='selectin') and remain accessible after the instance is detached from the
+    session, with or without the selectin_loading() context manager.
     """
     p1 = KRROODPosition(1, 2, 3)
     p2 = KRROODPosition(2, 3, 4)
@@ -899,9 +961,9 @@ def test_selectin_loading_preloads_relationships(session, database):
 
 def test_selectin_loading_reduces_queries_during_from_dao(session, database):
     """
-    All relationships are bulk-fetched in O(1) queries during the initial read
-    (mapper-level lazy='selectin'), so from_dao() makes zero additional DB
-    round-trips, with or without the selectin_loading() context manager.
+    All relationships are bulk-fetched in O(1) queries during the initial read (mapper-
+    level lazy='selectin'), so from_dao() makes zero additional DB round-trips, with or
+    without the selectin_loading() context manager.
     """
     N = 30
     positions = KRROODPositions(

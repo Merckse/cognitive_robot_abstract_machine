@@ -23,8 +23,10 @@ if TYPE_CHECKING:
 
 class ErrorChecker(ABC):
     """
-    An abstract class that resembles an error checker. It has two main methods, one for calculating the error between
-    two values and another for checking if the error is acceptable.
+    An abstract class that resembles an error checker.
+
+    It has two main methods, one for calculating the error between two values and
+    another for checking if the error is acceptable.
     """
 
     def __init__(
@@ -64,7 +66,8 @@ class ErrorChecker(ABC):
         tile_to_match: Optional[Sized] = None,
     ) -> None:
         """
-        Update the acceptable error with a new value, and tile it to match the length of the error if needed.
+        Update the acceptable error with a new value, and tile it to match the length of
+        the error if needed.
 
         :param new_acceptable_error: The new acceptable error.
         :param tile_to_match: The iterable to match the length of the error with.
@@ -143,7 +146,8 @@ class PoseErrorChecker(ErrorChecker):
         """
         Initialize the pose error checker.
 
-        :param acceptable_error: The acceptable pose error (position error, orientation error).
+        :param acceptable_error: The acceptable pose error (position error, orientation
+            error).
         :param is_iterable: Whether the error is iterable (i.e. list of errors).
         """
         super().__init__(acceptable_error, is_iterable)
@@ -329,11 +333,9 @@ def calculate_pose_error(pose_1: Pose, pose_2: Pose) -> List[float]:
     :return: The error between the two poses.
     """
     return [
-        calculate_position_error(
-            pose_1.to_position().to_list(), pose_2.to_position().to_list()
-        ),
+        calculate_position_error(pose_1.position.to_list(), pose_2.position.to_list()),
         calculate_orientation_error(
-            pose_1.to_quaternion().to_list(), pose_2.to_quaternion().to_list()
+            pose_1.quaternion.to_list(), pose_2.quaternion.to_list()
         ),
     ]
 

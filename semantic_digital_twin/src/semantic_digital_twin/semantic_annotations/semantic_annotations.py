@@ -1,62 +1,92 @@
 from __future__ import annotations
 
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Iterable, Optional, Self, Tuple, TYPE_CHECKING
+from typing import Iterable, Iterator, Optional, Self, Tuple, TYPE_CHECKING, Union
 
-from typing_extensions import List, Type
+import math
+
+import numpy as np
+from typing_extensions import List
 
 from krrood.ormatic.utils import classproperty
 from krrood.symbolic_math import symbolic_math
 from random_events.interval import closed
 from random_events.product_algebra import SimpleEvent
+from semantic_digital_twin.datastructures.alignment import AlignmentPair
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.datastructures.variables import SpatialVariables
 from semantic_digital_twin.exceptions import (
+    NoGraspGeometry,
+    HandleWiderThanLong,
     InvalidPlaneDimensions,
     InvalidHingeActiveAxis,
     MissingSemanticAnnotationError,
-    MechanicalJointAlreadyMounted,
+    MissingMovableJointError,
 )
 from semantic_digital_twin.reasoning.predicates import InsideOf
+from semantic_digital_twin.semantic_annotations.part_whole import (
+    IsPartWholeRelationship,
+)
 from semantic_digital_twin.semantic_annotations.mixins import (
+    HasCounterTop,
+    HasCabinets,
     HasSupportingSurface,
     HasRootRegion,
     HasDrawers,
     HasDoors,
     HasHandle,
+    HasHandles,
     HasCaseAsRootBody,
-    HasMechanicalJoint,
+    HasMovableJoint,
     HasApertures,
     IsPerceivable,
     HasRootBody,
     IsStorageSpace,
     HasLegs,
     HasSink,
+    HasShelfLayers,
+    HasGraspCandidates,
+    HasPinchableWall,
+    HasRim,
+)
+from krrood.entity_query_language.factories import and_, or_
+from krrood.entity_query_language.query.match import Match
+from semantic_digital_twin.grasping.grasp_candidates import GraspCandidate
+from semantic_digital_twin.grasping.surface_grasp import (
+    SurfaceGrasp,
+    any_surface_grasp,
+    from_any_side,
 )
 from semantic_digital_twin.spatial_types import (
     Point3,
     HomogeneousTransformationMatrix,
     Vector3,
 )
+from semantic_digital_twin.spatial_types.spatial_types import Pose, RotationMatrix
 from semantic_digital_twin.world_description.connections import (
-    RevoluteConnection,
-    PrismaticConnection,
     FixedConnection,
 )
-from semantic_digital_twin.world_description.degree_of_freedom import (
-    DegreeOfFreedomLimits,
+from semantic_digital_twin.world_description.geometry import (
+    VolumetricBoundingBox,
+    Scale,
+    Color,
 )
-from semantic_digital_twin.world_description.geometry import Scale, Mesh, Color
 from semantic_digital_twin.world_description.shape_collection import (
     BoundingBoxCollection,
-    ShapeCollection,
 )
 from semantic_digital_twin.world_description.world_entity import (
     SemanticAnnotation,
     Body,
-    Region,
-    Connection,
+)
+from semantic_digital_twin.specifications.connections import ConnectionSpecification
+from semantic_digital_twin.specifications.kinematic_structure_entities import (
+    BodySpecification,
+    KinematicStructureEntitySpecification,
+    RegionSpecification,
+)
+from semantic_digital_twin.specifications.semantic_annotations import (
+    SemanticAnnotationWithRootSpecification,
 )
 
 if TYPE_CHECKING:
@@ -71,41 +101,47 @@ class Furniture(SemanticAnnotation, ABC):
 
 
 @dataclass(eq=False)
-class Handle(HasRootBody):
+class Handle(HasGraspCandidates):
     """
-    A handle is a physical entity that can be grasped by a hand or a robotic gripper to open or close an object.
+    A handle is a physical entity that can be grasped by a hand or a robotic gripper to
+    open or close an object.
     """
 
-    @classmethod
-    def create_with_new_body_in_world(
-        cls,
-        name: PrefixedName,
-        world: World,
-        world_root_T_self: Optional[HomogeneousTransformationMatrix] = None,
-        connection_limits: Optional[DegreeOfFreedomLimits] = None,
-        active_axis: Optional[Vector3] = None,
-        connection_multiplier: float = 1.0,
-        connection_offset: float = 0.0,
-        *,
-        scale: Scale = Scale(0.1, 0.02, 0.02),
-        thickness: float = 0.005,
-    ) -> Self:
-        handle_event = cls._create_handle_geometry(scale=scale).as_composite_set()
+    def default_grasp_candidates(self) -> List[GraspCandidate]:
+        """
+        :return: Grasps drawn uniformly from :meth:`surface_grasp_statement`.
+        """
+        return self.drawn_grasp_candidates()
 
-        inner_box = cls._create_handle_geometry(
-            scale=scale, thickness=thickness
-        ).as_composite_set()
-
-        handle_event -= inner_box
-
-        handle_body = Body(name=name)
-        collision = BoundingBoxCollection.from_event(
-            handle_body, handle_event
-        ).as_shapes()
-        handle_body.collision = collision
-        handle_body.visual = collision
-        return cls._create_with_connection_in_world(
-            name, world, handle_body, world_root_T_self
+    def surface_grasp_statement(
+        self,
+        require_lifting: bool = False,
+        lowest_height: float = 0.1,
+        highest_height: float = 0.9,
+        shallowest_depth: float = 0.0,
+        deepest_depth: float = 0.5,
+    ) -> Match[SurfaceGrasp]:
+        """
+        :param require_lifting: Whether to ask only for grasps that lift the object.
+        :param lowest_height: The lowest height to grasp the handle at, as a fraction
+            of its bounding box from its bottom to its top.
+        :param highest_height: The height to grasp the handle below, as such a
+            fraction.
+        :param shallowest_depth: The least depth to close the fingers at, as a fraction
+            of the handle's thinnest extent.
+        :param deepest_depth: The depth to close the fingers short of, as such a
+            fraction.
+        :return: The handle between the two heights, closing on it between the two
+            depths.
+        """
+        thinnest_extent = float(min(self.grasp_surface().extents))
+        grasp = any_surface_grasp(require_lifting)
+        return grasp.where(
+            grasp.height >= lowest_height,
+            grasp.height < highest_height,
+            grasp.depth >= shallowest_depth * thinnest_extent,
+            grasp.depth < deepest_depth * thinnest_extent,
+            *from_any_side(grasp),
         )
 
     @classmethod
@@ -118,7 +154,6 @@ class Handle(HasRootBody):
         :param scale: The scale of the handle.
         :param thickness: The thickness of the handle walls.
         """
-
         x_interval = closed(-scale.x + thickness, 0)
         y_interval = closed(-scale.y / 2, scale.y / 2)
         z_interval = closed(
@@ -134,15 +169,54 @@ class Handle(HasRootBody):
             }
         )
 
+    @classmethod
+    def get_default_root_kinematic_structure_entity_specification(
+        cls,
+        name: Optional[str] = None,
+        scale: Optional[Scale] = None,
+        connection_specification: Optional[ConnectionSpecification] = None,
+        *,
+        thickness: float = 0.005,
+    ) -> BodySpecification:
+        """
+        Build the default handle body specification, matching the hollow handle geometry
+        generated by :meth:`create_with_new_body_in_world`.
+
+        :param name: The name of bodies created from the specification.
+        :param scale: The scale of the handle: depth as x, width as y and length as z.
+            Defaults to ``Scale(0.05, 0.02, 0.1)``.
+        :param thickness: The thickness of the handle walls.
+        :param connection_specification: Connection attaching the entity to its parent.
+            ``None`` defers to the annotation type's default at spawn time.
+        :return: A body specification with the handle geometry.
+        :raises HandleWiderThanLong: If the width of ``scale`` exceeds its length.
+        """
+        scale = scale or Scale(0.05, 0.02, 0.1)
+        if scale.y > scale.z:
+            raise HandleWiderThanLong(scale=scale)
+        handle_event = cls._create_handle_geometry(scale=scale).as_composite_set()
+        inner_box = cls._create_handle_geometry(
+            scale=scale, thickness=thickness
+        ).as_composite_set()
+        handle_event -= inner_box
+
+        return BodySpecification.from_event(
+            name, handle_event, connection_specification=connection_specification
+        )
+
 
 @dataclass(eq=False)
 class Dishwasher(HasCaseAsRootBody, HasDoors, HasDrawers):
     """
-    A dishwasher is a kitchen appliance used for cleaning dishes, utensils, and cookware. It typically has a front door that opens to reveal racks for loading dirty items and a control panel for selecting wash cycles.
+    A dishwasher is a kitchen appliance used for cleaning dishes, utensils, and
+    cookware.
+
+    It typically has a front door that opens to reveal racks for loading dirty items and
+    a control panel for selecting wash cycles.
     """
 
     @classproperty
-    def hole_direction(self) -> Vector3:
+    def _hole_direction_axis(cls) -> Vector3:
         return Vector3.NEGATIVE_X()
 
 
@@ -150,41 +224,14 @@ class Dishwasher(HasCaseAsRootBody, HasDoors, HasDrawers):
 class Aperture(HasRootRegion):
     """
     An opening in a physical entity.
+
     An example is like a hole in a wall that can be used to enter a room.
     """
 
     @classmethod
-    def create_with_new_region_in_world(
-        cls,
-        name: PrefixedName,
-        world: World,
-        world_root_T_self: Optional[HomogeneousTransformationMatrix] = None,
-        connection_limits: Optional[DegreeOfFreedomLimits] = None,
-        active_axis: Vector3 = Vector3.Z(),
-        connection_multiplier: float = 1.0,
-        connection_offset: float = 0.0,
-        *,
-        scale: Scale = Scale(),
-    ) -> Self:
-        """
-        Create a new semantic annotation with a new region in the given world.
-        """
-        aperture_region = Region(name=name)
-
-        scale_event = scale.to_simple_event().as_composite_set()
-        aperture_geometry = BoundingBoxCollection.from_event(
-            aperture_region, scale_event
-        ).as_shapes()
-        aperture_region.area = aperture_geometry
-
-        return cls._create_with_connection_in_world(
-            name, world, aperture_region, world_root_T_self
-        )
-
-    @classmethod
     def create_with_new_region_in_world_from_body(
         cls,
-        name: PrefixedName,
+        name: str,
         world: World,
         body: Body,
         parent_T_self: Optional[HomogeneousTransformationMatrix] = None,
@@ -199,18 +246,29 @@ class Aperture(HasRootRegion):
             name, world, parent_T_self, scale=body_scale
         )
 
-    def _mount_strategy(self, main_has_root_body_annotation: HasRootBody) -> None:
-        # An aperture cuts its shape out of the whole's geometry, then mounts as a child.
-        self._remove_aperture_geometry_from_parent(main_has_root_body_annotation)
-        super()._mount_strategy(main_has_root_body_annotation)
+    def _mount_strategy(
+        self,
+        main_has_root_body_annotation: HasRootBody,
+        relationship: IsPartWholeRelationship,
+    ) -> None:
+        """
+        Cut this aperture out of the whole's geometry when the relationship calls for
+        it, then mount as a kinematic child.
+
+        An aperture mounted into a field that does not remove geometry marks a passage
+        rather than a hole, so the whole keeps its material.
+        """
+        if relationship.removes_part_geometry_from_whole:
+            self._remove_aperture_geometry_from_parent(main_has_root_body_annotation)
+        super()._mount_strategy(main_has_root_body_annotation, relationship)
 
     def _remove_aperture_geometry_from_parent(self, parent: HasRootBody):
         """
-        Remove the geometry of the aperture from the parent body's collision and visual geometry.
+        Remove the geometry of the aperture from the parent body's collision and visual
+        geometry.
 
         :param parent: The parent from which the aperture geometry is removed.
         """
-
         world = parent._world
         world.update_forward_kinematics()
         hole_event = self.root.area.as_bounding_box_collection_in_frame(
@@ -221,148 +279,192 @@ class Aperture(HasRootRegion):
         ).event
         new_wall_event = wall_event - hole_event
         new_bounding_box_collection = BoundingBoxCollection.from_event(
-            parent.root, new_wall_event
+            VolumetricBoundingBox, parent.root, new_wall_event
         ).as_shapes()
 
         parent.root.collision = new_bounding_box_collection
         parent.root.visual = new_bounding_box_collection
 
-
-@dataclass(eq=False)
-class MechanicalJoint(HasRootBody):
-    """
-    A mechanical joint is a physical entity that connects two bodies and allows one to move along or around a fixed axis
-    """
-
-    def _mount_strategy(self, main_has_root_body_annotation: HasRootBody) -> None:
+    @classmethod
+    def get_default_root_kinematic_structure_entity_specification(
+        cls,
+        name: Optional[str] = None,
+        scale: Optional[Scale] = None,
+        connection_specification: Optional[ConnectionSpecification] = None,
+    ) -> RegionSpecification:
         """
-        Inserts the joint between the whole (``main_has_root_body_annotation``) and the whole's
-        current parent, preserving the whole's ancestry.
-        So
-        whole_parent -(fixed)-> whole
-        becomes
-        whole_parent -(active)-> joint -(fixed)-> whole. The joint keeps its active connection
-        (now anchored at the whole's parent); the whole hangs rigidly off the joint.
-        """
-        if (
-            main_has_root_body_annotation.root.parent_kinematic_structure_entity
-            == self.root
-        ):
-            return
-        # used instead of World.compute_child_kinematic_structure_entities because its memoized
-        if list(self._world.kinematic_structure.successors(self.root.index)):
-            raise MechanicalJointAlreadyMounted(self, main_has_root_body_annotation)
+        Build the default region specification whose ``area`` geometry matches what
+        :meth:`create_with_new_region_in_world` generates from ``scale``.
 
-        self._world.move_branch(
-            self.root,
-            main_has_root_body_annotation.root.parent_kinematic_structure_entity,
-        )
-        main_has_root_body_annotation._world.move_branch(
-            main_has_root_body_annotation.root, self.root
+        :param name: The name of regions created from the specification.
+        :param scale: The scale used to generate the region area geometry. Defaults to
+            ``Scale()``.
+        :param connection_specification: Connection attaching the entity to its parent.
+            ``None`` defers to the annotation type's default at spawn time.
+        :return: A region specification with a single box area derived from ``scale``.
+        """
+        scale = scale or Scale()
+        return RegionSpecification.from_event(
+            name,
+            scale.to_simple_event().as_composite_set(),
+            connection_specification=connection_specification,
         )
 
 
 @dataclass(eq=False)
-class Hinge(MechanicalJoint):
+class EntryWay(Aperture):
     """
-    A hinge is a physical entity that connects two bodies and allows one to rotate around a fixed axis.
-    """
+    The passage a door covers.
 
-    @classproperty
-    def _parent_connection_type(self) -> Type[Connection]:
-        return RevoluteConnection
-
-
-@dataclass(eq=False)
-class Slider(MechanicalJoint):
-    """
-    A Slider is a physical entity that connects two bodies and allows one to linearly translate along a fixed axis.
-    """
-
-    @classproperty
-    def _parent_connection_type(self) -> Type[Connection]:
-        return PrismaticConnection
-
-
-@dataclass(eq=False)
-class EntryWay(Aperture): ...
-
-
-@dataclass(eq=False)
-class Door(HasHandle, HasMechanicalJoint):
-    """
-    A door is a physical entity that has covers an opening, has a movable body and a handle.
-    """
-
-    entry_way: Optional[EntryWay] = field(default=None)
-    """
-    The entry way of the door.
+    It is coextensive with the door leaf, so mounting it on its door leaves the door's
+    geometry intact; mounting it on a :class:`Wall` cuts the doorway out of the wall.
     """
 
     @classmethod
-    def create_with_new_body_in_world(
+    def get_default_root_kinematic_structure_entity_specification(
         cls,
-        name: PrefixedName,
-        world: World,
-        world_root_T_self: Optional[HomogeneousTransformationMatrix] = None,
-        connection_limits: Optional[DegreeOfFreedomLimits] = None,
-        active_axis: Vector3 = Vector3.Z(),
-        connection_multiplier: float = 1.0,
-        connection_offset: float = 0.0,
+        name: Optional[str] = None,
+        scale: Optional[Scale] = None,
+        connection_specification: Optional[ConnectionSpecification] = None,
         *,
-        scale: Scale = Scale(0.03, 1, 2),
-    ) -> Self:
+        color: Optional[Color] = None,
+    ) -> RegionSpecification:
+        """
+        Build the default entry way region specification: a box coextensive with the
+        door leaf, translucent so the passage is visible without occluding the door.
+
+        :param name: The name of regions created from the specification.
+        :param scale: The scale of the passage. Defaults to ``Scale()``.
+        :param connection_specification: Connection attaching the entity to its parent.
+            ``None`` defers to the annotation type's default at spawn time.
+        :param color: The colour of the passage. Defaults to translucent white.
+        :return: A region specification with the passage geometry.
+        """
+        return RegionSpecification.box(
+            name,
+            scale or Scale(),
+            color=color or Color(R=1.0, G=1.0, B=1.0, A=0.2),
+            connection_specification=connection_specification,
+        )
+
+
+@dataclass(eq=False)
+class Door(HasHandle, HasMovableJoint):
+    """
+    A door is a physical entity that has covers an opening, has a movable body and a
+    handle.
+    """
+
+    entry_way: Optional[EntryWay] = field(
+        default=None, metadata=IsPartWholeRelationship().as_dict()
+    )
+    """
+    The entry way of the door: the passage the door covers.
+
+    It is coextensive with the door leaf, so mounting it leaves the door's geometry
+    intact; mounting the same entry way on a :class:`Wall` cuts the doorway out of it.
+    """
+
+    @classproperty
+    def default_scale(cls) -> Scale:
+        """
+        The scale the door's geometry and its entry way are built from when the caller
+        supplies none.
+        """
+        return Scale(0.03, 1, 2)
+
+    @classmethod
+    def get_annotation_specification(
+        cls,
+        name: str,
+        root_specification: KinematicStructureEntitySpecification,
+        *,
+        parent_connection_specification: Optional[ConnectionSpecification] = None,
+        annotation_kwargs: Optional[dict] = None,
+        part_specifications: Optional[dict] = None,
+    ) -> SemanticAnnotationWithRootSpecification[Self]:
+        """
+        Extend the door specification with its entry way, declared as a nested part so a
+        door always carries the passage it covers.
+
+        The entry way is coextensive with the door leaf, so it is sized from the root
+        specification's own geometry rather than from a separately supplied scale. A
+        caller-supplied ``entry_way`` entry replaces the default one.
+
+        :param name: The name of the annotation and its root entity.
+        :param root_specification: The specification of the door's root body.
+        :param parent_connection_specification: Connection attaching the root to its
+            parent.
+        :param annotation_kwargs: Inert keyword arguments for the annotation
+            constructor.
+        :param part_specifications: Nested annotation parts keyed by part-whole
+            relationship field name.
+        :return: The annotation specification.
+        """
+        entry_way_specification = EntryWay.get_annotation_specification(
+            f"{name}_entry_way",
+            EntryWay.get_default_root_kinematic_structure_entity_specification(
+                scale=root_specification.scale
+            ),
+        )
+        return super().get_annotation_specification(
+            name,
+            root_specification,
+            parent_connection_specification=parent_connection_specification,
+            annotation_kwargs=annotation_kwargs,
+            part_specifications={
+                "entry_way": entry_way_specification,
+                **(part_specifications if part_specifications is not None else {}),
+            },
+        )
+
+    @classmethod
+    def get_default_root_kinematic_structure_entity_specification(
+        cls,
+        name: Optional[str] = None,
+        scale: Optional[Scale] = None,
+        connection_specification: Optional[ConnectionSpecification] = None,
+    ) -> BodySpecification:
+        """
+        Build the default door body specification.
+
+        The door geometry is the base solid box; the ``EntryWay`` is a nested part
+        specification and is not part of the door's own geometry.
+
+        :param name: The name of bodies created from the specification.
+        :param scale: The scale of the door. ``scale.x`` must be the smallest dimension.
+            Defaults to :attr:`default_scale`.
+        :param connection_specification: Connection attaching the entity to its parent.
+            ``None`` defers to the annotation type's default at spawn time.
+        :return: A body specification with the door box geometry.
+        """
+        scale = scale or cls.default_scale
         if not (scale.x < scale.y and scale.x < scale.z):
             raise InvalidPlaneDimensions(scale, clazz=Door)
-
-        # This creates an event around the scale, so if the scale is 1 the event will be from -0.5 to 0.5.
-        door_event = scale.to_simple_event().as_composite_set()
-        door_body = Body(name=name)
-        bounding_box_collection = BoundingBoxCollection.from_event(
-            door_body, door_event
-        )
-        collision = bounding_box_collection.as_shapes()
-        door_body.collision = collision
-        door_body.visual = collision
-
-        entry_way_name = PrefixedName(name.name + "entry_way", name.prefix)
-        entry_way_region_name = PrefixedName(
-            name.name + "entry_way_region", name.prefix
+        return super().get_default_root_kinematic_structure_entity_specification(
+            name, scale, connection_specification
         )
 
-        entry_way_region = Region(
-            name=entry_way_region_name,
-            area=ShapeCollection([Mesh.from_trimesh(mesh=door_body.combined_mesh)]),
-        )
-        entry_way_region.area.dye_shapes(Color(R=1.0, G=1.0, B=1.0, A=0.2))
-        entry_way = EntryWay(name=entry_way_name, root=entry_way_region)
-        world.add_region(entry_way.root)
-        world.add_connection(FixedConnection(door_body, entry_way.root))
-        world.add_semantic_annotation(entry_way)
-
-        door = cls._create_with_connection_in_world(
-            name, world, door_body, world_root_T_self
-        )
-        door.entry_way = entry_way
-        return door
-
-    def calculate_world_T_hinge_based_on_handle(
-        self, opening_axis: Vector3
+    def calculate_self_T_movable_joint(
+        self, axis: Vector3
     ) -> HomogeneousTransformationMatrix:
         """
-        Calculate the door pivot point based on the handle position and the door scale. The pivot point is on the opposite
-        side of the handle.
-        :return: The transformation matrix defining the door's pivot point.
+        Calculate where the door's hinge sits: on the edge opposite its handle.
+
+        :param axis: The axis the door swings about, in the door frame, along one of the
+            frame's axes in either direction.
+        :return: The pose of the hinge in the door frame.
         """
         if self.handle is None:
             raise MissingSemanticAnnotationError(self.__class__, Handle)
 
         connection = self.handle.root.parent_connection
-        door_P_handle = connection.origin_expression.to_position()
+        door_P_handle = connection.origin_expression.position
         scale = self.root.collision.scale
-        world_T_door = self.root.global_transform
 
-        match opening_axis.to_np().tolist():
+        # The axis' sign only decides which way the door swings, not which edge it
+        # swings about.
+        match [abs(component) for component in axis.to_np().tolist()]:
             case [0, 1, 0, 0]:
                 sign = (
                     symbolic_math.sign(-1 * door_P_handle.z)
@@ -390,11 +492,9 @@ class Door(HasHandle, HasMechanicalJoint):
                 door_T_hinge = HomogeneousTransformationMatrix.from_xyz_rpy(x=offset)
 
             case _:
-                raise InvalidHingeActiveAxis(axis=opening_axis)
+                raise InvalidHingeActiveAxis(axis=axis)
 
-        world_T_hinge = world_T_door @ door_T_hinge
-
-        return world_T_hinge
+        return door_T_hinge
 
 
 @dataclass(eq=False)
@@ -410,11 +510,12 @@ class DoubleDoor(SemanticAnnotation):
         self, world_T_view_point: HomogeneousTransformationMatrix
     ) -> Tuple[Door, Door]:
         """
-        Calculate which door is the left and which is the right door based on a given view point.
+        Calculate which door is the left and which is the right door based on a given
+        view point.
 
         :param world_T_view_point: The transformation matrix of the view point.
-
-        :return: A tuple containing the left and right door. the first door is the left door, the second door is the right door.
+        :return: A tuple containing the left and right door. the first door is the left
+            door, the second door is the right door.
         """
         world_T_door_0 = self.door_0.root.global_transform
         view_point_T_door_0 = world_T_view_point.inverse() @ world_T_door_0
@@ -427,11 +528,96 @@ class DoubleDoor(SemanticAnnotation):
 
 
 @dataclass(eq=False)
-class Drawer(Furniture, HasCaseAsRootBody, HasHandle, HasMechanicalJoint):
+class Drawer(Furniture, HasCaseAsRootBody, HasHandle, HasMovableJoint):
+    @classproperty
+    def _hole_direction_axis(cls) -> Vector3:
+        return Vector3.Z()
+
+    def calculate_self_T_movable_joint(
+        self, axis: Vector3
+    ) -> HomogeneousTransformationMatrix:
+        """
+        A drawer slides, which moves it the same wherever its rails sit, so they sit at
+        its origin.
+
+        :param axis: The axis the drawer slides along, in the drawer frame.
+        :return: The identity: the rails' frame is the drawer's frame.
+        """
+        return HomogeneousTransformationMatrix()
+
+    @property
+    def opening_ratio(self) -> float:
+        """
+        :return: How far this drawer stands pulled out, as a fraction of its travel.
+        """
+        if self.movable_joint is None:
+            raise MissingMovableJointError(self)
+        limits = self.movable_joint.dof.limits
+        return (self.movable_joint.position - limits.lower.position) / (
+            limits.upper.position - limits.lower.position
+        )
+
+
+@dataclass(eq=False)
+class Elevator(HasCaseAsRootBody, HasDoors, HasMovableJoint):
+    """
+    An elevator in the world, consists of three walls a floor, double doors for entering and a prismatic drive that moves
+    the elevator to other floors.
+    """
 
     @classproperty
-    def hole_direction(self) -> Vector3:
-        return Vector3.Z()
+    def _hole_direction_axis(cls) -> Vector3:
+        return Vector3.NEGATIVE_X()
+
+    def calculate_self_T_movable_joint(
+        self, axis: Vector3
+    ) -> HomogeneousTransformationMatrix:
+        """
+        An elevator's drive slides it, which moves it the same wherever the drive sits,
+        so it sits at the cabin's origin.
+
+        :param axis: The axis the cabin travels along, in the cabin frame.
+        :return: The identity: the drive's frame is the cabin's frame.
+        """
+        return HomogeneousTransformationMatrix()
+
+    def open(self):
+        """
+        Opens the elevator doors
+        """
+        for door in self.doors:
+            if door.movable_joint is None:
+                raise MissingMovableJointError(door)
+            door.movable_joint.position = door.movable_joint.dof.limits.upper.position
+
+    def close(self):
+        """
+        Closes the elevator doors
+        """
+        for door in self.doors:
+            if door.movable_joint is None:
+                raise MissingMovableJointError(door)
+            door.movable_joint.position = door.movable_joint.dof.limits.lower.position
+
+    def drive_position_for_floor(self, floor: Level) -> float:
+        """
+        The drive position at which the elevator serves the given floor.
+
+        The half height accounts for the case body's origin sitting at its ground rather
+        than at its centre.
+
+        :param floor: The floor the elevator should serve.
+        :return: The position to drive the elevator's joint to.
+        """
+        return float(floor.floor_plane[0].z)
+
+    def drive_to_floor(self, floor: Level):
+        """
+        Drives the elevator to the floor given
+        """
+        if self.movable_joint is None:
+            raise MissingMovableJointError(self)
+        self.movable_joint.position = self.drive_position_for_floor(floor)
 
 
 ############################### subclasses to Furniture
@@ -440,8 +626,11 @@ class Drawer(Furniture, HasCaseAsRootBody, HasHandle, HasMechanicalJoint):
 @dataclass(eq=False)
 class ShelfLayer(HasSupportingSurface):
     """
-    A horizontal surface used for storing objects, typically found inside cabinets or on walls.
+    A horizontal surface used for storing objects, typically found inside cabinets or on
+    walls.
     """
+
+    _synonyms = {"level", "board"}
 
 
 @dataclass(eq=False)
@@ -457,11 +646,22 @@ class CounterTop(Furniture, HasSupportingSurface, HasSink):
     A semantic annotation that represents a counter top.
     """
 
+    _synonyms = {"countertop"}
+
 
 @dataclass(eq=False)
-class Cabinet(Furniture, HasCaseAsRootBody, HasHandle, HasDoors, HasDrawers):
+class KitchenIsland(Furniture, HasRootBody, HasCabinets, HasCounterTop, HasDoors):
+    """
+    A run of kitchen cabinets standing free of the walls, under one counter top.
+    """
+
+    _synonyms = {"kitchen_island", "island"}
+
+
+@dataclass(eq=False)
+class Cabinet(Furniture, HasCaseAsRootBody, HasDoors, HasDrawers):
     @classproperty
-    def hole_direction(self) -> Vector3:
+    def _hole_direction_axis(cls) -> Vector3:
         return Vector3.NEGATIVE_X()
 
 
@@ -487,58 +687,56 @@ class Wardrobe(Cabinet): ...
 
 @dataclass(eq=False)
 class Floor(HasSupportingSurface):
-
-    @classmethod
-    def create_with_new_body_in_world(
-        cls,
-        name: PrefixedName,
-        world: World,
-        world_root_T_self: Optional[HomogeneousTransformationMatrix] = None,
-        connection_limits: Optional[DegreeOfFreedomLimits] = None,
-        active_axis: Vector3 = Vector3.Z(),
-        connection_multiplier: float = 1.0,
-        connection_offset: float = 0.0,
-        *,
-        scale: Scale = Scale(),
-    ) -> Self:
-        """
-        Create a Floor semantic annotation with a new body defined by the given scale.
-
-        :param name: The name of the floor body.
-        :param scale: The scale defining the floor polytope.
-        """
-        polytope = scale.to_bounding_box().get_points()
-        return cls.create_with_new_body_from_polytope_in_world(
-            name=name,
-            floor_polytope=polytope,
-            world=world,
-            world_root_T_self=world_root_T_self,
-        )
-
     @classmethod
     def create_with_new_body_from_polytope_in_world(
         cls,
-        name: PrefixedName,
+        name: str,
         world: World,
         floor_polytope: List[Point3],
         world_root_T_self: Optional[HomogeneousTransformationMatrix] = None,
     ) -> Self:
         """
-        Create a Floor semantic annotation with a new body defined by the given list of Point3.
+        Create a Floor semantic annotation with a new body defined by the given list of
+        Point3.
 
         :param name: The name of the floor body.
         :param floor_polytope: A list of 3D points defining the floor poly
         """
-        room_body = Body.from_3d_points(name=name, points_3d=floor_polytope)
-        return cls._create_with_connection_in_world(
-            name, world, room_body, world_root_T_self
+        return cls.get_annotation_specification(
+            name,
+            BodySpecification.from_3d_points(name, floor_polytope),
+        ).spawn(world, parent_T_self=world_root_T_self)
+
+    @classmethod
+    def get_default_root_kinematic_structure_entity_specification(
+        cls,
+        name: Optional[str] = None,
+        scale: Optional[Scale] = None,
+        connection_specification: Optional[ConnectionSpecification] = None,
+    ) -> BodySpecification:
+        """
+        Build the default floor body specification, matching the convex-hull polytope
+        geometry generated by :meth:`create_with_new_body_in_world` (which derives
+        points from the scale bounding box).
+
+        :param name: The name of bodies created from the specification.
+        :param scale: The scale defining the floor polytope. Defaults to ``Scale()``.
+        :param connection_specification: Connection attaching the entity to its parent.
+            ``None`` defers to the annotation type's default at spawn time.
+        :return: A body specification with the floor polytope mesh.
+        """
+        scale = scale or Scale()
+        return BodySpecification.from_3d_points(
+            name,
+            scale.to_bounding_box().get_points(),
+            connection_specification=connection_specification,
         )
 
 
 @dataclass(eq=False)
 class Room(SemanticAnnotation):
     """
-    A closed area with a specific purpose
+    A closed area with a specific purpose.
     """
 
     floor: Floor = field(kw_only=True)
@@ -564,56 +762,75 @@ class LivingRoom(Room): ...
 
 
 @dataclass(eq=False)
+class Level(HasRootRegion):
+    """
+    A level of a building
+    """
+
+    @property
+    def floor_plane(self) -> Tuple[Point3, Point3]:
+        """
+        The floor plane of a level, expressed as two points
+
+        :return: The floor plane of the level
+        """
+        min_point_global = self._world.transform(
+            self.root.area.min_point, self._world.root
+        )
+        max_point_global = self._world.transform(
+            self.root.area.max_point, self._world.root
+        )
+        min_z = min_point_global.z
+        return min_point_global, Point3(
+            max_point_global.x,
+            max_point_global.y,
+            min_z,
+            reference_frame=self._world.root,
+        )
+
+
+@dataclass(eq=False)
+class GroundFloor(Level): ...
+
+
+@dataclass(eq=False)
+class FirstFloor(Level): ...
+
+
+@dataclass(eq=False)
+class SecondFloor(Level): ...
+
+
+@dataclass(eq=False)
 class Wall(HasApertures):
     """
-    A wall is a physical entity that separates two spaces and can contain apertures. Doors are a computed property.
+    A wall is a physical entity that separates two spaces and can contain apertures.
+
+    Doors are a computed property.
     """
 
-    @classmethod
-    def create_with_new_body_in_world(
-        cls,
-        name: PrefixedName,
-        world: World,
-        world_root_T_self: Optional[HomogeneousTransformationMatrix] = None,
-        connection_limits: Optional[DegreeOfFreedomLimits] = None,
-        active_axis: Vector3 = Vector3.Z(),
-        connection_multiplier: float = 1.0,
-        connection_offset: float = 0.0,
-        *,
-        scale: Scale = Scale(),
-    ) -> Self:
-        if not (scale.x < scale.y and scale.x < scale.z):
-            raise InvalidPlaneDimensions(scale, clazz=Wall)
-
-        wall_body = Body(name=name)
-        # This creates an event exactly as the scale, so if the scale is 1 the event will be from 0 to 1.
-        wall_event = cls._create_wall_event(scale).as_composite_set()
-        wall_collision = BoundingBoxCollection.from_event(
-            wall_body, wall_event
-        ).as_shapes()
-
-        wall_body.collision = wall_collision
-        wall_body.visual = wall_collision
-
-        return cls._create_with_connection_in_world(
-            name, world, wall_body, world_root_T_self
-        )
+    _synonyms = {"walls"}
 
     @property
     def doors(self) -> Iterable[Door]:
         return [
             door
             for door in self._world.get_semantic_annotations_by_type(Door)
-            if door.entry_way and InsideOf(door.entry_way.root, self.root)() > 0.1
+            if door.entry_way
+            and InsideOf(
+                door.entry_way.root, self.root, minimum_containment_ratio=0.1
+            )()
         ]
 
     @classmethod
     def _create_wall_event(cls, scale: Scale) -> SimpleEvent:
         """
-        Return the collision shapes for the wall. A wall event is created based on the scale of the wall, and
-        doors are removed from the wall event. The resulting bounding box collection is converted to shapes.
-        """
+        Return the collision shapes for the wall.
 
+        A wall event is created based on the scale of the wall, and doors are removed
+        from the wall event. The resulting bounding box collection is converted to
+        shapes.
+        """
         x_interval = closed(-scale.x / 2, scale.x / 2)
         y_interval = closed(-scale.y / 2, scale.y / 2)
         z_interval = closed(0, scale.z)
@@ -626,16 +843,92 @@ class Wall(HasApertures):
             }
         )
 
+    @classmethod
+    def get_default_root_kinematic_structure_entity_specification(
+        cls,
+        name: Optional[str] = None,
+        scale: Optional[Scale] = None,
+        connection_specification: Optional[ConnectionSpecification] = None,
+    ) -> BodySpecification:
+        """
+        Build the default wall body specification, matching the geometry generated by
+        :meth:`create_with_new_body_in_world` (a box whose z runs ``0..scale.z``).
+
+        :param name: The name of bodies created from the specification.
+        :param scale: The scale of the wall. ``scale.x`` must be the smallest dimension.
+            Defaults to ``Scale()``.
+        :param connection_specification: Connection attaching the entity to its parent.
+            ``None`` defers to the annotation type's default at spawn time.
+        :return: A body specification with the wall box geometry.
+        """
+        scale = scale or Scale()
+        if not (scale.x < scale.y and scale.x < scale.z):
+            raise InvalidPlaneDimensions(scale, clazz=Wall)
+        return BodySpecification.from_event(
+            name,
+            cls._create_wall_event(scale).as_composite_set(),
+            connection_specification=connection_specification,
+        )
+
+    def bloated_bounding_box_collection(
+        self,
+        origin: HomogeneousTransformationMatrix,
+        bloat_amount: float,
+        obstacle_height_clearance: float = 0.01,
+    ) -> BoundingBoxCollection[VolumetricBoundingBox, Point3]:
+        """
+        Bloat this wall's bounding boxes along their thinner dimension only -- the
+        side that faces the room -- rather than symmetrically in x and y.
+
+        :param origin: The origin to express the bounding boxes relative to.
+        :param bloat_amount: The amount to bloat by.
+        :param obstacle_height_clearance: The amount to bloat by in z, regardless of
+            ``bloat_amount``.
+        :return: The bloated bounding boxes.
+        """
+        return BoundingBoxCollection(
+            [
+                (
+                    bounding_box.bloat(bloat_amount, 0, obstacle_height_clearance)
+                    if bounding_box.width > bounding_box.depth
+                    else bounding_box.bloat(0, bloat_amount, obstacle_height_clearance)
+                )
+                for bounding_box in self.as_bounding_box_collection_at_origin(origin)
+            ],
+            origin.reference_frame,
+        )
+
 
 @dataclass(eq=False)
-class Bottle(HasRootBody):
+class Container(HasGraspCandidates):
+    """
+    An object that holds contents and has an opening they go in and out through.
+    """
+
+
+@dataclass(eq=False)
+class Cookware(HasGraspCandidates):
+    """
+    An object used to cook with.
+    """
+
+
+@dataclass(eq=False)
+class Tableware(HasGraspCandidates):
+    """
+    An object a table is set with for a meal.
+    """
+
+
+@dataclass(eq=False)
+class Bottle(Container):
     """
     Abstract class for bottles.
     """
 
 
 @dataclass(eq=False)
-class Statue(HasRootBody): ...
+class Statue(HasGraspCandidates): ...
 
 
 @dataclass(eq=False)
@@ -660,29 +953,29 @@ class MustardBottle(Bottle):
 
 
 @dataclass(eq=False)
-class DrinkingContainer(HasRootBody): ...
+class DrinkingContainer(Container, Tableware): ...
 
 
 @dataclass(eq=False)
-class Cup(DrinkingContainer, IsPerceivable):
+class Cup(HasHandle, HasRim, DrinkingContainer, IsPerceivable):
     """
     A cup.
     """
 
 
 @dataclass(eq=False)
-class Mug(DrinkingContainer):
+class Mug(HasHandle, HasRim, DrinkingContainer):
     """
-    A mug.
+    A mug, held by its handle.
     """
 
 
 @dataclass(eq=False)
-class CookingContainer(HasRootBody): ...
+class CookingContainer(Container, Cookware): ...
 
 
 @dataclass(eq=False)
-class Lid(HasRootBody): ...
+class Lid(Cookware): ...
 
 
 @dataclass(eq=False)
@@ -700,7 +993,7 @@ class PanLid(Lid):
 
 
 @dataclass(eq=False)
-class Pot(CookingContainer):
+class Pot(CookingContainer, HasHandles):
     """
     A pot.
     """
@@ -714,22 +1007,52 @@ class PotLid(Lid):
 
 
 @dataclass(eq=False)
-class Plate(HasSupportingSurface):
+class Plate(HasSupportingSurface, Tableware):
     """
     A plate.
     """
 
 
 @dataclass(eq=False)
-class Bowl(HasSupportingSurface, IsPerceivable):
+class Rim(HasPinchableWall):
     """
-    A bowl.
+    The upper edge of an open container's wall, which a gripper pinches from above.
+    """
+
+    def default_grasp_candidates(self) -> List[GraspCandidate]:
+        """
+        :return: Grasps drawn uniformly from :meth:`surface_grasp_statement`.
+        """
+        return self.drawn_grasp_candidates()
+
+    def surface_grasp_statement(
+        self,
+        require_lifting: bool = False,
+        lowest_height: float = 0.25,
+        highest_height: float = 0.75,
+    ) -> Match[SurfaceGrasp]:
+        """
+        :param require_lifting: Whether to ask only for grasps that lift the container.
+        :param lowest_height: The lowest height to pinch the rim at, as a fraction of
+            its height.
+        :param highest_height: The height to pinch the rim below, as such a fraction.
+        :return: The rim between the two heights, pinched across its wall.
+        :raises NoGraspGeometry: If the rim has no wall to measure.
+        """
+        return self.wall_grasp_statement(lowest_height, highest_height, require_lifting)
+
+
+@dataclass(eq=False)
+class Bowl(HasRim, HasSupportingSurface, Container, Tableware, IsPerceivable):
+    """
+    A bowl, grasped by pinching the wall of its rim: it offers nothing to grip at its
+    own origin, which is inside it.
     """
 
 
 # Food Items
 @dataclass(eq=False)
-class Food(HasRootBody):
+class Food(HasGraspCandidates):
     """
     A Group class for Food.
     """
@@ -758,7 +1081,7 @@ class Bread(Food):
 
 
 @dataclass(eq=False)
-class CheezeIt(Food):
+class CheezeIt(Food, IsPerceivable):
     """
     Some type of cracker.
     """
@@ -767,7 +1090,7 @@ class CheezeIt(Food):
 @dataclass(eq=False)
 class Pringles(Food):
     """
-    Pringles chips
+    Pringles chips.
     """
 
 
@@ -820,7 +1143,7 @@ class Milk(Food, IsPerceivable):
 
 
 @dataclass(eq=False)
-class SaltContainer(HasRootBody, IsPerceivable):
+class SaltContainer(Container, IsPerceivable):
     """
     A container of salt.
     """
@@ -829,7 +1152,8 @@ class SaltContainer(HasRootBody, IsPerceivable):
 @dataclass(eq=False)
 class Produce(Food):
     """
-    In American English, produce generally refers to fresh fruits and vegetables intended to be eaten by humans.
+    In American English, produce generally refers to fresh fruits and vegetables
+    intended to be eaten by humans.
     """
 
     pass
@@ -918,6 +1242,8 @@ class SideTable(Table):
     A side table.
     """
 
+    _synonyms = {"bedside"}
+
 
 @dataclass(eq=False)
 class Desk(Table, HasLegs):
@@ -948,16 +1274,23 @@ class Armchair(Chair):
 
 
 @dataclass(eq=False)
-class TrashCan(HasRootBody, Furniture):
+class TrashCan(HasCaseAsRootBody, Furniture):
     """
     Abstract class for Trash Can.
     """
 
+    @classproperty
+    def _hole_direction_axis(cls) -> Vector3:
+        return Vector3.Z()
+
 
 @dataclass(eq=False)
-class ShelvingUnit(Furniture):
+class Shelf(Cabinet, HasShelfLayers):
     """
-    A shelving unit.
+    A shelving unit whose storage surfaces are modelled as explicit shelf layers.
+
+    Each layer is a separate :class:`ShelfLayer` annotation, so objects can be placed on
+    and reasoned about per layer.
     """
 
 
@@ -998,7 +1331,7 @@ class WallDecor(Decor):
 
 
 @dataclass(eq=False)
-class Cloth(HasRootBody): ...
+class Cloth(HasGraspCandidates): ...
 
 
 @dataclass(eq=False)
@@ -1016,7 +1349,7 @@ class WallPanel(HasRootBody):
 
 
 @dataclass(eq=False)
-class Potato(Produce): ...
+class Potato(Vegetable): ...
 
 
 @dataclass(eq=False)
@@ -1042,21 +1375,21 @@ class Houseplant(HasRootBody):
 
 
 @dataclass(eq=False)
-class SprayBottle(HasRootBody):
+class SprayBottle(Bottle):
     """
     A spray bottle.
     """
 
 
 @dataclass(eq=False)
-class Vase(HasRootBody):
+class Vase(Container):
     """
     A vase.
     """
 
 
 @dataclass(eq=False)
-class Book(HasRootBody):
+class Book(HasGraspCandidates):
     """
     A book.
     """
@@ -1069,60 +1402,208 @@ class BookFront(HasRootBody): ...
 
 
 @dataclass(eq=False)
-class SaltPepperShaker(HasRootBody):
+class SaltPepperShaker(SaltContainer):
     """
     A salt and pepper shaker.
     """
 
 
 @dataclass(eq=False)
-class Cuttlery(HasRootBody): ...
+class Cutlery(HasHandle, Tableware):
+    """
+    A piece of cutlery, lying flat, grasped from above and across its length.
+    """
+
+    def default_grasp_candidates(self) -> List[GraspCandidate]:
+        """
+        :return: The grasp from above that closes across the piece, which lies flat.
+        :raises NoGraspGeometry: If the root body has no collision geometry to tell
+            which way the piece lies.
+        """
+        if not self.root.has_collision():
+            raise NoGraspGeometry(self)
+        bounding_box = self.root.collision.as_bounding_box_collection_in_frame(
+            self.root
+        ).bounding_box()
+        along_x = bounding_box.x_interval.upper - bounding_box.x_interval.lower
+        along_y = bounding_box.y_interval.upper - bounding_box.y_interval.lower
+        finger_axis = Vector3.NEGATIVE_Y() if along_x >= along_y else Vector3.X()
+        return [
+            GraspCandidate(
+                self,
+                Pose(
+                    orientation=RotationMatrix.from_vectors(
+                        x=Vector3.NEGATIVE_Z(), y=finger_axis
+                    ).quaternion,
+                    reference_frame=self.root,
+                ),
+            )
+        ]
+
+    def surface_grasp_statement(
+        self,
+        require_lifting: bool = False,
+        lowest_height: float = 0.2,
+        highest_height: float = 0.8,
+        shallowest_depth: float = 0.2,
+        deepest_depth: float = 0.6,
+        azimuth_tolerance: float = np.pi / 16,
+        largest_pitch: float = 0.6,
+        largest_roll: float = np.pi / 8,
+    ) -> Match[SurfaceGrasp]:
+        """
+        :param require_lifting: Whether to ask only for grasps that lift the object.
+        :param lowest_height: The lowest height to grasp at, as a fraction of the grasp
+            surface's bounding box from its bottom to its top.
+        :param highest_height: The height to grasp below, as such a fraction.
+        :param shallowest_depth: The least depth to close the fingers at, as a fraction
+            of the piece's length.
+        :param deepest_depth: The depth to close the fingers short of, as such a
+            fraction.
+        :param azimuth_tolerance: How far off its length axis the piece may be seen
+            from, either way, in radians.
+        :param largest_pitch: How far the approach may tilt off vertical, in radians.
+        :param largest_roll: How far the fingers may turn off closing across the
+            length, either way, in radians.
+        :return: Seen along its length from either end, the stretch between the two
+            depths, closing across it.
+        :raises NoGraspGeometry: If the root body has no shape to measure.
+        """
+        lowest, highest = self.grasp_surface().bounds
+        extents = highest - lowest
+        length_axis = max(
+            (Vector3.X().to_np()[:3], Vector3.Y().to_np()[:3]),
+            key=lambda axis: np.dot(extents, axis),
+        )
+        length = float(np.dot(extents, length_axis))
+        azimuth_of_length_axis = math.atan2(length_axis[1], length_axis[0])
+        end_azimuths = (azimuth_of_length_axis, azimuth_of_length_axis + np.pi)
+        grasp = any_surface_grasp(require_lifting)
+        return grasp.where(
+            grasp.height >= lowest_height,
+            grasp.height < highest_height,
+            grasp.depth >= shallowest_depth * length,
+            grasp.depth < deepest_depth * length,
+            or_(
+                *(
+                    and_(
+                        grasp.azimuth >= end_azimuth - azimuth_tolerance,
+                        grasp.azimuth < end_azimuth + azimuth_tolerance,
+                    )
+                    for end_azimuth in end_azimuths
+                )
+            ),
+            grasp.pitch >= 0.0,
+            grasp.pitch < largest_pitch,
+            grasp.roll >= np.pi / 2 - largest_roll,
+            grasp.roll < np.pi / 2 + largest_roll,
+        )
 
 
 @dataclass(eq=False)
-class Fork(Cuttlery):
+class Fork(Cutlery):
     """
     A fork.
     """
 
 
 @dataclass(eq=False)
-class Knife(Cuttlery):
+class Knife(Cutlery):
     """
     A butter knife.
     """
 
 
 @dataclass(eq=False)
-class Spoon(Cuttlery, IsPerceivable): ...
+class Spoon(Cutlery, IsPerceivable): ...
 
 
 @dataclass(eq=False)
-class Pencil(HasRootBody):
+class Pencil(HasGraspCandidates):
     """
     A pencil.
     """
 
 
 @dataclass(eq=False)
-class Pen(HasRootBody):
+class Pen(HasGraspCandidates):
     """
     A pen.
     """
 
 
 @dataclass(eq=False)
-class Baseball(HasRootBody):
+class ShapeSortingPiece(HasGraspCandidates):
+    """
+    A loose piece of a shape-sorting toy, which drops through the hole of its
+    own outline.
+    """
+
+    grasp_height: float = field(kw_only=True)
+    """
+    How far above its bottom face the piece is gripped.
+
+    Gripped low, the piece hangs as little as possible below the fingers when it is let
+    go of over its hole; how low depends on how far the closing fingers reach past the
+    point they are brought to.
+    """
+
+    def default_grasp_candidates(self) -> List[GraspCandidate]:
+        """
+        :return: The grasp from above, on the piece's vertical axis at
+            :attr:`grasp_height`, closing along the piece's own x.
+        :raises NoGraspGeometry: If the root body has no collision geometry to find the
+            bottom face in.
+        """
+        if not self.root.has_collision():
+            raise NoGraspGeometry(self)
+        bottom_face = (
+            self.root.collision.as_bounding_box_collection_in_frame(self.root)
+            .bounding_box()
+            .min_z
+        )
+        return [
+            GraspCandidate(
+                self,
+                Pose(
+                    position=Point3(
+                        0.0,
+                        0.0,
+                        bottom_face + self.grasp_height,
+                        reference_frame=self.root,
+                    ),
+                    orientation=RotationMatrix.from_vectors(
+                        x=Vector3.NEGATIVE_Z(), y=Vector3.X()
+                    ).quaternion,
+                    reference_frame=self.root,
+                ),
+            )
+        ]
+
+
+@dataclass(eq=False)
+class Baseball(HasGraspCandidates):
     """
     A baseball.
     """
 
 
 @dataclass(eq=False)
-class LiquidCap(HasRootBody):
+class BottleCap(HasMovableJoint):
     """
-    A liquid cap.
+    A cap that closes a bottle, typically mounted on a screw joint.
     """
+
+    def calculate_self_T_movable_joint(
+        self, axis: Vector3
+    ) -> HomogeneousTransformationMatrix:
+        """
+        A cap screws about its own centre line, so its thread sits at its origin.
+
+        :param axis: The thread axis, in the cap frame.
+        :return: The identity: the thread's frame is the cap's frame.
+        """
+        return HomogeneousTransformationMatrix()
 
 
 @dataclass(eq=False)
@@ -1130,10 +1611,9 @@ class Agent(HasRootBody):
     """
     Represents an entity in the world that can act, move, or be controlled.
 
-    Agents are dynamic bodies with semantic meaning — they may have intent,
-    behavior, or be controlled by external or internal logic. Examples include
-    robots, humans, or other autonomous actors.
-
+    Agents are dynamic bodies with semantic meaning — they may have intent, behavior, or
+    be controlled by external or internal logic. Examples include robots, humans, or
+    other autonomous actors.
     """
 
 
@@ -1142,11 +1622,18 @@ class Human(Agent):
     """
     Represents a human agent in the environment.
 
-    A Person is an Agent that is not robotically actuated and does not provide
-    kinematic chains, end_effectors, or robot-specific components.
+    A Person is an Agent that is not robotically actuated and does not provide kinematic
+    chains, end_effectors, or robot-specific components.
 
-    This class exists primarily for semantic distinction, so that algorithms
-    can treat human agents differently from robots if needed.
+    This class exists primarily for semantic distinction, so that algorithms can treat
+    human agents differently from robots if needed.
+    """
+
+
+@dataclass(eq=False)
+class Parcel(HasGraspCandidates):
+    """
+    A parcel, as handled in a warehouse.
     """
 
 
@@ -1155,6 +1642,83 @@ class SemanticEnvironmentAnnotation(HasRootBody):
     """
     Represents a semantic annotation of the environment.
     """
+
+    def obstacle_entities(
+        self, search_space: BoundingBoxCollection[VolumetricBoundingBox, Point3]
+    ) -> List[Body]:
+        """
+        Collect the obstacle bodies to consider within ``search_space``.
+
+        Filters out robot bodies so a robot does not treat itself as an obstacle, and
+        bodies without meaningful collision geometry.
+
+        :param search_space: The search space; its reference frame is used to look up
+            the owning world.
+        :return: The obstacle bodies to consider.
+        """
+        world = search_space.reference_frame._world
+        return [
+            body
+            for body in self.bodies_with_collision
+            if body not in world.robot_bodies_with_collision
+        ]
+
+    def build_bloated_obstacle_collection(
+        self,
+        search_space: BoundingBoxCollection[VolumetricBoundingBox, Point3],
+        semantic_wall_annotation: Optional[Wall] = None,
+        bloat_obstacles: float = 0.0,
+        bloat_walls: float = 0.0,
+        obstacle_height_clearance: float = 0.01,
+    ) -> BoundingBoxCollection[VolumetricBoundingBox, Point3]:
+        """
+        Collect and bloat this annotation's obstacle bounding boxes.
+
+        Applies independent bloat amounts to obstacles and walls.
+
+        :param search_space: The search space; its reference frame is used as the
+            origin.
+        :param semantic_wall_annotation: An optional wall annotation, bloated by its
+            own rule (see :meth:`Wall.bloated_bounding_box_collection`).
+        :param bloat_obstacles: Amount to expand each obstacle bounding box
+            symmetrically in x and y.
+        :param bloat_walls: Amount to expand wall bounding boxes in their thinner
+            dimension.
+        :param obstacle_height_clearance: Amount to expand every obstacle bounding box
+            in z, regardless of ``bloat_obstacles``/``bloat_walls``.
+        :return: A collection of the bloated obstacle and wall bounding boxes.
+        """
+        world_root = search_space.reference_frame
+        origin = HomogeneousTransformationMatrix(reference_frame=world_root)
+
+        entities_to_consider = self.obstacle_entities(search_space)
+
+        collections = (
+            entity.collision.as_bounding_box_collection_at_origin(origin)
+            for entity in entities_to_consider
+        )
+        obstacle_bounding_boxes = BoundingBoxCollection.merge_all(
+            collections, world_root
+        )
+
+        bloated_obstacles = BoundingBoxCollection(
+            [
+                bounding_box.bloat(
+                    bloat_obstacles, bloat_obstacles, obstacle_height_clearance
+                )
+                for bounding_box in obstacle_bounding_boxes
+            ],
+            world_root,
+        )
+
+        if semantic_wall_annotation is not None:
+            bloated_obstacles = bloated_obstacles.merge(
+                semantic_wall_annotation.bloated_bounding_box_collection(
+                    origin, bloat_walls, obstacle_height_clearance
+                )
+            )
+
+        return bloated_obstacles
 
 
 @dataclass(eq=False)
@@ -1182,10 +1746,11 @@ class RoomWithWallsAndDoors(Room):
 @dataclass(eq=False)
 class DoorWithType(Door):
     """
-    A Door that has a type description, e.g. "main entrance"
+    A Door that has a type description, e.g. "main entrance".
     """
 
     type_description: Optional[str] = field(kw_only=True, default=None)
+
 
 @dataclass(eq=False)
 class Leg(HasRootBody):
@@ -1199,3 +1764,204 @@ class Cooktop(HasRootBody):
     """
     A cooktop surface for cooking.
     """
+
+
+@dataclass(eq=False)
+class Tool(HasGraspCandidates, ABC):
+    """
+    A tool that is held by a robot's end effector to act on other bodies.
+    """
+
+    def _end_effector_name(self) -> PrefixedName:
+        """
+        :return: The name of the body that acts as the tool's tip, derived from the
+            tool's root name.
+        """
+        root_name = self.root.name
+        return PrefixedName(f"{root_name.name}_end_effector", root_name.prefix)
+
+    def _find_end_effector_body(self) -> Optional[Body]:
+        if self.root._world is None:
+            return None
+
+        end_effector_name = self._end_effector_name()
+        for body in self.root._world.bodies:
+            if (
+                body.name == end_effector_name
+                or body.name.name == end_effector_name.name
+            ):
+                return body
+        return None
+
+    def get_tool_frame(self) -> Body:
+        """
+        :return: The body acting as the tool's tip, or the tool's root if no dedicated
+            tip body exists.
+        """
+        end_effector = self._find_end_effector_body()
+        if end_effector is None:
+            return self.root
+        return end_effector
+
+    @abstractmethod
+    def tool_alignment(self, target: Union[Body, Pose]) -> List[AlignmentPair]:
+        """
+        :param target: The body or pose the tool acts on.
+        :return: The normal pairs that must stay aligned while the tool acts on the
+            target.
+        """
+
+
+@dataclass(eq=False)
+class ToolWithHandle(Tool, HasHandle, ABC):
+    """
+    A tool held by its handle, acting through a tip body located ahead of its root.
+
+    If the tip body does not exist yet, it is created and rigidly connected to the
+    tool's root.
+    """
+
+    def __post_init__(self):
+        super().__post_init__()
+        if self.root._world is None:
+            return
+        if self._find_end_effector_body() is not None:
+            return
+        self._create_end_effector_body()
+
+    def _create_end_effector_body(self):
+        world = self.root._world
+        tip_body = Body(name=self._end_effector_name())
+        with world.modify_world():
+            world.add_kinematic_structure_entity(tip_body)
+            world.add_connection(
+                FixedConnection(
+                    parent=self.root,
+                    child=tip_body,
+                    parent_T_connection_expression=HomogeneousTransformationMatrix.from_xyz_rpy(
+                        x=0.1,
+                        y=0.0,
+                        z=0.0,
+                        reference_frame=self.root,
+                    ),
+                )
+            )
+
+
+@dataclass(eq=False)
+class Whisk(ToolWithHandle):
+    """
+    A whisk for mixing the contents of containers.
+    """
+
+    def tool_alignment(self, target: Union[Body, Pose]) -> List[AlignmentPair]:
+        return [
+            AlignmentPair(
+                tip_normal=Vector3(-1, 0, 0, reference_frame=self.root),
+                goal_normal=Vector3(0, 0, 1, reference_frame=target),
+            )
+        ]
+
+
+@dataclass(eq=False)
+class CuttingKnife(ToolWithHandle):
+    """
+    A knife for cutting food objects.
+    """
+
+    def tool_alignment(self, target: Union[Body, Pose]) -> List[AlignmentPair]:
+        return [
+            AlignmentPair(
+                tip_normal=Vector3(1, 0, 0, reference_frame=self.root),
+                goal_normal=Vector3(0, 1, 0, reference_frame=target),
+            ),
+            AlignmentPair(
+                tip_normal=Vector3(0, 0, 1, reference_frame=self.root),
+                goal_normal=Vector3(0, 0, 1, reference_frame=target),
+            ),
+        ]
+
+
+@dataclass(eq=False)
+class PouringCup(Tool, Container):
+    """
+    A cup for pouring liquids into containers.
+    """
+
+    def tool_alignment(self, target: Union[Body, Pose]) -> List[AlignmentPair]:
+        return [
+            AlignmentPair(
+                tip_normal=Vector3(0, 0, 1, reference_frame=self.root),
+                goal_normal=Vector3(0, 0, 1, reference_frame=target),
+            )
+        ]
+
+
+@dataclass(eq=False)
+class Sponge(Tool):
+    """
+    A sponge for wiping surfaces.
+
+    .. note:: The sponge is grasped so its local Z axis points away from the gripper,
+        which is why its alignments use negative Z normals unlike the other tools.
+    """
+
+    def tool_alignment(self, target: Union[Body, Pose]) -> List[AlignmentPair]:
+        if isinstance(target, Body):
+            return [
+                AlignmentPair(
+                    tip_normal=Vector3(0, 0, 1, reference_frame=self.root),
+                    goal_normal=Vector3(0, 0, -1, reference_frame=target),
+                )
+            ]
+        return [
+            AlignmentPair(
+                tip_normal=Vector3(0, 0, -1, reference_frame=self.root),
+                goal_normal=self._pose_surface_normal(target),
+            )
+        ]
+
+    def _pose_surface_normal(self, pose: Pose) -> Vector3:
+        """
+        :param pose: The pose whose surface normal is computed.
+        :return: The pose's local Z axis expressed in the pose's reference frame.
+        """
+        reference_frame = (
+            pose.reference_frame if pose.reference_frame is not None else self.root
+        )
+        rotation = pose.rotation_matrix.to_np()[:3, :3]
+        return Vector3.from_iterable(
+            rotation @ np.array([0.0, 0.0, 1.0]),
+            reference_frame=reference_frame,
+        )
+
+
+@dataclass(eq=False)
+class Microwave(IsStorageSpace, HasDoors):
+    """
+    A microwave oven, a kitchen appliance with a door that heats food placed inside it
+    using microwave radiation.
+    """
+
+
+@dataclass(eq=False)
+class Hood(HasRootBody):
+    """
+    A range hood mounted above a cooktop that vents cooking fumes.
+    """
+
+
+@dataclass(eq=False)
+class Toaster(HasRootBody):
+    """
+    A countertop appliance for toasting slices of bread.
+    """
+
+
+@dataclass(eq=False)
+class CoffeeMachine(HasRootBody):
+    """
+    A countertop appliance that brews coffee.
+    """
+
+    _synonyms = {"coffe"}

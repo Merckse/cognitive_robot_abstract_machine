@@ -1,3 +1,8 @@
+import math
+from collections.abc import Sequence
+
+import numpy.typing as npt
+
 from probabilistic_model.probabilistic_circuit.rx.probabilistic_circuit import *
 from probabilistic_model.distributions.distributions import (
     SymbolicDistribution,
@@ -6,7 +11,14 @@ from probabilistic_model.distributions.distributions import (
 )
 from probabilistic_model.distributions.gaussian import GaussianDistribution
 from probabilistic_model.distributions.uniform import UniformDistribution
-from probabilistic_model.utils import MissingDict
+from probabilistic_model.exceptions import (
+    EventMixesPointsAndIntervalsError,
+    UnboundedEventError,
+)
+from probabilistic_model.utils import (
+    MissingDict,
+    event_compatible_for_truncation_with_singletons,
+)
 
 
 def uniform_measure_of_event(event: Event) -> ProbabilisticCircuit:
@@ -15,25 +27,35 @@ def uniform_measure_of_event(event: Event) -> ProbabilisticCircuit:
 
     :param event: The event
     :return: The circuit describing the uniform measure
+    :raises UnboundedEventError: If the event does not bound a continuous variable from
+        below and above.
+    :raises EventMixesPointsAndIntervalsError: If a continuous variable takes points and
+        intervals in the box bounding the event.
     """
-
     # calculate the bounding box of the event
     bounding_box = event.bounding_box()
 
     # create a uniform measure for the bounding box
     uniform_model = uniform_measure_of_simple_event(bounding_box)
     # condition the uniform measure on the event
-    uniform_model, _ = uniform_model.truncated(event)
-
-    return uniform_model
+    return uniform_model.truncated(event).distribution
 
 
 def uniform_measure_of_simple_event(simple_event: SimpleEvent) -> ProbabilisticCircuit:
     """
     Create a uniform measure for the given simple event.
+
     :param simple_event: The simple event
     :return: The circuit describing the uniform measure over the simple event
+    :raises UnboundedEventError: If the simple event does not bound a continuous
+        variable from below and above.
+    :raises EventMixesPointsAndIntervalsError: If a continuous variable takes points and
+        intervals.
     """
+    if not event_compatible_for_truncation_with_singletons(
+        simple_event.as_composite_set()
+    ):
+        raise EventMixesPointsAndIntervalsError(simple_event)
 
     # initialize the root of the circuit
     result = ProbabilisticCircuit()
@@ -42,15 +64,31 @@ def uniform_measure_of_simple_event(simple_event: SimpleEvent) -> ProbabilisticC
 
         # handle different variables
         if isinstance(variable, Continuous):
+            if not (
+                math.isfinite(assignment.simple_sets[0].lower)
+                and math.isfinite(assignment.simple_sets[-1].upper)
+            ):
+                raise UnboundedEventError(variable=variable)
 
-            # create a uniform distribution for every interval in a continuous variables description
             distribution = SumUnit(probabilistic_circuit=result)
-            for assignment_ in assignment:
-                uniform = UniformDistribution(variable=variable, interval=assignment_)
-                distribution.add_subcircuit(
-                    UnivariateContinuousLeaf(uniform, probabilistic_circuit=result),
-                    1 / uniform.probability_density_function_value(),
-                )
+            if all(assignment_.is_singleton() for assignment_ in assignment):
+                for assignment_ in assignment:
+                    dirac = DiracDeltaDistribution(
+                        variable=variable, location=assignment_.lower, density_cap=1.0
+                    )
+                    distribution.add_subcircuit(
+                        UnivariateContinuousLeaf(dirac, probabilistic_circuit=result),
+                        0.0,
+                    )
+            else:
+                for assignment_ in assignment:
+                    uniform = UniformDistribution(
+                        variable=variable, interval=assignment_
+                    )
+                    distribution.add_subcircuit(
+                        UnivariateContinuousLeaf(uniform, probabilistic_circuit=result),
+                        -uniform.log_probability_density_function_value(),
+                    )
             distribution.normalize()
 
         # create uniform distribution for symbolic variables
@@ -101,17 +139,15 @@ def fully_factorized(
 ) -> ProbabilisticCircuit:
     """
     Create a fully factorized distribution over a set of variables.
-    For symbolic variables, the distribution is uniform.
-    For continuous variables, the distribution is normal.
+
+    For symbolic variables, the distribution is uniform. For continuous variables, the
+    distribution is normal.
 
     :param variables: The variables.
-
-    :param means: The means of the normal distributions.
-    Defaults to 0 for every not specified variable.
-
-    :param variances: The variances of the normal distributions.
-    Defaults to 1 for every not specified variable.
-
+    :param means: The means of the normal distributions. Defaults to 0 for every not
+        specified variable.
+    :param variances: The variances of the normal distributions. Defaults to 1 for every
+        not specified variable.
     :return: The circuit describing the fully factorized normal distribution
     """
     pc = ProbabilisticCircuit()
@@ -151,11 +187,43 @@ def fully_factorized(
     return root.probabilistic_circuit
 
 
+def factorized_gaussian_mixture(
+    variables: Sequence[Continuous], means: npt.NDArray, scales: npt.NDArray
+) -> ProbabilisticCircuit:
+    """
+    Create an equally weighted mixture of fully factorized Gaussian distributions.
+
+    :param variables: The variables, in the order of the columns of ``means`` and
+        ``scales``.
+    :param means: The mean of every variable, one row per mixture component.
+    :param scales: The standard deviation of every variable, one row per mixture
+        component.
+    :return: The circuit describing the mixture.
+    """
+    result = ProbabilisticCircuit()
+    root = SumUnit(probabilistic_circuit=result)
+    for component_means, component_scales in zip(means, scales):
+        component = ProductUnit(probabilistic_circuit=result)
+        for variable, mean, scale in zip(variables, component_means, component_scales):
+            component.add_subcircuit(
+                leaf(
+                    GaussianDistribution(
+                        variable=variable, location=float(mean), scale=float(scale)
+                    ),
+                    result,
+                )
+            )
+        root.add_subcircuit(component, 0.0)
+    root.normalize()
+    return result
+
+
 def multiply_distributions(
     distribution: ProbabilisticCircuit, expansion: ProbabilisticCircuit
 ):
     """
     Expand the `distribution` by the `expansion` using factorization.
+
     `distribution` is expanded in-place.
 
     The resulting distribution is the product of the expansion and the distribution.

@@ -14,12 +14,14 @@ from ..dataset.example_classes import (
     KRROODPose,
     KRROODPositions,
     KRROODPositionTypeWrapper,
+    KRROODBarePositionTypeWrapper,
     GenericClassAssociation,
     KRROODCup,
     KRROODBowl,
     KRROODPhysicalObject,
     KRROODPosition4D,
     KRROODPosition5D,
+    KRROODPipeOptionalOrientation,
 )
 
 
@@ -51,6 +53,32 @@ def test_builtin_optional():
     assert not wrapped_field.is_container
     assert wrapped_field.is_builtin_type
     assert not wrapped_field.is_instantiation_of_generic_class
+
+
+def test_builtin_optional_written_with_a_pipe():
+    # `X | None` and `Optional[X]` denote the same type, so they must be introspected
+    # identically; otherwise a field spelled with a pipe silently loses its mapping.
+    wrapped_class = WrappedClass(clazz=KRROODPipeOptionalOrientation)
+    wrapped_field = WrappedField(
+        wrapped_class, get_field_by_name(KRROODPipeOptionalOrientation, "w")
+    )
+
+    assert wrapped_field.contained_type is float
+    assert wrapped_field.is_optional
+    assert not wrapped_field.is_container
+    assert wrapped_field.is_builtin_type
+    assert not wrapped_field.is_instantiation_of_generic_class
+
+
+def test_optional_relationship_written_with_a_pipe():
+    wrapped_class = WrappedClass(clazz=KRROODPipeOptionalOrientation)
+    wrapped_field = WrappedField(
+        wrapped_class, get_field_by_name(KRROODPipeOptionalOrientation, "position")
+    )
+
+    assert wrapped_field.is_optional
+    assert wrapped_field.contained_type is KRROODPosition
+    assert not wrapped_field.is_builtin_type
 
 
 def test_one_to_one_relationship():
@@ -86,6 +114,20 @@ def test_is_type_type():
     assert wrapped_field.is_type_type
 
 
+def test_is_type_type_for_bare_type_annotation():
+    """
+    A field annotated with the bare builtin ``type`` (not the parametrized ``Type[X]``)
+    is also a type-type field — ``get_origin(type)`` is ``None``, unlike
+    ``get_origin(Type[X])``, so this is a distinct case from :func:`test_is_type_type`.
+    """
+    wrapped_class = WrappedClass(clazz=KRROODBarePositionTypeWrapper)
+    wrapped_field = WrappedField(
+        wrapped_class,
+        get_field_by_name(KRROODBarePositionTypeWrapper, "position_type"),
+    )
+    assert wrapped_field.is_type_type
+
+
 def test_is_specialized_generic():
     wrapped_class = WrappedClass(clazz=GenericClassAssociation)
     associated_value = WrappedField(
@@ -116,7 +158,9 @@ def test_is_specialized_generic():
 
 
 class TypeVariableBound:
-    """Bound used by the bounded-type-variable mimic below."""
+    """
+    Bound used by the bounded-type-variable mimic below.
+    """
 
 
 _unbounded_type_variable = TypeVar("_unbounded_type_variable")

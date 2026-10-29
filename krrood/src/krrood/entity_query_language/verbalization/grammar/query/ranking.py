@@ -17,9 +17,7 @@ from krrood.entity_query_language.verbalization.fragments.base import (
 from krrood.entity_query_language.verbalization.fragments.features import (
     GrammaticalNumber,
 )
-from krrood.entity_query_language.verbalization.grammar.framework.specificity import (
-    SpecificityRule,
-)
+from krrood.patterns.specificity_ranking import SpecificityRule
 from krrood.entity_query_language.verbalization.grammar.query.planner import (
     SortDirection,
     RankingKeyRelation,
@@ -34,29 +32,40 @@ from krrood.entity_query_language.verbalization.vocabulary.english import (
 
 @dataclass(frozen=True)
 class RankingRequest:
-    """A query's ranking together with the selection type label — the input a ranking form reads."""
+    """
+    A query's ranking together with the selection type label — the input a ranking form
+    reads.
+    """
 
     plan: RankingPlan
-    """The ``limit`` (+ ordering) decomposition."""
+    """
+    The ``limit`` (+ ordering) decomposition.
+    """
 
 
 @dataclass(frozen=True)
 class RankingSurface:
-    """The placed pieces of a ranking phrase, for the selection noun phrase to carry.
+    """
+    The placed pieces of a ranking phrase, for the selection noun phrase to carry.
 
     The selection noun is built around these: ``"the"`` + *pre_head* + head (in *number*) +
     *modifiers* — e.g. ``"the"`` + ``"top three"`` + ``"Employees"`` + ``"by salary"``.
     """
 
     pre_head: Optional[VerbalizationFragment]
-    """The qualifier between the determiner and the head (*"first two"* / *"top three"* /
-    *"highest"*), or ``None`` (the attribute-superlative form carries it as a modifier instead)."""
+    """
+    The qualifier between the determiner and the head (*"first two"* / *"top three"* /
+    *"highest"*), or ``None`` (the attribute-superlative form carries it as a modifier
+    instead).
+    """
 
     number: GrammaticalNumber
     """The head's grammatical number — ``SINGULAR`` for *n = 1*, ``PLURAL`` for *n > 1*."""
 
     modifiers: List[VerbalizationFragment]
-    """Post-nominal modifiers — *"with the highest salary"* / *"by salary"* — or empty."""
+    """
+    Post-nominal modifiers — *"with the highest salary"* / *"by salary"* — or empty.
+    """
 
 
 def _quality(direction: SortDirection, n: int) -> RankingWords:
@@ -110,6 +119,18 @@ class RankingForm(SpecificityRule):
     >>> employee = variable(Employee, [])
     >>> verbalize_expression(entity(employee).ordered_by(employee.salary, descending=True).limit(3))
     'Find the top three Employees by salary'
+
+    The family's alternatives are its three templates, and a descending ranking by an
+    attribute selects the attribute form:
+
+    >>> sorted(rule.__name__ for rule in RankingForm.alternatives())
+    ['AttributeRankedByForm', 'AttributeSuperlativeForm', 'LeadingRankForm']
+    >>> from krrood.entity_query_language.verbalization.grammar.query.planner import (
+    ...     RankingPlan, SortDirection, RankingKeyRelation)
+    >>> plan = RankingPlan(limit_number=3, direction=SortDirection.DESCENDING,
+    ...     relation=RankingKeyRelation.ATTRIBUTE, order_key=None)
+    >>> RankingForm.most_applicable(RankingRequest(plan=plan)).__name__
+    'AttributeRankedByForm'
     """
 
     @classmethod

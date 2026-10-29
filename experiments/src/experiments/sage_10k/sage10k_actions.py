@@ -2,21 +2,18 @@ from dataclasses import dataclass
 
 import rustworkx
 
-from krrood.entity_query_language.factories import underspecified, variable
-from coraplex.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
-from coraplex.datastructures.grasp import GraspDescription
+from krrood.entity_query_language.factories import a, an, variable
 from coraplex.plans.factories import sequential
+from coraplex.plans.plan_node import PlanNode
 from coraplex.robot_plans.actions.base import ActionDescription
 from coraplex.robot_plans.actions.core.container import OpenAction
 from coraplex.robot_plans.actions.core.misc import MoveToReach
 from semantic_digital_twin.robots.robot_parts import EndEffector
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Door
-from semantic_digital_twin.spatial_types import Pose2D, Pose
-from semantic_digital_twin.world_description.graph_of_convex_sets import (
-    navigation_map_at_target,
-    translate_free_space_to_where_condition,
+from semantic_digital_twin.spatial_types import Point2, Pose2D, Pose
+from semantic_digital_twin.world_description.graph_of_convex_sets.boxes import (
+    PlanarGraphOfBoundingBoxes,
 )
-from semantic_digital_twin.exceptions import PointOccupiedError
 
 
 @dataclass
@@ -25,22 +22,25 @@ class Sage10kOpenDoor(ActionDescription):
     Open a door.
 
     This action creates a Graph of Convex Sets (GCS) navigation map at the door handle.
-    Using this GCS, an underspecified move to reach plan is mounted as subplan followed up by an
-    opening action is executed.
+    Using this GCS, an underspecified move to reach plan is sequenced with an opening
+    action.
     """
 
     door: Door
 
-    def execute(self) -> None:
+    @property
+    def _action_plan(self) -> PlanNode:
         """
-        Execute the action by mounting subplans for reaching and opening the door.
+        Build the plan for reaching the handle and opening the door.
 
-        This method creates a navigation map around the door handle and then
-        performs a sequential plan of reaching the handle and opening the door.
+        A navigation map is created around the door handle and used to constrain an
+        underspecified reach action, which is sequenced with an opening action.
         """
-        gcs = navigation_map_at_target(target=self.door.handle.root)
+        gcs = PlanarGraphOfBoundingBoxes.navigation_map_at_target(
+            target=self.door.handle.root
+        )
 
-        arm = Arms.LEFT
+        arm = self.robot.all_arms[0]
 
         min_p = self.door.handle.root.collision.min_point
         max_p = self.door.handle.root.collision.max_point
@@ -53,12 +53,9 @@ class Sage10kOpenDoor(ActionDescription):
             x=x, y=y, z=z, reference_frame=self.door.handle.root
         )
 
-        # Find a node in free space that is near the pre-grasp pose.
-        target_node = gcs.node_of_point(pre_grasp_pose.position)
-        if target_node is None:
-            raise PointOccupiedError(
-                self.world.transform(pre_grasp_pose, self.world.root).position
-            )
+        # Find a node in free space that is near the pre-grasp pose. gcs is planar, so
+        # the query point is its floor-plane projection, not the full 3D position.
+        target_node = gcs.node_of_point(Point2.from_pose(pre_grasp_pose))
 
         gcs = gcs.create_subgraph(
             list(
@@ -68,29 +65,29 @@ class Sage10kOpenDoor(ActionDescription):
             )
         )
 
-        reach_query = underspecified(MoveToReach)(
-            target_pose_offset_robot=underspecified(Pose2D)(
-                x=..., y=..., yaw=..., reference_frame=None
+        reach_query = a(MoveToReach)(
+            target_pose_offset_robot=a(Pose2D)(
+                position=a(Point2)(x=..., y=..., reference_frame=None),
+                yaw=...,
+                reference_frame=None,
             ),
             hip_rotation=0.0,
-            target_pose_end_effector=pre_grasp_pose,
-            grasp_description=underspecified(GraspDescription)(
-                approach_direction=ApproachDirection.FRONT,
-                vertical_alignment=VerticalAlignment.NoAlignment,
-                end_effector=variable(EndEffector, self.world.semantic_annotations),
-                rotate_gripper=False,
-            ),
+            reference_T_grasp=pre_grasp_pose,
+            end_effector=variable(EndEffector, self.world.semantic_annotations),
         )
 
-        where_condition = translate_free_space_to_where_condition(
-            gcs.free_space_event,
-            reach_query.expression,
-            x_variable_name="MoveToReach.target_pose_offset_robot.x",
-            y_variable_name="MoveToReach.target_pose_offset_robot.y",
+        # constrain_to_free_space attaches the condition to the underlying Entity,
+        # which is all a query evaluation needs. reach_query (the Match) tracks its
+        # where conditions separately, for the parametrization that resolves this
+        # plan's underspecified fields, so it also needs to know about the condition
+        # -- appended directly rather than via Match.where(), since that would re-add
+        # it to the Entity a second time.
+        free_space_condition = gcs.constrain_to_free_space(
+            reach_query.target_pose_offset_robot.position
         )
+        reach_query._where_conditions_.append(free_space_condition)
+        reach_action = reach_query
 
-        reach_action = reach_query.where(where_condition)
+        open_action = OpenAction(handle=self.door.handle, arm=arm)
 
-        open_action = OpenAction(object_designator=self.door.handle.root, arm=arm)
-
-        self.add_subplan(sequential([reach_action, open_action])).perform()
+        return sequential([reach_action, open_action])

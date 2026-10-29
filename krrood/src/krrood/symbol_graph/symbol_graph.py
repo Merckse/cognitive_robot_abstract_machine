@@ -43,6 +43,7 @@ class GraphType(StrEnum):
     """
     Graph type for symbol graphs.
     """
+
     CLASS = "class"
     """
     Refers to the class diagram graph.
@@ -392,6 +393,20 @@ class SymbolGraph(metaclass=SingletonMeta):
     @property
     def wrapped_instances(self) -> List[WrappedInstance]:
         return self._instance_graph.nodes()
+
+    @property
+    def instances(self) -> List[WrappedInstance]:
+        """
+        :return: All wrapped instances tracked by this graph.
+        """
+        return self.wrapped_instances
+
+    @property
+    def predicate_relations(self) -> List[PredicateClassRelation]:
+        """
+        :return: All relations between the instances tracked by this graph.
+        """
+        return list(self.relations())
 
     def get_incoming_relations_with_type(
         self,

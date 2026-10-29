@@ -3,6 +3,7 @@ import open3d as o3d
 import pytest
 import sensor_msgs.msg
 
+from robokudo.types.cv import ColorToDepthRatio
 import robokudo.cas
 from robokudo.cas import CAS, CASViews
 from robokudo.utils.o3d_helper import (
@@ -13,7 +14,7 @@ from robokudo.utils.o3d_helper import (
     get_2d_bounding_rect_from_3d_bb,
     draw_wireframe_of_obb_into_image,
     get_mask_from_pointcloud,
-    scale_o3d_cam_intrinsics,
+    scale_o3d_camera_intrinsics,
     concatenate_clouds,
     get_cloud_from_rgb_depth_and_mask,
     create_line_for_visualization,
@@ -25,17 +26,17 @@ class TestUtilsO3DHelper(object):
     @pytest.fixture
     def cas(self, kinect_intrinsics: o3d.camera.PinholeCameraIntrinsic) -> CAS:
         cas = robokudo.cas.CAS()
-        cas.set(CASViews.PC_CAM_INTRINSIC, kinect_intrinsics)
-        cas.set(CASViews.COLOR2DEPTH_RATIO, (1.0, 1.0))
+        cas.set(CASViews.POINTCLOUD_CAMERA_INTRINSIC, kinect_intrinsics)
+        cas.set(CASViews.COLOR_TO_DEPTH_RATIO, ColorToDepthRatio())
         return cas
 
     @pytest.fixture
     def kinect_intrinsics(self) -> o3d.camera.PinholeCameraIntrinsic:
-        cam_intrinsics = o3d.camera.PinholeCameraIntrinsic()
-        cam_intrinsics.set_intrinsics(
+        camera_intrinsics = o3d.camera.PinholeCameraIntrinsic()
+        camera_intrinsics.set_intrinsics(
             width=1024, height=1280, fx=1050.0, fy=1050.0, cx=639.5, cy=479.5
         )
-        return cam_intrinsics
+        return camera_intrinsics
 
     @pytest.fixture
     def pointcloud(self) -> o3d.geometry.PointCloud:
@@ -242,7 +243,10 @@ class TestUtilsO3DHelper(object):
         ), f"unexpected corner points, did the camera intrinsics change? {result}"
 
     def test_get_2d_corner_points_from_3d_bb_with_scaling(self, cas: CAS):
-        cas.set(robokudo.cas.CASViews.COLOR2DEPTH_RATIO, (2.0, 2.0))
+        cas.set(
+            robokudo.cas.CASViews.COLOR_TO_DEPTH_RATIO,
+            ColorToDepthRatio(horizontal=2.0, vertical=2.0),
+        )
 
         obb = o3d.geometry.OrientedBoundingBox(
             center=[0, 0, 1], R=np.eye(3), extent=[1, 1, 1]
@@ -266,7 +270,7 @@ class TestUtilsO3DHelper(object):
             ]
         ), f"unexpected corner points, did the camera intrinsics change? {result}"
 
-    def test_get_2d_corner_points_from_3d_bb_far_from_cam(self, cas: CAS):
+    def test_get_2d_corner_points_from_3d_bb_far_from_camera(self, cas: CAS):
         obb = o3d.geometry.OrientedBoundingBox(
             center=[0, 0, 10], R=np.eye(3), extent=[1, 1, 1]
         )
@@ -290,7 +294,10 @@ class TestUtilsO3DHelper(object):
         ), f"unexpected corner points, did the camera intrinsics change? {result}"
 
     def test_get_2d_corner_points_from_3d_bb_invalid_intrinsics(self, cas: CAS):
-        cas.set(robokudo.cas.CASViews.PC_CAM_INTRINSIC, "anything but CameraIntrinsics")
+        cas.set(
+            robokudo.cas.CASViews.POINTCLOUD_CAMERA_INTRINSIC,
+            "anything but CameraIntrinsics",
+        )
 
         obb = o3d.geometry.OrientedBoundingBox(
             center=[0, 0, 1], R=np.eye(3), extent=[1, 1, 1]
@@ -392,10 +399,10 @@ class TestUtilsO3DHelper(object):
 
         assert np.all(mask == 0)
 
-    def test_scale_o3d_cam_intrinsics(
+    def test_scale_o3d_camera_intrinsics(
         self, kinect_intrinsics: o3d.camera.PinholeCameraIntrinsic
     ):
-        new_intrinsics = scale_o3d_cam_intrinsics(kinect_intrinsics, 1.0, 1.0)
+        new_intrinsics = scale_o3d_camera_intrinsics(kinect_intrinsics, 1.0, 1.0)
 
         assert np.all(
             kinect_intrinsics.intrinsic_matrix == new_intrinsics.intrinsic_matrix
@@ -407,10 +414,10 @@ class TestUtilsO3DHelper(object):
             kinect_intrinsics.height == new_intrinsics.height
         ), "Image height was changed unexpectedly."
 
-    def test_scale_o3d_cam_intrinsics_scale_x(
+    def test_scale_o3d_camera_intrinsics_scale_x(
         self, kinect_intrinsics: o3d.camera.PinholeCameraIntrinsic
     ):
-        new_intrinsics = scale_o3d_cam_intrinsics(kinect_intrinsics, 2.0, 1.0)
+        new_intrinsics = scale_o3d_camera_intrinsics(kinect_intrinsics, 2.0, 1.0)
 
         assert np.all(
             kinect_intrinsics.intrinsic_matrix[1, :2]
@@ -428,10 +435,10 @@ class TestUtilsO3DHelper(object):
             kinect_intrinsics.width * 2.0 == new_intrinsics.width
         ), "Image width was not scaled correctly."
 
-    def test_scale_o3d_cam_intrinsics_scale_y(
+    def test_scale_o3d_camera_intrinsics_scale_y(
         self, kinect_intrinsics: o3d.camera.PinholeCameraIntrinsic
     ):
-        new_intrinsics = scale_o3d_cam_intrinsics(kinect_intrinsics, 1.0, 2.0)
+        new_intrinsics = scale_o3d_camera_intrinsics(kinect_intrinsics, 1.0, 2.0)
 
         assert np.all(
             kinect_intrinsics.intrinsic_matrix[0, :2]
@@ -449,10 +456,10 @@ class TestUtilsO3DHelper(object):
             kinect_intrinsics.height * 2.0 == new_intrinsics.height
         ), "Image height was not scaled correctly."
 
-    def test_scale_o3d_cam_intrinsics_scale_xy(
+    def test_scale_o3d_camera_intrinsics_scale_xy(
         self, kinect_intrinsics: o3d.camera.PinholeCameraIntrinsic
     ):
-        new_intrinsics = scale_o3d_cam_intrinsics(kinect_intrinsics, 2.0, 2.0)
+        new_intrinsics = scale_o3d_camera_intrinsics(kinect_intrinsics, 2.0, 2.0)
 
         assert np.allclose(
             new_intrinsics.intrinsic_matrix[1, :2],
@@ -558,6 +565,38 @@ class TestUtilsO3DHelper(object):
         )  # truncate from 200 mm
 
         assert len(pc.points) == 0
+
+    def test_get_cloud_from_rgb_depth_and_mask_keeps_pixels_of_mask_true_value(
+        self, kinect_intrinsics: o3d.camera.PinholeCameraIntrinsic
+    ):
+        shape = (kinect_intrinsics.height, kinect_intrinsics.width)
+        rgb_image = np.zeros((*shape, 3), dtype=np.uint8)
+        depth_image = np.full(shape, 1000, dtype=np.uint16)
+        mask = np.zeros(shape, dtype=np.uint8)
+        mask[100:110, 100:120] = 7
+        mask[300:310, 300:310] = 255
+
+        pc = get_cloud_from_rgb_depth_and_mask(
+            rgb_image, depth_image, mask, kinect_intrinsics, mask_true_value=7
+        )
+
+        assert len(pc.points) == 10 * 20
+
+    def test_get_cloud_from_rgb_depth_and_mask_leaves_depth_image_unchanged(
+        self, kinect_intrinsics: o3d.camera.PinholeCameraIntrinsic
+    ):
+        shape = (kinect_intrinsics.height, kinect_intrinsics.width)
+        depth_image = np.full(shape, 1000, dtype=np.uint16)
+        mask = np.zeros(shape, dtype=np.uint8)
+        mask[100:200, 100:200] = 255
+
+        get_cloud_from_rgb_depth_and_mask(
+            np.zeros((*shape, 3), dtype=np.uint8), depth_image, mask, kinect_intrinsics
+        )
+
+        np.testing.assert_array_equal(
+            depth_image, np.full(shape, 1000, dtype=np.uint16)
+        )
 
     @pytest.mark.parametrize(
         ["channel", "expected_color"],

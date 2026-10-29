@@ -4,12 +4,13 @@ This is the camera config for a openCV camera without depth information.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import cv2
-from typing_extensions import TYPE_CHECKING, Optional, Dict, Any, Tuple, Union, ClassVar
+from typing_extensions import TYPE_CHECKING, Optional, Dict, Any, Union, ClassVar
 
 from robokudo.descriptors.camera_configs.base_camera_config import BaseCameraConfig
+from robokudo.types.cv import ColorToDepthRatio
 
 if TYPE_CHECKING:
     import numpy.typing as npt
@@ -17,7 +18,8 @@ if TYPE_CHECKING:
 
 @dataclass(slots=True)
 class OpenCVCameraConfig(BaseCameraConfig):
-    """Configuration class for OpenCV-based cameras without depth information.
+    """
+    Configuration class for OpenCV-based cameras without depth information.
 
     This class defines the configuration parameters for cameras that can be accessed
     through OpenCV's video capture interface. It supports various input sources
@@ -33,8 +35,9 @@ class OpenCVCameraConfig(BaseCameraConfig):
     interface_type: str = "OpenCV"
 
     device: Union[int, str] = 0
-    """Input source identifier (camera index, file path, or URL).
-    
+    """
+    Input source identifier (camera index, file path, or URL).
+
     device (integer for I/O device or path to image/video file) and flag
     integer:  id of the video capturing device to open
               Use 0 to open default camera using default backend
@@ -45,13 +48,19 @@ class OpenCVCameraConfig(BaseCameraConfig):
     """
 
     api_preference: int = cv2.CAP_ANY
-    """Preferred OpenCV capture API backend"""
+    """
+    Preferred OpenCV capture API backend.
+    """
 
     device_driver_flag: int = 0
-    """Flag argument to use when retrieving/reading the frames"""
+    """
+    Flag argument to use when retrieving/reading the frames.
+    """
 
     normalize_rgb: bool = True
-    """Normalize/stabilise rgb image contrast/brightness"""
+    """
+    Normalize/stabilise rgb image contrast/brightness.
+    """
 
     loop_mode: int = -1
     """Loop after iterating over all frames of the video file
@@ -64,19 +73,31 @@ class OpenCVCameraConfig(BaseCameraConfig):
     """
 
     depth: Optional[npt.NDArray] = None
-    """Static depth image, which is used as depth image for all rgb images"""
+    """
+    Static depth image, which is used as depth image for all rgb images.
+    """
 
     update_global_with_depth_parameter: bool = True
-    """Flag to update global depth parameters"""
+    """
+    Flag to update global depth parameters.
+    """
 
-    cam_info: Dict[str, Any] = None
-    """Camera config as dict"""
+    camera_info: Dict[str, Any] = None
+    """
+    Camera config as dict.
+    """
 
-    cam_intrinsic = None
-    """Camera intrinsic parameters"""
+    camera_intrinsic = None
+    """
+    Camera intrinsic parameters.
+    """
 
-    color2depth_ratio: Tuple[float, float] = (1.0, 1.0)
-    """If the resolution of the depth image differs from the color image, we need to define the factor for (x, y)."""
+    color_to_depth_ratio: ColorToDepthRatio = field(default_factory=ColorToDepthRatio)
+    """
+    Size of the depth image relative to the color image.
+    """
 
-    viewpoint_cam_to_world = None
-    """Camera to world transformation"""
+    viewpoint_camera_to_world = None
+    """
+    Camera to world transformation.
+    """

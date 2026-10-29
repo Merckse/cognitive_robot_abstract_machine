@@ -17,28 +17,42 @@ import semantic_digital_twin.orm.model
 
 import semantic_digital_twin.adapters.procthor.procthor_resolver
 from krrood.adapters.json_serializer import SubclassJSONSerializer
+from krrood.entity_query_language.predicate import SymbolicCallable
 from krrood.ormatic.ormatic import ORMatic
-from semantic_digital_twin.reasoning.predicates import ContainsType
+from krrood.utils import recursive_subclasses
+import semantic_digital_twin.reasoning.predicates
+import semantic_digital_twin.reasoning.world_rdr.rules
 from semantic_digital_twin.semantic_annotations.position_descriptions import (
     SemanticDirection,
 )
 from semantic_digital_twin.spatial_computations.forward_kinematics import (
     ForwardKinematicsManager,
 )
+from semantic_digital_twin.testing import StateChangeCounter
 from semantic_digital_twin.world import (
     ResetStateContextManager,
+    WorldEntityRebinding,
     WorldModelUpdateContextManager,
+    WorldStateBatchContextManager,
 )
+from semantic_digital_twin.world_description.mesh_file_storage import MeshFileStorage
 
 # remove classes that should not be mapped
 ignore_classes = {
     ResetStateContextManager,
     WorldModelUpdateContextManager,
+    WorldStateBatchContextManager,
+    WorldEntityRebinding,
+    StateChangeCounter,
     ForwardKinematicsManager,
+    MeshFileStorage,
     semantic_digital_twin.adapters.procthor.procthor_resolver.ProcthorResolver,
-    ContainsType,
     SemanticDirection,
     SubclassJSONSerializer,
+    # A symbolic operation is a step of a query, not something a world stores, so none of
+    # them is mapped. The modules defining them are imported above so that they are all
+    # declared by the time this is read.
+    *recursive_subclasses(SymbolicCallable),
 }
 
 
@@ -46,7 +60,6 @@ def generate_orm():
     """
     Generate the ORM classes for the coraplex package.
     """
-
     logging.basicConfig(level=logging.INFO)  # Or your preferred config
     logging.getLogger("krrood").setLevel(logging.DEBUG)
 

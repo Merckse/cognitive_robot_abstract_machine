@@ -1,6 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from typing_extensions import Tuple
+from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix
+
+from robokudo.types.cv import ColorToDepthRatio
 
 
 @dataclass(kw_only=True)
@@ -21,7 +23,7 @@ class DepthComponent:
 class ColorComponent:
     """Camera component with configuration for color input data."""
 
-    topic_cam_info: str
+    topic_camera_info: str
     """ROS camera info topic name. Must be set by camera configs using this component."""
 
     topic_color: str
@@ -46,6 +48,25 @@ class TfComponent:
 
     lookup_viewpoint: bool = True
     """Whether to lookup the viewpoint between the camera and the world."""
+
+
+@dataclass(kw_only=True)
+class StaticCameraTransformComponent:
+    """Camera component with configuration for a fixed camera transform."""
+
+    static_camera_transform_enabled: bool = False
+    """Whether to write a configured static camera transform into each CAS."""
+
+    static_world_frame: str = "map"
+    """World frame ID for the configured static camera transform."""
+
+    static_camera_frame: str = "camera"
+    """Camera frame ID for the configured static camera transform."""
+
+    static_world_T_camera: HomogeneousTransformationMatrix = field(
+        default_factory=HomogeneousTransformationMatrix
+    )
+    """Camera pose relative to the configured world frame."""
 
 
 @dataclass(kw_only=True)
@@ -74,12 +95,10 @@ class WorldDescriptorComponent:
 class RGBDComponent(DepthComponent, ColorComponent):
     """Camera component with configuration for RGB-D input data."""
 
-    color2depth_ratio: Tuple[float, float] = (1.0, 1.0)
+    color_to_depth_ratio: ColorToDepthRatio = field(default_factory=ColorToDepthRatio)
     """
-    If the resolution of the depth image differs from the color image,
-    we need to define the factor for (x, y).
-    Example: (0.5,0.5) for a 640x480 depth image compared to a
-    1280x960 rgb image Otherwise, just put (1,1) here
+    Size of the depth image relative to the color image, for example half along both
+    axes for a 640x480 depth image next to a 1280x960 color image.
     """
 
     hi_res_mode: bool = False

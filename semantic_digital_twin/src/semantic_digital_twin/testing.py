@@ -1,14 +1,15 @@
 import os
 
 import pytest
+from dataclasses import dataclass, field
 from importlib.resources import files
 from pathlib import Path
-from typing_extensions import Tuple
+from typing_extensions import Optional, Tuple
 
 from semantic_digital_twin.adapters.urdf import URDFParser
+from semantic_digital_twin.callbacks.callback import StateChangeCallback
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix
-from semantic_digital_twin.spatial_types.derivatives import DerivativeMap
 from semantic_digital_twin.spatial_types.spatial_types import Vector3
 from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import (
@@ -32,6 +33,36 @@ from semantic_digital_twin.world_description.geometry import (
 from semantic_digital_twin.world_description.shape_collection import ShapeCollection
 from semantic_digital_twin.world_description.world_entity import Body
 
+# %% callbacks
+
+# Every dataclass defined here must be listed in ``ignore_classes`` in
+# semantic_digital_twin/scripts/generate_orm.py, otherwise ormatic silently maps it into
+# a database table.
+
+
+@dataclass(eq=False)
+class StateChangeCounter(StateChangeCallback):
+    """
+    Counts how often the world announced a state change.
+    """
+
+    count: int = field(default=0, init=False)
+    """
+    Number of state changes announced since this callback was registered.
+    """
+
+    publish_changes_of_last_call: Optional[bool] = field(default=None, init=False)
+    """
+    The ``publish_changes`` the most recent announcement carried.
+    """
+
+    def on_state_change(self, **kwargs):
+        self.count += 1
+        self.publish_changes_of_last_call = kwargs.get("publish_changes")
+
+
+# %% fixtures
+
 
 @pytest.fixture
 def world_setup() -> Tuple[
@@ -52,16 +83,9 @@ def world_setup() -> Tuple[
 
     with world.modify_world():
         [world.add_kinematic_structure_entity(b) for b in [root, l1, l2, bf, r1, r2]]
-        lower_limits = DerivativeMap()
-        lower_limits.velocity = -1
-        upper_limits = DerivativeMap()
-        upper_limits.velocity = 1
         dof = DegreeOfFreedom(
             name=PrefixedName("dof"),
-            limits=DegreeOfFreedomLimits(
-                lower=lower_limits,
-                upper=upper_limits,
-            ),
+            limits=DegreeOfFreedomLimits.from_position_range_and_speed(maximum_speed=1),
         )
         world.add_degree_of_freedom(dof)
 

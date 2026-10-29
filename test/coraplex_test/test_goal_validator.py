@@ -28,19 +28,22 @@ from semantic_digital_twin.spatial_types import (
     Quaternion,
 )
 from semantic_digital_twin.spatial_types.spatial_types import Pose, Point3
+from semantic_digital_twin.robots.pr2 import PR2Joint
 
 
 @pytest.fixture
-def goal_validator_world(immutable_model_world):
-    world, robot_view, context = immutable_model_world
+def goal_validator_world(pr2_apartment_context):
+    world, robot_view, context = pr2_apartment_context
     robot_view.root.parent_connection.origin = (
         HomogeneousTransformationMatrix.from_xyz_quaternion(0, 0, 0)
     )
-    world.get_body_by_name("milk.stl").parent_connection.origin = (
-        HomogeneousTransformationMatrix.from_xyz_quaternion(2.2, 2, 1)
+    milk_connection = world.get_body_by_name("milk.stl").parent_connection
+    milk_connection.origin = HomogeneousTransformationMatrix.from_xyz_quaternion(
+        2.2, 2, 1, reference_frame=milk_connection.parent
     )
-    world.get_body_by_name("breakfast_cereal.stl").parent_connection.origin = (
-        HomogeneousTransformationMatrix.from_xyz_quaternion(2.2, 1.8, 1)
+    cereal_connection = world.get_body_by_name("breakfast_cereal.stl").parent_connection
+    cereal_connection.origin = HomogeneousTransformationMatrix.from_xyz_quaternion(
+        2.2, 1.8, 1, reference_frame=cereal_connection.parent
     )
     world.notify_state_change()
     return world, robot_view, context
@@ -88,9 +91,9 @@ def test_single_position_goal_generic(goal_validator_world):
     world, robot_view, context = goal_validator_world
     goal_validator = GoalValidator(
         PositionErrorChecker(),
-        lambda: (world.get_body_by_name("breakfast_cereal.stl").global_pose)
-        .to_position()
-        .to_list(),
+        lambda: (
+            world.get_body_by_name("breakfast_cereal.stl").global_pose
+        ).position.to_list(),
     )
     validate_position_goal(goal_validator, world)
 
@@ -98,9 +101,9 @@ def test_single_position_goal_generic(goal_validator_world):
 def test_single_position_goal(goal_validator_world):
     world, robot_view, context = goal_validator_world
     goal_validator = PositionGoalValidator(
-        lambda: (world.get_body_by_name("breakfast_cereal.stl").global_pose)
-        .to_position()
-        .to_list()
+        lambda: (
+            world.get_body_by_name("breakfast_cereal.stl").global_pose
+        ).position.to_list()
     )
     validate_position_goal(goal_validator, world)
 
@@ -117,9 +120,7 @@ def validate_position_goal(goal_validator, world):
         )
     )
     assert (
-        (world.get_body_by_name("breakfast_cereal.stl").global_pose)
-        .to_position()
-        .to_list()
+        (world.get_body_by_name("breakfast_cereal.stl").global_pose).position.to_list()
         == cereal_goal_position,
     )
     assert goal_validator.goal_achieved
@@ -131,9 +132,9 @@ def test_single_orientation_goal_generic(goal_validator_world):
     world, robot_view, context = goal_validator_world
     goal_validator = GoalValidator(
         OrientationErrorChecker(),
-        lambda: (world.get_body_by_name("breakfast_cereal.stl").global_pose)
-        .to_quaternion()
-        .to_list(),
+        lambda: (
+            world.get_body_by_name("breakfast_cereal.stl").global_pose
+        ).quaternion.to_list(),
     )
     validate_orientation_goal(goal_validator, world)
 
@@ -141,9 +142,9 @@ def test_single_orientation_goal_generic(goal_validator_world):
 def test_single_orientation_goal(goal_validator_world):
     world, robot_view, context = goal_validator_world
     goal_validator = OrientationGoalValidator(
-        lambda: (world.get_body_by_name("breakfast_cereal.stl").global_pose)
-        .to_quaternion()
-        .to_list()
+        lambda: (
+            world.get_body_by_name("breakfast_cereal.stl").global_pose
+        ).quaternion.to_list()
     )
     validate_orientation_goal(goal_validator, world)
 
@@ -164,9 +165,9 @@ def validate_orientation_goal(goal_validator, world):
         )
     )
     for v1, v2 in zip(
-        (world.get_body_by_name("breakfast_cereal.stl").global_pose)
-        .to_quaternion()
-        .to_list(),
+        (
+            world.get_body_by_name("breakfast_cereal.stl").global_pose
+        ).quaternion.to_list(),
         cereal_goal_orientation,
     ):
         assert v1 == pytest.approx(v2, abs=0.001)
@@ -198,7 +199,7 @@ def validate_revolute_joint_position_goal(
     goal_validator, joint_type: Optional[JointType] = None, world=None
 ):
     goal_joint_position = -np.pi / 8
-    joint_name = "l_shoulder_lift_joint"
+    joint_name = PR2Joint.LEFT_SHOULDER_LIFT
     if joint_type is not None:
         goal_validator.register_goal(goal_joint_position, joint_type, joint_name)
     else:
@@ -209,11 +210,11 @@ def validate_revolute_joint_position_goal(
 
     for percent in [0.5, 1]:
         world.state[
-            world.get_degree_of_freedom_by_name("l_shoulder_lift_joint").id
+            world.get_degree_of_freedom_by_name(PR2Joint.LEFT_SHOULDER_LIFT).id
         ].position = (goal_joint_position * percent)
         assert (
             world.state[
-                world.get_degree_of_freedom_by_name("l_shoulder_lift_joint").id
+                world.get_degree_of_freedom_by_name(PR2Joint.LEFT_SHOULDER_LIFT).id
             ].position
             == goal_joint_position * percent,
         )
@@ -250,7 +251,7 @@ def validate_prismatic_joint_position_goal(
     goal_validator, joint_type: Optional[JointType] = None, world=None
 ):
     goal_joint_position = 0.2
-    torso = "torso_lift_joint"
+    torso = PR2Joint.TORSO_LIFT
     achieved_percentage = [0.46946, 1]
     if joint_type is not None:
         goal_validator.register_goal(goal_joint_position, joint_type, torso)
@@ -262,11 +263,11 @@ def validate_prismatic_joint_position_goal(
 
     for percent, achieved_percentage in zip([0.5, 1], achieved_percentage):
         world.state[
-            world.get_degree_of_freedom_by_name("torso_lift_joint").id
+            world.get_degree_of_freedom_by_name(PR2Joint.TORSO_LIFT).id
         ].position = (goal_joint_position * percent)
         assert (
             world.state[
-                world.get_degree_of_freedom_by_name("torso_lift_joint").id
+                world.get_degree_of_freedom_by_name(PR2Joint.TORSO_LIFT).id
             ].position
             == goal_joint_position * percent,
         )
@@ -312,7 +313,7 @@ def validate_multi_joint_goal(
 ):
     goal_joint_positions = np.array([0.2, -np.pi / 4])
     achieved_percentage = [0.48474, 1]
-    joint_names = ["torso_lift_joint", "l_shoulder_lift_joint"]
+    joint_names = [PR2Joint.TORSO_LIFT, PR2Joint.LEFT_SHOULDER_LIFT]
     if joint_types is not None:
         goal_validator.register_goal(goal_joint_positions, joint_types, joint_names)
     else:
@@ -333,14 +334,14 @@ def validate_multi_joint_goal(
             )
         assert np.allclose(
             world.state[
-                world.get_degree_of_freedom_by_name("torso_lift_joint").id
+                world.get_degree_of_freedom_by_name(PR2Joint.TORSO_LIFT).id
             ].position,
             current_joint_positions[0],
             atol=0.001,
         )
         assert np.allclose(
             world.state[
-                world.get_degree_of_freedom_by_name("l_shoulder_lift_joint").id
+                world.get_degree_of_freedom_by_name(PR2Joint.LEFT_SHOULDER_LIFT).id
             ].position,
             current_joint_positions[1],
             atol=0.001,
@@ -417,20 +418,16 @@ def validate_list_of_poses_goal(goal_validator, world):
             world.root,
         )
         world.get_body_by_name("base_footprint").parent_connection.origin = (
-            current_pose_goal.to_homogeneous_matrix()
+            current_pose_goal.homogeneous_matrix
         )
         assert np.allclose(
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_position()
-            .to_list(),
-            current_pose_goal.to_position().to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).position.to_list(),
+            current_pose_goal.position.to_list(),
             atol=0.001,
         )
         assert np.allclose(
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_quaternion()
-            .to_list(),
-            current_pose_goal.to_quaternion().to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).quaternion.to_list(),
+            current_pose_goal.quaternion.to_list(),
             atol=0.001,
         )
         if percent == 1:
@@ -459,12 +456,8 @@ def test_list_of_positions_goal_generic(goal_validator_world):
     goal_validator = GoalValidator(
         PositionErrorChecker(is_iterable=True),
         lambda: [
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_position()
-            .to_list(),
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_position()
-            .to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).position.to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).position.to_list(),
         ],
     )
     validate_list_of_positions_goal(goal_validator, world)
@@ -474,12 +467,8 @@ def test_list_of_positions_goal(goal_validator_world):
     world, robot_view, context = goal_validator_world
     goal_validator = MultiPositionGoalValidator(
         lambda: [
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_position()
-            .to_list(),
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_position()
-            .to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).position.to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).position.to_list(),
         ]
     )
     validate_list_of_positions_goal(goal_validator, world)
@@ -499,9 +488,7 @@ def validate_list_of_positions_goal(goal_validator, world):
             HomogeneousTransformationMatrix.from_xyz_rpy(*current_position_goal)
         )
         assert np.allclose(
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_position()
-            .to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).position.to_list(),
             current_position_goal,
             atol=0.001,
         )
@@ -525,12 +512,8 @@ def test_list_of_orientations_goal_generic(goal_validator_world):
     goal_validator = GoalValidator(
         OrientationErrorChecker(is_iterable=True),
         lambda: [
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_quaternion()
-            .to_list(),
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_quaternion()
-            .to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).quaternion.to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).quaternion.to_list(),
         ],
     )
     validate_list_of_orientations_goal(goal_validator, world)
@@ -540,12 +523,8 @@ def test_list_of_orientations_goal(goal_validator_world):
     world, robot_view, context = goal_validator_world
     goal_validator = MultiOrientationGoalValidator(
         lambda: [
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_quaternion()
-            .to_list(),
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_quaternion()
-            .to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).quaternion.to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).quaternion.to_list(),
         ]
     )
     validate_list_of_orientations_goal(goal_validator, world)
@@ -576,9 +555,7 @@ def validate_list_of_orientations_goal(goal_validator, world):
             )
         )
         assert np.allclose(
-            (world.get_body_by_name("base_footprint").global_pose)
-            .to_quaternion()
-            .to_list(),
+            (world.get_body_by_name("base_footprint").global_pose).quaternion.to_list(),
             quaternion_from_euler(*current_orientation_goal.tolist()),
             atol=0.001,
         )
@@ -628,7 +605,7 @@ def validate_list_of_revolute_joint_positions_goal(
 ):
     goal_joint_position = -np.pi / 4
     goal_joint_positions = np.array([goal_joint_position, goal_joint_position])
-    joint_names = ["l_shoulder_lift_joint", "r_shoulder_lift_joint"]
+    joint_names = [PR2Joint.LEFT_SHOULDER_LIFT, PR2Joint.RIGHT_SHOULDER_LIFT]
     if joint_types is not None:
         goal_validator.register_goal(goal_joint_positions, joint_types, joint_names)
     else:

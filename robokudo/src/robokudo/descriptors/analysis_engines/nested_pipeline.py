@@ -1,4 +1,5 @@
-"""Analysis engine demonstrating nested pipeline functionality.
+"""
+Analysis engine demonstrating nested pipeline functionality.
 
 This module provides an analysis engine that demonstrates how to create and use
 nested pipelines within the main processing pipeline. It implements a main pipeline
@@ -16,11 +17,14 @@ The pipeline implements the following functionality:
     processing flows using nested pipelines and conditional execution.
 """
 
-from robokudo.annotators.outputs import ClearAnnotatorOutputs
-from robokudo.descriptors import CrDescriptorFactory
+from robokudo.descriptors.factories.cr_descriptor_factory import (
+    CollectionReaderDescriptorFactory,
+)
 from robokudo.analysis_engine import AnalysisEngineInterface
+from robokudo.behaviours.clear_annotator_outputs import ClearAnnotatorOutputs
 from robokudo.pipeline import Pipeline
-from py_trees.behaviours import Count, SuccessEveryN
+from py_trees.behaviours import SuccessEveryN, TickCounter
+from py_trees.common import Status
 from py_trees.decorators import Condition
 from py_trees.composites import Sequence
 
@@ -31,7 +35,8 @@ from robokudo.gui import SetPipelineRedraw
 
 
 class AnalysisEngine(AnalysisEngineInterface):
-    """Analysis engine demonstrating nested pipeline architecture.
+    """
+    Analysis engine demonstrating nested pipeline architecture.
 
     This class implements a pipeline that combines a main processing pipeline
     with a nested belief state pipeline. It demonstrates how to structure
@@ -40,17 +45,18 @@ class AnalysisEngine(AnalysisEngineInterface):
     The pipeline includes:
 
     * Main pipeline with camera data processing
-    * Nested belief state pipeline with counting annotators
+    * Nested belief state pipeline with tick counters
     * Conditional execution control
     * Pipeline redraw functionality
 
     .. note::
-        The nested pipeline uses counting annotators to simulate belief state
+        The nested pipeline uses tick counters to simulate belief state
         processing, with configurable success/failure conditions.
     """
 
     def name(self) -> str:
-        """Get the name of the analysis engine.
+        """
+        Get the name of the analysis engine.
 
         :return: The name identifier of this analysis engine
         :rtype: str
@@ -58,39 +64,47 @@ class AnalysisEngine(AnalysisEngineInterface):
         return "nested_pipeline"
 
     def implementation(self) -> Pipeline:
-        """Create a pipeline with nested belief state processing.
+        """
+        Create a pipeline with nested belief state processing.
 
         This method constructs a processing pipeline that includes both a main
         pipeline for camera data processing and a nested pipeline for belief
-        state management. The nested pipeline uses counting annotators to
+        state management. The nested pipeline uses tick counters to
         simulate belief state processing.
 
         The nested pipeline configuration:
 
-        * Annotator A: Runs for 9 iterations, succeeds on 10th
-        * Annotator B: Runs for 9 iterations, succeeds on 10th
+        * Preprocessing Annotator: Runs for 9 iterations, succeeds on 10th
+        * Data Analysis Annotator: Runs for 9 iterations, succeeds on 10th
         * Success check every 2 iterations
 
         :return: The configured pipeline with nested belief state processing
         """
-        kinect_config = CrDescriptorFactory.create_descriptor("kinect")
+        kinect_config = CollectionReaderDescriptorFactory.create_descriptor("kinect")
 
-        # create second 'pipeline
-        second_seq = Sequence(name="BS Pipeline")
+        second_seq = Sequence(name="Belief State Pipeline", memory=True)
         second_seq.add_children(
             [
-                Count(
-                    name="Annotator A", fail_until=-1, running_until=9, success_until=10
+                TickCounter(
+                    name="Preprocessing Annotator",
+                    duration=9,
+                    completion_status=Status.SUCCESS,
                 ),
-                Count(
-                    name="Annotator B", fail_until=-1, running_until=9, success_until=10
+                TickCounter(
+                    name="Data Analysis Annotator",
+                    duration=9,
+                    completion_status=Status.SUCCESS,
                 ),
                 SuccessEveryN("Repeat Done?", 2),
             ]
         )
-        condition = Condition(second_seq)
+        condition = Condition(
+            name="Belief State Complete",
+            child=second_seq,
+            status=Status.SUCCESS,
+        )
 
-        seq = Pipeline("RWPipeline")
+        seq = Pipeline("Real-World Pipeline")
 
         for annotator in [
             ClearAnnotatorOutputs(),

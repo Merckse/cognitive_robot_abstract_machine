@@ -19,9 +19,9 @@ AllElements: Tuple[Hashable]
 class SetElement(AbstractSimpleSet):
     """
     Represents a SetElement.
-    A SetElement consists of an element and all possible elements.
-    It is necessary to know of all possible elements to determine the index and complement of any element.
-    All elements are a tuple to preserve ordering.
+
+    A SetElement consists of an element and all possible elements. It is necessary to know of all possible elements to determine the index
+    and complement of any element. All elements are a tuple to preserve ordering.
 
     Beware that an empty set element is an invariant of this class and is represented by None.
     All elements are not consistent with invariants of this class.
@@ -51,7 +51,9 @@ class SetElement(AbstractSimpleSet):
     def from_data(cls, element: Hashable, all_elements: AllElements) -> Self:
         """
         Create a set element from data.
-        :param element: The element to create the set element from. If None, create an empty set element.
+
+        :param element: The element to create the set element from. If None, create an
+            empty set element.
         :param all_elements: The set of all elements.
         """
         instance = cls.__new__(cls)
@@ -90,6 +92,14 @@ class SetElement(AbstractSimpleSet):
     def contains(self, item: Self) -> bool:
         return self == item
 
+    @property
+    def size(self) -> float:
+        """
+        :return: The number of elements this set element holds, which is one unless it is
+            the empty set element.
+        """
+        return 0.0 if self.is_empty() else 1.0
+
     def non_empty_to_string(self) -> str:
         return str(self.element)
 
@@ -113,7 +123,7 @@ class SetElement(AbstractSimpleSet):
     def as_composite_set(self) -> AbstractCompositeSet:
         return Set.from_simple_sets(self)
 
-    def __deepcopy__(self):
+    def __deepcopy__(self, memo: dict[int, Any] | None = None) -> Self:
         return SetElement.from_data(self.element, self.all_elements)
 
 
@@ -176,3 +186,9 @@ class Set(AbstractCompositeSet):
         :return: A map that maps the hashes of each element in all_elements to the element.
         """
         return {hash(elem): elem for elem in self.all_elements}
+
+    def is_singleton(self) -> bool:
+        """
+        :return: Whether the set contains exactly one element.
+        """
+        return len(self.simple_sets) == 1

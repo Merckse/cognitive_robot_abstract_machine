@@ -1,7 +1,8 @@
 """
 Set operations and cartesian-product execution for the Entity Query Language.
 
-This module includes multi-arity union and abstract helpers to evaluate expressions via nested cartesian products.
+This module includes multi-arity union and abstract helpers to evaluate expressions via
+nested cartesian products.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from typing_extensions import Iterable, Optional, Tuple, Iterator
 
 from krrood.entity_query_language.core.base_expressions import (
     MultiArityExpression,
+    TruthValuedExpression,
     Bindings,
     OperationResult,
     SymbolicExpression,
@@ -24,9 +26,14 @@ from krrood.entity_query_language.utils import (
 
 
 @dataclass(eq=False, repr=False)
-class Union(MultiArityExpression):
+class EvaluatesChildrenInSequence(MultiArityExpression, ABC):
     """
-    A symbolic union operation that can be used to evaluate multiple symbolic expressions in a sequence.
+    An expression that yields the results of each of its children in turn.
+
+    A result it yields is its own, and a result's truth is read from the binding of the
+    expression that produced it, so each child result's truth is recorded under this
+    expression's identifier before the result is passed on. A subclass that selects a
+    value overwrites that binding with the value.
     """
 
     def _evaluate__(
@@ -34,22 +41,17 @@ class Union(MultiArityExpression):
         sources: OperationResult,
     ) -> Iterable[OperationResult]:
         yield from (
-            self.get_result_and_update_truth_value(child_result)
+            self._build_operation_result_with_truth_(
+                child_result.is_true, child_result.bindings, child_result
+            )
             for child_result in itertools.chain(
                 *(var._evaluate_(sources) for var in self._operation_children_)
             )
         )
 
-    def get_result_and_update_truth_value(
-        self, child_result: OperationResult
-    ) -> OperationResult:
-        return OperationResult(
-            child_result.bindings, child_result.is_false, self, child_result
-        )
-
     def add_child(self, child: SymbolicExpression) -> None:
         """
-        Adds a child operand to the union operator.
+        Adds a child operand to this expression.
 
         :param child: The child operand to add.
         """
@@ -58,10 +60,24 @@ class Union(MultiArityExpression):
 
 
 @dataclass(eq=False, repr=False)
+class Union(TruthValuedExpression, EvaluatesChildrenInSequence):
+    """
+    A symbolic union operation that can be used to evaluate multiple symbolic
+    expressions in a sequence.
+
+    Keeps the truth its base records, so its binding is always the truth of the child
+    result it yields and never a value a caller selects.
+    """
+
+
+@dataclass(eq=False, repr=False)
 class PerformsCartesianProduct(SymbolicExpression, ABC):
     """
-    A symbolic operation that evaluates its children in nested sequence, passing bindings from one to the next such that
-    each binding has a value from each child expression. It represents a cartesian product of all child expressions.
+    A symbolic operation that evaluates its children in nested sequence, passing
+    bindings from one to the next such that each binding has a value from each child
+    expression.
+
+    It represents a cartesian product of all child expressions.
     """
 
     @property
@@ -76,7 +92,8 @@ class PerformsCartesianProduct(SymbolicExpression, ABC):
         self, sources: Optional[OperationResult]
     ) -> Iterator[OperationResult]:
         """
-        Evaluate the symbolic expressions by generating combinations of values from their evaluation generators.
+        Evaluate the symbolic expressions by generating combinations of values from
+        their evaluation generators.
 
         :param sources: The current OperationResult carrying bindings, or None.
         :return: An Iterable of Bindings for each combination of values.
@@ -100,7 +117,8 @@ class MultiArityExpressionThatPerformsACartesianProduct(
     MultiArityExpression, PerformsCartesianProduct, ABC
 ):
     """
-    An abstract superclass of expressions that have multiple operands and performs a cartesian product on them.
+    An abstract superclass of expressions that have multiple operands and performs a
+    cartesian product on them.
     """
 
     @property

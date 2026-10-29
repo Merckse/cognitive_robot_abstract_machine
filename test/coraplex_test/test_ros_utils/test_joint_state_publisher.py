@@ -7,6 +7,7 @@ import pytest
 import rclpy.publisher
 from sensor_msgs.msg import JointState
 from coraplex.ros_utils.joint_state_publisher import JointStatePublisher
+from semantic_digital_twin.robots.pr2 import PR2Joint
 
 
 class DummyRobot:
@@ -18,8 +19,8 @@ class DummyRobot:
         return self.joint_states[joint_name]
 
 
-def test_initialization(immutable_model_world, rclpy_node):
-    world, robot_view, context = immutable_model_world
+def test_initialization(pr2_apartment_context, rclpy_node):
+    world, robot_view, context = pr2_apartment_context
     node = rclpy_node
     publisher = JointStatePublisher(
         world, node, joint_state_topic="/test_topic", interval=0.05
@@ -30,8 +31,8 @@ def test_initialization(immutable_model_world, rclpy_node):
     publisher._stop_publishing()
 
 
-def test_publish_sends_joint_state(immutable_model_world, rclpy_node):
-    world, robot_view, context = immutable_model_world
+def test_publish_sends_joint_state(pr2_apartment_context, rclpy_node):
+    world, robot_view, context = pr2_apartment_context
     node = rclpy_node
     mock_publisher = MagicMock()
     publisher = JointStatePublisher(world, node)
@@ -45,26 +46,26 @@ def test_publish_sends_joint_state(immutable_model_world, rclpy_node):
     assert mock_publisher.publish.called
     msg = mock_publisher.publish.call_args[0][0]
     assert isinstance(msg, JointState)
-    assert "torso_lift_joint" in msg.name
-    assert "r_shoulder_pan_joint" in msg.name
+    assert PR2Joint.TORSO_LIFT in msg.name
+    assert PR2Joint.RIGHT_SHOULDER_PAN in msg.name
     joint_to_position = dict(zip(msg.name, msg.position))
-    assert joint_to_position["r_wrist_roll_joint"] == pytest.approx(
+    assert joint_to_position[PR2Joint.RIGHT_WRIST_ROLL] == pytest.approx(
         world.state[
-            world.get_degree_of_freedom_by_name("r_wrist_roll_joint").id
+            world.get_degree_of_freedom_by_name(PR2Joint.RIGHT_WRIST_ROLL).id
         ].position,
         abs=0.01,
     )
 
-    assert joint_to_position["r_shoulder_pan_joint"] == pytest.approx(
+    assert joint_to_position[PR2Joint.RIGHT_SHOULDER_PAN] == pytest.approx(
         world.state[
-            world.get_degree_of_freedom_by_name("r_shoulder_pan_joint").id
+            world.get_degree_of_freedom_by_name(PR2Joint.RIGHT_SHOULDER_PAN).id
         ].position,
         abs=0.01,
     )
 
 
-def test_stop_publishing(immutable_model_world, rclpy_node):
-    world, robot_view, context = immutable_model_world
+def test_stop_publishing(pr2_apartment_context, rclpy_node):
+    world, robot_view, context = pr2_apartment_context
     node = rclpy_node
     publisher = JointStatePublisher(world, node)
     publisher.kill_event = MagicMock()

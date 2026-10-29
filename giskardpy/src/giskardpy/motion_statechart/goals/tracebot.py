@@ -1,7 +1,7 @@
-from __future__ import division
+from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing_extensions import Optional
 
 import numpy as np
 
@@ -40,14 +40,14 @@ class InsertCylinder(Goal):
             target_frame=self.root, spatial_object=self.up
         )
 
-        self.weight = DefaultWeights.WEIGHT_ABOVE_CA
+        self.weight = DefaultWeights.WEIGHT_ABOVE_COLLISION_AVOIDANCE
 
         root_P_hole = self.root_P_hole
         root_V_up = self.root_V_up
         root_T_tip = context.world._forward_kinematic_manager.compose_expression(
             self.root, self.tip
         )
-        root_P_tip = root_T_tip.to_position()
+        root_P_tip = root_T_tip.position
         tip_P_cylinder_bottom = Vector3.Z() * self.cylinder_height / 2
         root_P_cylinder_bottom = root_T_tip @ tip_P_cylinder_bottom
         root_P_tip = root_P_tip + root_P_cylinder_bottom

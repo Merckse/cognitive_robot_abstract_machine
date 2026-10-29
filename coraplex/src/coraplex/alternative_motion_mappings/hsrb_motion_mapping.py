@@ -8,7 +8,6 @@ from giskardpy.motion_statechart.ros2_nodes.ros_tasks import (
 from semantic_digital_twin.robots.abstract_robot import ParallelGripper
 from semantic_digital_twin.robots.hsrb import HSRB
 from coraplex.datastructures.enums import ExecutionType
-from coraplex.view_manager import ViewManager
 from coraplex.robot_plans import MoveMotion, MoveToolCenterPointMotion, LookingMotion
 
 from coraplex.robot_plans.motions.base import AlternativeMotion
@@ -16,7 +15,7 @@ from coraplex.robot_plans.motions.base import AlternativeMotion
 
 class HSRBMoveMotion(MoveMotion, AlternativeMotion[HSRB]):
     """
-    Uses a Nav2 action server to move the base of the real HSRB
+    Uses a Nav2 action server to move the base of the real HSRB.
     """
 
     execution_type = ExecutionType.REAL

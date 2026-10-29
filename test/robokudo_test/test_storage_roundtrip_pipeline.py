@@ -8,6 +8,7 @@ import numpy as np
 import py_trees
 from rclpy.node import Node
 
+from robokudo.types.cv import ColorToDepthRatio
 import robokudo.defs
 from robokudo import world as rk_world
 import robokudo.descriptors.camera_configs.config_filereader_playback
@@ -15,14 +16,15 @@ import robokudo.descriptors.camera_configs.config_mongodb_playback
 import robokudo.utils.data_downloader
 import robokudo.utils.tree_execution
 from robokudo.annotators.collection_reader import CollectionReaderAnnotator
-from robokudo.annotators.outputs import ClearAnnotatorOutputs
 from robokudo.annotators.storage import StorageWriter
 from robokudo.cas import CASViews
-from robokudo.descriptors import CrDescriptorFactory
+from robokudo.descriptors.factories.cr_descriptor_factory import (
+    CollectionReaderDescriptorFactory,
+)
 from robokudo.io.storage import Storage
+from robokudo.behaviours.clear_annotator_outputs import ClearAnnotatorOutputs
 from robokudo.pipeline import Pipeline
 from semantic_digital_twin.adapters.ros.messages import WorldModelSnapshot
-
 
 pytestmark = pytest.mark.skipif(
     os.getenv("CI") == "true",
@@ -30,19 +32,19 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _cam_info_k_values(cam_info):
-    if hasattr(cam_info, "k"):
-        return list(cam_info.k)
-    return list(cam_info.K)
+def _camera_info_k_values(camera_info):
+    if hasattr(camera_info, "k"):
+        return list(camera_info.k)
+    return list(camera_info.K)
 
 
 def _build_writer_pipeline(db_name: str) -> Pipeline:
-    file_reader_descriptor = CrDescriptorFactory.create_descriptor(
+    file_reader_descriptor = CollectionReaderDescriptorFactory.create_descriptor(
         "file_reader",
         loop=False,
         target_dir=robokudo.utils.data_downloader.test_data_path() / Path("data"),
         kinect_height_fix_mode=True,
-        color2depth_ratio=(0.5, 0.5),
+        color_to_depth_ratio=ColorToDepthRatio(horizontal=0.5, vertical=0.5),
     )
 
     writer_descriptor = StorageWriter.Descriptor()
@@ -61,7 +63,7 @@ def _build_writer_pipeline(db_name: str) -> Pipeline:
 
 
 def _build_reader_pipeline(db_name: str) -> Pipeline:
-    mongo_descriptor = CrDescriptorFactory.create_descriptor(
+    mongo_descriptor = CollectionReaderDescriptorFactory.create_descriptor(
         "mongo", loop=False, db_name=db_name
     )
     pipeline = Pipeline("ReaderPipeline")
@@ -126,25 +128,25 @@ class TestStorageRoundtripPipeline:
                 equal_nan=True,
             )
 
-            writer_cam_info = writer_pipeline.cas.get(CASViews.CAM_INFO)
-            reader_cam_info = reader_pipeline.cas.get(CASViews.CAM_INFO)
-            assert writer_cam_info.width == reader_cam_info.width
-            assert writer_cam_info.height == reader_cam_info.height
-            assert _cam_info_k_values(writer_cam_info) == _cam_info_k_values(
-                reader_cam_info
+            writer_camera_info = writer_pipeline.cas.get(CASViews.CAMERA_INFO)
+            reader_camera_info = reader_pipeline.cas.get(CASViews.CAMERA_INFO)
+            assert writer_camera_info.width == reader_camera_info.width
+            assert writer_camera_info.height == reader_camera_info.height
+            assert _camera_info_k_values(writer_camera_info) == _camera_info_k_values(
+                reader_camera_info
             )
 
-            writer_cam_intrinsic = writer_pipeline.cas.get(CASViews.CAM_INTRINSIC)
-            reader_cam_intrinsic = reader_pipeline.cas.get(CASViews.CAM_INTRINSIC)
-            assert writer_cam_intrinsic.width == reader_cam_intrinsic.width
-            assert writer_cam_intrinsic.height == reader_cam_intrinsic.height
+            writer_camera_intrinsic = writer_pipeline.cas.get(CASViews.CAMERA_INTRINSIC)
+            reader_camera_intrinsic = reader_pipeline.cas.get(CASViews.CAMERA_INTRINSIC)
+            assert writer_camera_intrinsic.width == reader_camera_intrinsic.width
+            assert writer_camera_intrinsic.height == reader_camera_intrinsic.height
             np.testing.assert_allclose(
-                writer_cam_intrinsic.intrinsic_matrix,
-                reader_cam_intrinsic.intrinsic_matrix,
+                writer_camera_intrinsic.intrinsic_matrix,
+                reader_camera_intrinsic.intrinsic_matrix,
             )
 
-            assert writer_pipeline.cas.get(CASViews.COLOR2DEPTH_RATIO) == (
-                reader_pipeline.cas.get(CASViews.COLOR2DEPTH_RATIO)
+            assert writer_pipeline.cas.get(CASViews.COLOR_TO_DEPTH_RATIO) == (
+                reader_pipeline.cas.get(CASViews.COLOR_TO_DEPTH_RATIO)
             )
         finally:
             writer_node.destroy_node()

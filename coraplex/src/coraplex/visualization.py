@@ -1,313 +1,498 @@
+"""
+Optional world visualization selected without changing a robot plan.
+"""
+
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Iterable, Optional, Sequence, Tuple
+import os
+from abc import ABC, abstractmethod
+from collections.abc import Callable
+from contextlib import ExitStack
+from contextvars import ContextVar, Token
+from dataclasses import dataclass, field
+from functools import partial
+from importlib.metadata import entry_points
+from types import TracebackType
 
-import networkx as nx
+from typing_extensions import TYPE_CHECKING, ClassVar, Optional, Self
+
+from coraplex.datastructures.enums import VisualizationBackend, VisualizationOption
+from coraplex.exceptions import (
+    UnknownVisualizationOption,
+    VisualizationBackendUnavailable,
+)
+from coraplex.plans.plan_node import PlanNode
+from semantic_digital_twin.adapters.rerun import RerunAdapter, RerunMode
+
+if TYPE_CHECKING:
+    from rclpy.node import Node
+
+    from coraplex.plans.plan import Plan
+    from coraplex.plans.plan_callbacks import PlanCallback
+    from semantic_digital_twin.world import World
+
+try:
+    import rclpy
+    from semantic_digital_twin.adapters.ros.tf_publisher import (
+        TFPublisher,
+        TfFrameNames,
+    )
+    from semantic_digital_twin.adapters.ros.visualization.viz_marker import (
+        VizMarkerPublisher,
+    )
+except ImportError:
+    rclpy = None
+    TFPublisher = None
+    TfFrameNames = None
+    VizMarkerPublisher = None
 
 
-def plot_rustworkx_interactive(
-    graph: Any,
-    *,
-    node_params: Optional[Dict[int, Dict[str, Any]]] = None,
-    node_label: Optional[Callable[[int, Any], str]] = None,
-    attributes: Optional[Sequence[str]] = None,
-    layout: str = "spring",
-    start: Optional[int] = None,
-    title: str = "Rustworkx Graph",
-    width: int = 1200,
-    height: int = 800,
-):
+# %% provider contract
+@dataclass
+class PlanVisualization(ABC):
     """
-    Plot an interactive visualization of a rustworkx graph.
-
-    - Click on a node to show its parameters in a side panel.
-    - Hover shows the node label.
-
-    Parameters
-    ----------
-    graph:
-        A rustworkx.PyGraph or rustworkx.PyDiGraph instance.
-    node_params:
-        Optional mapping from node index to a dict of parameters to display when
-        the node is clicked. If not provided and the node payload is a dict,
-        those items will be used. If provided together with ``attributes``, the
-        displayed parameters will be filtered to the given attribute names.
-    node_label:
-        Optional callable that takes (index, payload) and returns a label string
-        for the node. By default it tries to use ``payload.get('label')`` or
-        ``str(payload)``.
-    attributes:
-        Optional list of attribute names to show from the parameters. Ignored if
-        parameters are not dict-like.
-    layout:
-        Layout algorithm to use: "spring", "kamada_kawai", or "bfs".
-    start:
-        Optional start node index for "bfs" layout.
-    title:
-        Plot title.
-    width, height:
-        Figure size in pixels.
-
-    Notes
-    -----
-    This function imports bokeh lazily so that it does not add a hard runtime
-    dependency unless you call it. Install with `pip install bokeh`.
+    A visualization provider observing a world and its executed plans.
     """
 
-    # Local imports to keep dependency optional at import time.
-    try:
-        import networkx as nx
-        import importlib
-        from bokeh.layouts import row
-        from bokeh.models import (
-            ColumnDataSource,
-            Div,
-            HoverTool,
-            NodesAndLinkedEdges,
-            TapTool,
-            CustomJS,
+    world: World
+    """
+    The world presented by this provider.
+    """
+
+    @abstractmethod
+    def start(self) -> Self:
+        """
+        Start serving this world and return the provider.
+        """
+
+    @abstractmethod
+    def stop(self) -> None:
+        """
+        Stop serving and release resources owned by this provider.
+        """
+
+    @abstractmethod
+    def plan_callback(self, plan: Plan) -> PlanCallback:
+        """
+        Create an execution observer for a plan.
+
+        :param plan: The plan to observe.
+        :return: A callback registered by the visualization owner.
+        """
+
+
+# %% visualization owner
+@dataclass
+class VisualizationSession:
+    """
+    Close visualizations acquired in a context when execution leaves that context.
+    """
+
+    _current: ClassVar[ContextVar[VisualizationSession | None]] = ContextVar(
+        "visualization_session", default=None
+    )
+    """
+    The cleanup scope active in the current execution context.
+    """
+
+    _cleanup: ExitStack = field(default_factory=ExitStack, init=False)
+    """
+    Resource cleanup callbacks in reverse acquisition order.
+    """
+
+    _token: Token[VisualizationSession | None] = field(init=False)
+    """
+    The previous scope restored when this context exits.
+    """
+
+    def __enter__(self) -> Self:
+        """
+        Make this session the owner of subsequently started visualizations.
+        """
+        self._token = self._current.set(self)
+        return self
+
+    def __exit__(
+        self,
+        exception_type: type[BaseException] | None,
+        exception: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """
+        Close acquired resources and restore the enclosing session.
+
+        :param exception_type: The exception type raised inside the scope, if any.
+        :param exception: The original exception propagated after cleanup.
+        :param traceback: The traceback associated with that exception.
+        """
+        try:
+            self._cleanup.close()
+        finally:
+            self._current.reset(self._token)
+
+    @classmethod
+    def is_active(cls) -> bool:
+        """
+        Return whether the current context owns visualization cleanup.
+        """
+        return cls._current.get() is not None
+
+    @classmethod
+    def register(cls, cleanup: Callable[[], None]) -> None:
+        """
+        Register cleanup in the active session, if one exists.
+
+        :param cleanup: Release an acquired resource without requiring its caller to
+            retain it.
+        """
+        current = cls._current.get()
+        if current is not None:
+            current._cleanup.callback(cleanup)
+
+
+@dataclass
+class WorldVisualization(ABC):
+    """
+    Own a selected renderer and the execution observers attached to it.
+    """
+
+    world: World
+    """
+    The observed world.
+    """
+
+    backend: ClassVar[VisualizationBackend]
+    """
+    The explicitly selected renderer.
+    """
+
+    _cleanup: ExitStack = field(default_factory=ExitStack, init=False, repr=False)
+    """
+    Resource cleanup callbacks in reverse acquisition order.
+    """
+
+    @classmethod
+    def from_environment(
+        cls,
+        world: World,
+        default_backend: VisualizationBackend = VisualizationBackend.NONE,
+        *,
+        ros_node: Node | None = None,
+        collision_visualization: bool = False,
+    ) -> WorldVisualization:
+        """
+        Read optional renderer settings while preserving the supplied default.
+
+        :param world: The world to visualize.
+        :param default_backend: Renderer used without an explicit setting.
+        :param ros_node: An existing ROS node available for RViz publishing.
+        :param collision_visualization: Whether to publish RViz collision results.
+        """
+        backend = (
+            os.environ.get(VisualizationOption.BACKEND, default_backend.value)
+            .strip()
+            .lower()
         )
-        from bokeh.plotting import figure, from_networkx, show
-    except Exception as exc:  # pragma: no cover - informative error only if used
-        raise RuntimeError(
-            "plot_rustworkx_interactive requires bokeh and networkx. Install with 'pip install bokeh networkx'."
-        ) from exc
+        if backend not in {member.value for member in VisualizationBackend}:
+            raise UnknownVisualizationOption(VisualizationOption.BACKEND, backend)
+        constructors = {
+            VisualizationBackend.NONE: partial(HeadlessVisualization, world),
+            VisualizationBackend.RVIZ: partial(
+                RvizVisualization,
+                world,
+                ros_node=ros_node,
+                collision_visualization=collision_visualization,
+            ),
+            VisualizationBackend.RERUN: partial(RerunVisualization, world),
+            VisualizationBackend.CRAMERA: partial(PluginVisualization, world),
+        }
+        visualization = constructors[VisualizationBackend(backend)]()
+        visualization._configure_from_environment()
+        return visualization
 
-    nx_g = build_nx_graph(graph, node_params, attributes, node_label)
+    def _configure_from_environment(self) -> None:
+        pass
 
-    pos = calculate_layout_positions(layout, nx_g, start)
+    @property
+    @abstractmethod
+    def is_rendering(self) -> bool:
+        """:return: Whether this owner has a started renderer."""
 
-    # Create bokeh figure
-    p = figure(
-        title=title,
-        x_axis_location=None,
-        y_axis_location=None,
-        width=width,
-        height=height,
-        toolbar_location="below",
-        background_fill_color="#efefef",
-    )
-    p.grid.grid_line_color = None
+    @abstractmethod
+    def _start(self, cleanup: ExitStack) -> None:
+        pass
 
-    # Build graph renderer via from_networkx
-    g_renderer = from_networkx(nx_g, pos)
+    def start(self) -> Self:
+        """
+        Start the selected renderer once.
 
-    # Node glyphs and hover
-    g_renderer.node_renderer.glyph.update(size=18, fill_color="#79a6d2")
-    hover = HoverTool(tooltips=[("label", "@label")])
-    p.add_tools(hover, TapTool())
-    g_renderer.selection_policy = NodesAndLinkedEdges()
-    g_renderer.inspection_policy = NodesAndLinkedEdges()
+        :return: This visualization owner.
+        """
+        if self.is_rendering:
+            return self
+        with ExitStack() as cleanup:
+            self._start(cleanup)
+            self._cleanup = cleanup.pop_all()
+        if self.is_rendering:
+            VisualizationSession.register(self.stop)
+        return self
 
-    # Prepare a side panel for parameters
-    info = Div(
-        text="<b>Click a node to see its parameters</b>", width=400, height=height
-    )
+    def stop(self) -> None:
+        """
+        Remove owned observers and renderers, retaining borrowed ROS resources.
+        """
+        self._cleanup.close()
 
-    # Ensure param_text exists on data source
-    # from_networkx created a CDS with 'index' only; merge our attrs
-    cds = g_renderer.node_renderer.data_source
-    # Extract param_texts and labels in the same order as 'index'
-    index_list = list(cds.data.get("index", []))
-    labels = [nx_g.nodes[i].get("label", str(i)) for i in index_list]
-    params_html = [nx_g.nodes[i].get("param_text", "") for i in index_list]
+    def attach_plan(self, plan: Plan | PlanNode) -> None:
+        pass
 
-    # Update CDS with fields used by JS callback and hover
-    cds.data["label"] = labels
-    cds.data["param_text"] = params_html
-
-    # JS callback to update the Div when selection changes
-    callback = CustomJS(
-        args=dict(source=cds, panel=info),
-        code="""
-            const inds = source.selected.indices;
-            if (inds.length === 0) {
-                panel.text = "<b>Click a node to see its parameters</b>";
-                return;
-            }
-            const i = inds[0];
-            const label = source.data['label'][i];
-            const params = source.data['param_text'][i] || '';
-            panel.text = `<div><h3 style=\"margin:0 0 8px 0;\">${label}</h3>${params}</div>`;
-        """,
-    )
-    cds.selected.js_on_change("indices", callback)
-
-    p.renderers.append(g_renderer)
-
-    # Show composed layout
-    show(row(p, info))
+    def finish_execution(self) -> None:
+        self.stop()
 
 
-def calculate_layout_positions(
-    layout: str, nx_g: nx.Graph, start: Optional[int] = None
-) -> Dict[int, Tuple[float, float]]:
+# %% headless execution
+@dataclass
+class HeadlessVisualization(WorldVisualization):
+    backend: ClassVar[VisualizationBackend] = VisualizationBackend.NONE
     """
-    Calculates node positions based on the selected layout.
-    :param layout: Layout name, e.g. "spring", "kamada_kawai", "bfs
-    :param nx_g: networkx graph
-    :param start: Optional start node index for "bfs" layout.
-    :return: A dictionary mapping node indices to 2d coordinates.
+    Headless execution without a renderer.
     """
-    # Choose layout
-    if layout == "spring":
-        pos = nx.spring_layout(nx_g, seed=42)
-    elif layout == "kamada_kawai":
-        pos = nx.kamada_kawai_layout(nx_g)
-    elif layout == "bfs":
-        if start is None and len(nx_g.nodes) > 0:
-            start = 0
-        pos = nx.bfs_layout(nx_g, start=start)
-    else:
-        pos = nx.spring_layout(nx_g, seed=42)
-    return pos
+
+    @property
+    def is_rendering(self) -> bool:
+        return False
+
+    def _start(self, cleanup: ExitStack) -> None:
+        pass
 
 
-def build_nx_graph(graph: "Any", node_params, attributes, node_label) -> nx.Graph:
-    """Convert a rustworkx graph to a networkx graph."""
-    # Build a NetworkX graph from rustworkx graph
-    is_directed = getattr(graph, "is_directed", lambda: True)()
-    nx_g = nx.DiGraph() if is_directed else nx.Graph()
+# %% native RViz publishing
+@dataclass
+class RvizVisualization(WorldVisualization):
+    backend: ClassVar[VisualizationBackend] = VisualizationBackend.RVIZ
+    """
+    Native ROS marker publishing.
+    """
 
-    # rustworkx nodes are indexed 0..n-1. Access via graph.nodes(), graph.node_indices() or graph.num_nodes()
-    # We'll iterate over range(num_nodes) and get payload via graph[node]
-    num_nodes = graph.num_nodes()
+    ros_node: Node | None = field(default=None, kw_only=True)
+    """
+    A borrowed ROS node, or a node created for an RViz renderer.
+    """
 
-    # Prepare label/params for each node
-    attributes = list(attributes) if attributes is not None else None
+    collision_visualization: bool = field(default=False, kw_only=True)
+    """
+    Whether the RViz renderer also publishes native collision results.
+    """
 
-    for i in range(num_nodes):
-        payload = graph[i]
-        # Label
-        if node_label is not None:
-            label = node_label(i, payload)
-        else:
-            label = None
-            if isinstance(payload, dict) and "label" in payload:
-                label = str(payload.get("label"))
-            if label is None:
-                label = str(payload)
-        # Parameters
-        params = None
-        if node_params is not None:
-            params = node_params.get(i)
-        else:
-            params = _object_params_with_properties(payload)
-        # Filter attributes if requested
-        if attributes is not None and isinstance(params, dict):
-            params = {k: params.get(k) for k in attributes if k in params}
-        # Attach as node attributes
-        nx_g.add_node(
-            i,
-            label=label,
-            param_text=_format_params(params),
+    frame_prefix: str = field(default="", kw_only=True)
+    """
+    Put in front of every tf frame of the world, so a copy can be shown next to the
+    world it copies.
+
+    Empty publishes the frames under their own names.
+    """
+
+    marker_topic: Optional[str] = field(default=None, kw_only=True)
+    """
+    The topic the markers are published on, or ``None`` for the marker publisher's own.
+    """
+
+    marker_alpha: Optional[float] = field(default=None, kw_only=True)
+    """
+    The opacity the markers are drawn with, in [0.0, 1.0], or ``None`` for the marker
+    publisher's own.
+    """
+
+    publisher: VizMarkerPublisher | None = field(default=None, init=False)
+    """
+    The owned RViz marker publisher.
+    """
+
+    @property
+    def is_rendering(self) -> bool:
+        return self.publisher is not None
+
+    def _start(self, cleanup: ExitStack) -> None:
+        """
+        Start native marker publishing, borrowing an existing ROS node if supplied.
+        """
+        if VizMarkerPublisher is None:
+            raise VisualizationBackendUnavailable(self.backend)
+        if self.ros_node is None:
+            if not rclpy.ok():
+                rclpy.init()
+                cleanup.callback(self._shutdown_context)
+            self.ros_node = rclpy.create_node("coraplex_visualization")
+            cleanup.callback(self._destroy_node, self.ros_node)
+        self.publisher = VizMarkerPublisher(
+            _world=self.world,
+            node=self.ros_node,
+            topic_name=self.marker_topic or VizMarkerPublisher.topic_name,
+            alpha=(
+                VizMarkerPublisher.alpha
+                if self.marker_alpha is None
+                else self.marker_alpha
+            ),
+            tf_publisher=self._prefixed_tf_publisher(cleanup),
         )
+        cleanup.callback(self._stop_publisher, self.publisher)
+        if self.collision_visualization:
+            self.publisher.with_collision_visualization()
 
-    # Add edges
-    for u, v in graph.edge_list():
-        nx_g.add_edge(u, v)
+    def _prefixed_tf_publisher(self, cleanup: ExitStack) -> Optional[TFPublisher]:
+        """
+        :return: A tf publisher of the world under :attr:`frame_prefix`, stopped with
+            this renderer, or ``None`` to let the marker publisher find or start the
+            world's own.
+        """
+        if not self.frame_prefix:
+            return None
+        tf_publisher = TFPublisher(
+            node=self.ros_node,
+            _world=self.world,
+            frame_names=TfFrameNames(prefix=self.frame_prefix),
+        )
+        cleanup.callback(tf_publisher.stop)
+        return tf_publisher
 
-    return nx_g
+    def _shutdown_context(self) -> None:
+        if rclpy.ok():
+            rclpy.shutdown()
+
+    def _destroy_node(self, node: Node) -> None:
+        try:
+            node.destroy_node()
+        finally:
+            self.ros_node = None
+
+    def _stop_publisher(self, publisher: VizMarkerPublisher) -> None:
+        try:
+            publisher.stop()
+        finally:
+            self.publisher = None
 
 
-def _object_params_with_properties(payload: Any) -> Optional[Dict[str, Any]]:
+# %% native Rerun recording
+@dataclass
+class RerunVisualization(WorldVisualization):
+    backend: ClassVar[VisualizationBackend] = VisualizationBackend.RERUN
     """
-    Build a parameter dictionary from a node payload by combining:
-    - public attributes from payload.__dict__ (if present)
-    - readable @property attributes defined on the payload's class
-    - if payload is a dict, return it (excluding 'label')
-
-    Private attributes (starting with '_') and the key 'label' are excluded.
-    Values that raise on access are skipped. Callables are skipped.
+    Native Rerun recording.
     """
-    # If the payload is already a dict, filter and return it.
-    if isinstance(payload, dict):
-        return {k: v for k, v in payload.items() if k != "label"}
 
-    if payload is None:
-        return None
+    mode: RerunMode = field(default=RerunMode.SPAWN, kw_only=True)
+    """
+    Where the native Rerun adapter sends its recording.
+    """
 
-    params: Dict[str, Any] = {}
+    target: str | None = field(default=None, kw_only=True)
+    """
+    The Rerun output file or server.
+    """
 
-    # Collect from __dict__ if available
-    try:
-        if hasattr(payload, "__dict__") and isinstance(
-            getattr(payload, "__dict__", None), dict
+    adapter: RerunAdapter | None = field(default=None, init=False)
+    """
+    The owned native Rerun adapter.
+    """
+
+    def _configure_from_environment(self) -> None:
+        mode = (
+            os.environ.get(VisualizationOption.RERUN_MODE, RerunMode.SPAWN.value)
+            .strip()
+            .lower()
+        )
+        if mode not in {member.value for member in RerunMode}:
+            raise UnknownVisualizationOption(VisualizationOption.RERUN_MODE, mode)
+        self.mode = RerunMode(mode)
+        self.target = os.environ.get(VisualizationOption.RERUN_TARGET)
+
+    @property
+    def is_rendering(self) -> bool:
+        return self.adapter is not None
+
+    def _start(self, cleanup: ExitStack) -> None:
+        self.adapter = RerunAdapter(
+            _world=self.world,
+            mode=self.mode,
+            target=self.target,
+            state_history=True,
+        )
+        cleanup.callback(self._stop_adapter, self.adapter)
+
+    def _stop_adapter(self, adapter: RerunAdapter) -> None:
+        try:
+            adapter.stop()
+        finally:
+            self.adapter = None
+
+
+# %% installed plan visualization
+@dataclass
+class PluginVisualization(WorldVisualization):
+    backend: ClassVar[VisualizationBackend] = VisualizationBackend.CRAMERA
+    """
+    The installed browser visualization.
+    """
+
+    provider: PlanVisualization | None = field(default=None, init=False)
+    """
+    The optional installed browser visualization provider.
+    """
+
+    _callbacks: list[PlanCallback] = field(default_factory=list, init=False)
+    """
+    Plan callbacks registered by this owner.
+    """
+
+    @property
+    def is_rendering(self) -> bool:
+        return self.provider is not None
+
+    def _start(self, cleanup: ExitStack) -> None:
+        providers = entry_points(
+            group=VisualizationOption.PROVIDER_GROUP, name=self.backend.value
+        )
+        if len(providers) != 1:
+            raise VisualizationBackendUnavailable(self.backend)
+        provider_type = next(iter(providers)).load()
+        if not isinstance(provider_type, type) or not issubclass(
+            provider_type, PlanVisualization
         ):
-            for k, v in vars(payload).items():
-                if k.startswith("_") or k == "label":
-                    continue
-                # Avoid adding callables
-                try:
-                    is_callable = callable(v)
-                except Exception:
-                    is_callable = False
-                if not is_callable:
-                    params[k] = v
-    except Exception:
+            raise VisualizationBackendUnavailable(self.backend)
+        self.provider = provider_type(world=self.world)
+        cleanup.callback(self._stop_provider, self.provider)
+        cleanup.callback(self._remove_callbacks)
+        self.provider.start()
+
+    def attach_plan(self, plan: Plan | PlanNode) -> None:
+        """
+        Observe a plan through the running optional provider.
+
+        :param plan: A plan or its root node.
+        """
+        if self.provider is None:
+            return
+        observed_plan = plan.plan if isinstance(plan, PlanNode) else plan
+        if any(callback.plan is observed_plan for callback in self._callbacks):
+            return
+        callback = self.provider.plan_callback(observed_plan)
+        observed_plan.node_callbacks.append(callback)
+        self._callbacks.append(callback)
+
+    def _remove_callbacks(self) -> None:
+        for callback in self._callbacks:
+            callback.plan.node_callbacks[:] = [
+                registered
+                for registered in callback.plan.node_callbacks
+                if registered is not callback
+            ]
+        self._callbacks.clear()
+
+    def _stop_provider(self, provider: PlanVisualization) -> None:
+        try:
+            provider.stop()
+        finally:
+            self.provider = None
+
+    def finish_execution(self) -> None:
         pass
-
-    params.update(_collect_properties(payload))
-
-    return params if params else None
-
-
-def _collect_properties(payload) -> Dict[str, Any]:
-    params = {}
-    # Collect readable @property attributes on the class
-    try:
-        import inspect
-
-        cls = type(payload)
-        for name, member in inspect.getmembers(cls):
-            if not isinstance(member, property):
-                continue
-            if name.startswith("_") or name == "label":
-                continue
-            if name in params:
-                continue  # do not overwrite explicit attributes
-            # Access property value safely
-            try:
-                value = getattr(payload, name)
-            except Exception:
-                continue
-            # Skip callables
-            try:
-                if callable(value):
-                    continue
-            except Exception:
-                pass
-            params[name] = value
-    except Exception:
-        # If inspection fails, just ignore properties
-        pass
-    return params
-
-
-def _format_params(params: Optional[Dict[str, Any]]) -> str:
-    """Return HTML for parameter dict suitable for the side panel."""
-    if not params:
-        return "<i>No parameters</i>"
-    try:
-        items = []
-        for k, v in params.items():
-            items.append(
-                f"<tr><td style='padding-right:8px; white-space:nowrap;'><b>{k}</b></td><td>{_escape_html(v)}</td></tr>"
-            )
-        return "<table>" + "".join(items) + "</table>"
-    except Exception:
-        return f"<pre>{_escape_html(params)}</pre>"
-
-
-def _escape_html(value: Any) -> str:
-    try:
-        s = str(value)
-    except Exception:
-        s = repr(value)
-    return (
-        s.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&#39;")
-    )

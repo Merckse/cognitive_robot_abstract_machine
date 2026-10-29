@@ -4,13 +4,11 @@ import logging
 from copy import deepcopy
 from dataclasses import field, dataclass
 
-import numpy as np
 import rustworkx as rx
 import rustworkx.visualization
 from typing_extensions import (
     Optional,
     Any,
-    Dict,
     List,
     Iterable,
     TYPE_CHECKING,
@@ -19,14 +17,23 @@ from typing_extensions import (
     Type,
 )
 
-from probabilistic_model.probabilistic_circuit.rx.probabilistic_circuit import (
-    PlotAlignment,
-)
+from coraplex.exceptions import CannotInsertBesideRoot, ContextIsUnavailable
 from coraplex.plans.plan_entity import PlanEntity
 from coraplex.plans.plan_node import (
     PlanNode,
     ActionNode,
     DesignatorNode,
+)
+from krrood.rustworkx_utils.graph_visualizer_base import (
+    GraphLayout,
+    GraphVisualizerBackend,
+    GraphVisualizerBase,
+)
+from krrood.rustworkx_utils.visualization.cytoscape_graph_visualizer import (
+    CytoscapeGraphVisualizer,
+)
+from krrood.rustworkx_utils.visualization.interactive_graph_visualizer import (
+    InteractiveGraphVisualizer,
 )
 from semantic_digital_twin.robots.robot_parts import AbstractRobot
 from semantic_digital_twin.world import World
@@ -35,6 +42,8 @@ if TYPE_CHECKING:
     from coraplex.plans.plan_callbacks import PlanCallback
     from coraplex.datastructures.dataclasses import Context
     from coraplex.plans.designator import Designator
+    from coraplex.plans.plan_transformation import PlanTransformation
+    from coraplex.plans.underspecified import ActionTrial
 
 
 logger = logging.getLogger(__name__)
@@ -46,8 +55,11 @@ T = TypeVar("T")
 @dataclass
 class Plan:
     """
-    Represents a plan structure, typically a tree, which can be changed at any point in time. Performing the plan will
-    traverse the plan structure in depth first order and perform each PlanNode
+    Represents a plan structure, typically a tree, which can be changed at any point in
+    time.
+
+    Performing the plan will traverse the plan structure in depth first order and
+    perform each PlanNode
     """
 
     context: Optional[Context] = None
@@ -65,6 +77,12 @@ class Plan:
     A list of callbacks that are called when a node is started or ended.
     """
 
+    action_trial: Optional[ActionTrial] = field(default=None, init=False, repr=False)
+    """
+    The trial the underspecified nodes of this plan try their candidates in, shared so
+    that they use one copy of the world, and released once the plan has run.
+    """
+
     plan_graph: rx.PyDiGraph[PlanNode] = field(
         default_factory=lambda: rx.PyDiGraph(multigraph=False), init=False, repr=False
     )
@@ -79,6 +97,7 @@ class Plan:
     def validate(self):
         """
         Check that the plan as constructed so far is valid.
+
         A plan is valid if it is a tree.
         """
         if not (
@@ -116,7 +135,7 @@ class Plan:
     @property
     def all_nodes(self) -> List[PlanNode]:
         """
-        All nodes that are part of this plan
+        All nodes that are part of this plan.
         """
         return self.plan_graph.nodes()
 
@@ -132,8 +151,9 @@ class Plan:
 
     def merge_nodes(self, node1: PlanNode, node2: PlanNode):
         """
-        Merges two nodes into one. The node2 will be removed and all its children will be added to node1.
+        Merges two nodes into one.
 
+        The node2 will be removed and all its children will be added to node1.
         :param node1: Node which will remain in the plan
         :param node2: Node which will be removed from the plan
         """
@@ -142,6 +162,12 @@ class Plan:
         self.remove_node(node2)
 
     def remove_node(self, node_for_removal: PlanNode):
+        """
+        Removes a node from the plan.
+
+        If the node is not in the plan, it will be ignored.
+        :param node_for_removal: Node to be removed
+        """
         if node_for_removal.plan is self:
             self.plan_graph.remove_node(node_for_removal.index)
             node_for_removal.index = None
@@ -149,25 +175,11 @@ class Plan:
             node_for_removal.plan = None
             node_for_removal.world = None
 
-    def remove_node_and_repair(self, node_for_removal: PlanNode):
-        if node_for_removal.plan is not self:
-            return
-        parent = node_for_removal.parent
-        children = node_for_removal.children
-        self.plan_graph.remove_node(node_for_removal.index)
-        node_for_removal.index = None
-        node_for_removal.layer_index = None
-        node_for_removal.plan = None
-        node_for_removal.world = None
-        if parent is not None:  # don't reparent if root
-            # reconnect children, so no accidental roots appear
-            for child in children:
-                self.add_edge(parent, child)
-
     def add_node(self, node: PlanNode):
         """
-        Adds a node to the plan. The node will not be connected to any other node of the plan.
+        Adds a node to the plan.
 
+        The node will not be connected to any other node of the plan.
         :param node: Node to be added
         """
         if node.plan is self:
@@ -181,16 +193,17 @@ class Plan:
         self, source: PlanNode, target: PlanNode, target_index: Optional[int] = None
     ):
         """
-        Adds an edge to the plan. Nodes that are not in the plan will be added to the plan.
+        Adds an edge to the plan.
 
+        Nodes that are not in the plan will be added to the plan.
         :param source: Origin node of the edge
         :param target: Target node of the edge
         :param target_index: The index of the target node in the source nodes children.
-        If not target_index is given, the target node will be appended to the source's children.
-        If the target_index is given, the target node will be inserted at the given index in the source's children and
-        the later children are shifted to the right.
+            If not target_index is given, the target node will be appended to the
+            source's children. If the target_index is given, the target node will be
+            inserted at the given index in the source's children and the later children
+            are shifted to the right.
         """
-
         if source.plan is not self:
             self.add_node(source)
         if target.plan is not self:
@@ -221,8 +234,9 @@ class Plan:
         edges: Iterable[Tuple[PlanNode, PlanNode]],
     ):
         """
-        Adds edges to the plan from an iterable of tuples. If one or both nodes are not in the plan, they will be added to the plan.
+        Adds edges to the plan from an iterable of tuples.
 
+        If one or both nodes are not in the plan, they will be added to the plan.
         :param edges: Iterable of tuples of nodes to be added
         """
         for u, v in edges:
@@ -237,14 +251,89 @@ class Plan:
         for node in nodes_for_adding:
             self.add_node(node)
 
-    def insert_below(self, insert_node: PlanNode, insert_below: PlanNode):
+    def insert_as_last_child(self, reference_node: PlanNode, node: PlanNode):
         """
-        Inserts a node below the given node.
+        Inserts a node as the last child of a node of this plan.
 
-        :param insert_node: The node to be inserted
-        :param insert_below: A node of the plan below which the given node should be added
+        :param reference_node: The node of the plan the given node is inserted below
+        :param node: The node to insert
         """
-        self.add_edge(insert_below, insert_node)
+        self.add_edge(reference_node, node)
+
+    def insert_before(self, reference_node: PlanNode, node: PlanNode):
+        """
+        Inserts a node as the left neighbour of a node of this plan.
+
+        :param reference_node: The node of the plan the given node is inserted before
+        :param node: The node to insert
+        """
+        self._insert_as_sibling(reference_node, node, reference_node.layer_index)
+
+    def insert_after(self, reference_node: PlanNode, node: PlanNode):
+        """
+        Inserts a node as the right neighbour of a node of this plan.
+
+        :param reference_node: The node of the plan the given node is inserted after
+        :param node: The node to insert
+        """
+        self._insert_as_sibling(reference_node, node, reference_node.layer_index + 1)
+
+    def _insert_as_sibling(
+        self, reference_node: PlanNode, node: PlanNode, layer_index: int
+    ):
+        """
+        Inserts a node under the parent of the reference node at the given position
+        among its children, shifting the later children to the right.
+
+        :param reference_node: The node of the plan whose parent takes the given node
+        :param node: The node to insert
+        :param layer_index: The position the given node takes among its new siblings
+        :raises CannotInsertBesideRoot: If the reference node is the root of the plan
+        """
+        if reference_node.parent is None:
+            raise CannotInsertBesideRoot(reference_node)
+        self.add_edge(reference_node.parent, node, layer_index)
+
+    @property
+    def plan_transformations(self) -> List[PlanTransformation]:
+        """
+        The transformations that rewrite this plan while it is expanded.
+
+        :return: The transformations of this plan's context; a plan without a context
+            has none.
+        """
+        if self.context is None:
+            raise ContextIsUnavailable()
+        return self.context.plan_transformations
+
+    def applicable_transformations(self, node: PlanNode) -> List[PlanTransformation]:
+        """
+        :param node: The node that was just expanded
+        :return: The transformations that rewrite the plan around the given node.
+        """
+        return [
+            transformation
+            for transformation in self.plan_transformations
+            if transformation.matches_node(node) and transformation.is_applicable(node)
+        ]
+
+    def apply_plan_transformations(self, node: PlanNode):
+        """
+        Rewrites the plan with every transformation that applies to the given node.
+
+        Each of them rewrites what the ones before it left, so more than one of them on
+        the same node is reported.
+
+        :param node: The node that was just expanded
+        """
+        transformations = self.applicable_transformations(node)
+        if len(transformations) > 1:
+            logger.warning(
+                f"{len(transformations)} plan transformations are applied to {node}: "
+                f"{transformations}"
+            )
+        for transformation in transformations:
+            transformation.apply(node)
 
     def perform(self) -> Any:
         """
@@ -255,6 +344,30 @@ class Plan:
         self.initial_world = deepcopy(self.world)
         result = self.root.perform()
         return result
+
+    def notify_node_started(self, node: PlanNode) -> None:
+        """
+        Report a node's execution start to registered observers.
+
+        :param node: The started node.
+        """
+        for callback in self.node_callbacks:
+            callback.on_start(node)
+
+    def notify_node_ended(self, node: PlanNode) -> None:
+        """
+        Report a node's execution outcome to registered observers.
+
+        :param node: The completed node.
+        """
+        try:
+            for callback in self.node_callbacks:
+                callback.on_end(node)
+        finally:
+            # Released even when an observer fails, so the trial's copy of the world
+            # and its publishing do not outlive the plan.
+            if node.parent is None and self.action_trial is not None:
+                self.action_trial.discard()
 
     def re_perform(self):
         for child in self.root.descendants:
@@ -272,23 +385,23 @@ class Plan:
 
         :return: A list of lists where each list represents a layer
         """
-        layer = rx.layers(self.plan_graph, [self.root.index], index_output=False)
-        return [sorted(l, key=lambda x: x.layer_index) for l in layer]
+        layers = rx.layers(self.plan_graph, [self.root.index], index_output=False)
+        return [sorted(layer, key=lambda node: node.layer_index) for layer in layers]
 
     def _migrate_nodes_from_plan(self, other: Plan) -> PlanNode:
         """
         Steal all nodes from another plan and add them to this plan.
+
         After this the other plan will be empty.
 
         :param other: The plan to steal nodes from
         :return: The root node of the other plan mounted in this plan
         """
-        other_plans_edge = other.edges
         root_ref = other.root
-        other.plan_graph.clear()
 
-        for edge in other_plans_edge:
-            self.add_edge(edge[0], edge[1])
+        for layer in reversed(other.layers):
+            for node in layer:
+                self.add_edges_from([(node, child) for child in node.children])
 
         return root_ref
 
@@ -302,6 +415,7 @@ class Plan:
     def simplify(self):
         """
         Simplifies the plan by merging language nodes that are semantically equivalent.
+
         This modifies the plan in-place.
         """
         for _, successors in reversed(
@@ -312,76 +426,58 @@ class Plan:
 
         self.root.simplify()
 
-    # %% Plotting functions
+    _visualizer_classes = {
+        GraphVisualizerBackend.PLOTLY: InteractiveGraphVisualizer,
+        GraphVisualizerBackend.CYTOSCAPE: CytoscapeGraphVisualizer,
+    }
+    """
+    The visualizer to use for each rendering backend.
+    """
 
-    def bfs_layout(
-        self, scale: float = 1.0, align: PlotAlignment = PlotAlignment.VERTICAL
-    ) -> Dict[int, np.array]:
+    def visualize(
+        self,
+        backend: GraphVisualizerBackend = GraphVisualizerBackend.CYTOSCAPE,
+        layout: GraphLayout = GraphLayout.LAYERED,
+    ) -> GraphVisualizerBase:
         """
-        Generate a bfs layout for this plan.
+        Open an interactive, real-time visualization of the plan graph.
 
-        :return: A dict mapping the node indices to 2d coordinates.
+        Nodes appear as the plan is built, are labelled by their type, coloured by
+        execution status and reveal their status and timing when clicked. With the
+        default physics layout the nodes self-organize and bounce as the plan grows.
+
+        :param backend: The rendering technology to use.
+        :param layout: The algorithm used to place the nodes.
+        :return: The running visualizer.
         """
-        layers = self.layers
+        visualizer = self._create_visualizer(backend=backend, layout=layout)
+        visualizer.run()
+        return visualizer
 
-        pos = None
-        nodes = []
-        width = len(layers)
-        for i, layer in enumerate(layers):
-            height = len(layer)
-            xs = np.repeat(i, height)
-            ys = np.arange(0, height, dtype=float)
-            offset = ((width - 1) / 2, (height - 1) / 2)
-            layer_pos = np.column_stack([xs, ys]) - offset
-            if pos is None:
-                pos = layer_pos
-            else:
-                pos = np.concatenate([pos, layer_pos])
-            nodes.extend(layer)
-
-        # Find max length over all dimensions
-        pos -= pos.mean(axis=0)
-        lim = np.abs(pos).max()  # max coordinate for all axes
-        # rescale to (-scale, scale) in all directions, preserves aspect
-        if lim > 0:
-            pos *= scale / lim
-
-        if align == PlotAlignment.HORIZONTAL:
-            pos = pos[:, ::-1]  # swap x and y coords
-
-        pos = dict(zip([node.index for node in nodes], pos))
-        return pos
-
-    def plot_plan_structure(
-        self, scale: float = 1.0, align: PlotAlignment = PlotAlignment.HORIZONTAL
-    ) -> None:
+    def _create_visualizer(
+        self, backend: GraphVisualizerBackend, layout: GraphLayout
+    ) -> GraphVisualizerBase:
         """
-        Plots the kinematic structure of the world.
-        The plot shows bodies as nodes and connections as edges in a directed graph.
+        :param backend: The rendering technology to use.
+        :param layout: The algorithm used to place the nodes.
+        :return: A visualizer of this plan, before it is started.
         """
-        import matplotlib.pyplot as plt
-
-        # Create a new figure
-        plt.figure(figsize=(15, 8))
-
-        pos = self.bfs_layout(scale=scale, align=align)
-
-        rx.visualization.mpl_draw(
-            self.plan_graph, pos=pos, labels=lambda node: repr(node), with_labels=True
+        return self._visualizer_classes[backend](
+            graph=self.plan_graph,
+            label_getter=lambda node: node.node_label,
+            information_getter=lambda node: node.node_info.to_lines(),
+            color_getter=lambda node: node.status.color.to_hex(),
+            layout=layout,
+            title=repr(self),
         )
 
-        plt.title("Plan Graph")
-        plt.axis("off")  # Hide axes
-        plt.gca().invert_yaxis()
-        plt.gca().invert_xaxis()
-        plt.show()
-
     def __repr__(self):
-        return f"Plan with {len(self.nodes)} nodes"
+        return f"Plan with {len(self.all_nodes)} nodes"
 
     def prepare_for_replay(self):
         """
         Prepare the worlds context for a replay.
+
         Sets the worlds context to the initial world and update its robot.
         """
         self.context.world = deepcopy(self.initial_world)

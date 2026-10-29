@@ -53,7 +53,7 @@ class ActionServerTask(
 
     message_type: Type[Action]
     """
-    Fully specified goal message that can be send out. 
+    Fully specified goal message that can be send out.
     """
 
     _action_client: ActionClient = field(init=False)
@@ -83,13 +83,13 @@ class ActionServerTask(
         Creates the action client.
         """
         ros_context_extension = context.require_extension(RosContextExtension)
-        self._action_client = ActionClient(
-            ros_context_extension.ros_node, self.message_type, self.action_topic
+        self._action_client = ros_context_extension.get_or_create_action_client(
+            self.message_type, self.action_topic
         )
         self.build_msg(context)
         logger.info(f"Waiting for action server {self.action_topic}")
         self._action_client.wait_for_server()
-        return NodeArtifacts()
+        return super().build(context)
 
     def on_start(self, context: MotionStatechartContext):
         """
@@ -102,8 +102,8 @@ class ActionServerTask(
         """
         Handles the server's response to the goal submission.
 
-        On rejection a failure sentinel is stored so that :meth:`on_tick` can
-        return :attr:`~ObservationStateValues.FALSE` immediately.
+        On rejection a failure sentinel is stored so that :meth:`on_tick` can return
+        :attr:`~ObservationStateValues.FALSE` immediately.
         """
         goal_handle = future.result()
         if not goal_handle.accepted:
@@ -140,15 +140,15 @@ class NavigateActionServerTask(
 
     base_link: Body
     """
-    Base link of the robot, used for estimating the distance to the goal
+    Base link of the robot, used for estimating the distance to the goal.
     """
 
     def build_msg(self, context: MotionStatechartContext):
         root_p_goal = context.world.transform(
             target_frame=context.world.root, spatial_object=self.target_pose
         )
-        position = root_p_goal.to_position().to_np()
-        orientation = root_p_goal.to_quaternion().to_np()
+        position = root_p_goal.position.to_np()
+        orientation = root_p_goal.quaternion.to_np()
         pose_stamped = ROSPoseStamped(
             header=Header(frame_id="map"),
             pose=ROSPose(
@@ -163,12 +163,10 @@ class NavigateActionServerTask(
         )
         self._msg = NavigateToPose.Goal(pose=pose_stamped)
 
-    def build(self, context: MotionStatechartContext) -> NodeArtifacts:
+    def build_artifacts(self, context: MotionStatechartContext) -> NodeArtifacts:
         """
-        Builds the motion state node this includes creating the action client and setting the observation expression.
-        The observation is true if the robot is within 1cm of the target pose.
+        Observes whether the robot is within 1cm of the target pose.
         """
-        super().build(context)
         artifacts = NodeArtifacts()
         root_T_goal = context.world.transform(
             target_frame=context.world.root, spatial_object=self.target_pose
@@ -177,11 +175,11 @@ class NavigateActionServerTask(
             context.world.root, self.base_link
         )
 
-        position_error = root_T_goal.to_position().euclidean_distance(
-            root_T_current.to_position()
+        position_error = root_T_goal.position.euclidean_distance(
+            root_T_current.position
         )
-        rotation_error = root_T_goal.to_rotation_matrix().rotational_error(
-            root_T_current.to_rotation_matrix()
+        rotation_error = root_T_goal.rotation_matrix.rotational_distance(
+            root_T_current.rotation_matrix
         )
 
         artifacts.observation = sm.trinary_logic_and(

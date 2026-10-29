@@ -1,116 +1,141 @@
 import pytest
-
 from krrood.entity_query_language.factories import (
-    get_false_statements,
     evaluate_condition,
 )
-from coraplex.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
-from coraplex.datastructures.grasp import GraspDescription
-from coraplex.exceptions import ConditionNotSatisfied, MotionDidNotFinish
-from coraplex.motion_executor import simulated_robot
+from coraplex.exceptions import ConditionNotSatisfied
+from coraplex.execution_environment import kinematically_simulated_robot
 from coraplex.plans.factories import sequential
+from coraplex.querying.predicates import GripperIsFree, ToolFrameIsAtGrasp
 from coraplex.robot_plans.actions.core.pick_up import PickUpAction
 from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix
+from semantic_digital_twin.grasping.grasp_candidates import GraspCandidate
+from semantic_digital_twin.spatial_types.spatial_types import Pose
+from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
+from semantic_digital_twin.semantic_annotations.semantic_annotations import Milk
+from semantic_digital_twin.world_description.connections import FixedConnection
 from semantic_digital_twin.world_description.world_entity import Body
 
+LEFT_ARM_REACHES_THE_MILK_FROM = HomogeneousTransformationMatrix.from_xyz_rpy(
+    1.9, 1.4, 0
+)
+"""
+Where the PR2 stands so that its left arm reaches the milk in the apartment.
+"""
 
-def test_get_bound_variables(immutable_model_world):
-    world, view, context = immutable_model_world
 
-    pick_action = PickUpAction(
-        world.get_body_by_name("milk.stl"),
-        Arms.LEFT,
-        GraspDescription(
-            ApproachDirection.FRONT,
-            VerticalAlignment.NoAlignment,
-            view.left_arm.end_effector,
-        ),
+def _construct_and_evaluate_condition(action, action_condition):
+
+    condition = action_condition(
+        action.bound_variables,
+        action.context,
+        action.designator_parameter,
     )
+    evaluation = evaluate_condition(condition)
+    if evaluation:
+        return True
+    raise ConditionNotSatisfied(
+        pre_condition=True, action=action.__class__, condition=condition
+    )
+
+
+def test_get_bound_variables(pr2_apartment_context):
+    world, view, context = pr2_apartment_context
+
+    milk = world.get_semantic_annotations_by_type(Milk)[0]
+    grasp = milk.grasp_candidates()[0]
+    pick_action = PickUpAction(grasp, context.robot.left_arm)
 
     bound_variables = pick_action._create_variables()
 
-    assert len(bound_variables) == 3
+    assert len(bound_variables) == 14
     assert list(bound_variables.keys()) == [
-        "object_designator",
+        "position_threshold",
+        "orientation_threshold",
+        "grasp_detection_threshold",
+        "pre_approach_linear_velocity",
+        "final_approach_linear_velocity",
+        "grasp_closing_velocity",
+        "lift_linear_velocity",
+        "grasp_stall_minimum_time",
+        "object_friction",
+        "approach_clearance",
+        "retreat_distance",
+        "grasp",
         "arm",
-        "grasp_description",
+        "tolerate_grasp_stall",
     ]
-    assert list(bound_variables["arm"]._domain_) == [Arms.LEFT]
-    assert bound_variables["arm"]._type_ == Arms
-    assert list(bound_variables["object_designator"]._domain_) == [
-        world.get_body_by_name("milk.stl")
-    ]
-    assert bound_variables["object_designator"]._type_ == Body
+    assert list(bound_variables["arm"]._domain_) == [context.robot.left_arm]
+    assert bound_variables["arm"]._type_ == type(context.robot.left_arm)
+    assert list(bound_variables["grasp"]._domain_) == [grasp]
+    assert bound_variables["grasp"]._type_ == GraspCandidate
 
 
-def test_pick_up_pre_conditions(mutable_model_world):
-    world, view, context = mutable_model_world
+def test_pick_up_pre_condition_leaves_reaching_to_the_attempt(pr2_apartment_context):
+    """
+    A pick-up is not refused for an unreachable grasp while the gripper is free.
+    """
+    world, view, context = pr2_apartment_context
+    milk = world.get_semantic_annotations_by_type(Milk)[0]
+    pick_action = PickUpAction(milk.grasp_candidates()[0], context.robot.left_arm)
+    sequential([pick_action], context)
 
-    pick_action = PickUpAction(
-        world.get_body_by_name("milk.stl"),
-        Arms.LEFT,
-        GraspDescription(
-            ApproachDirection.FRONT,
-            VerticalAlignment.NoAlignment,
-            view.left_arm.end_effector,
-        ),
-    )
+    assert _construct_and_evaluate_condition(pick_action, pick_action.pre_condition)
 
+
+def test_pick_up_pre_condition_needs_a_free_gripper(pr2_apartment_context):
+    world, view, context = pr2_apartment_context
+    milk = world.get_semantic_annotations_by_type(Milk)[0]
+    pick_action = PickUpAction(milk.grasp_candidates()[0], context.robot.left_arm)
+    view.root.parent_connection.origin = LEFT_ARM_REACHES_THE_MILK_FROM
     plan = sequential([pick_action], context)
-
-    with pytest.raises(ConditionNotSatisfied):
-        pick_action.evaluate_pre_condition()
-
     pre_condition = pick_action.pre_condition(
         pick_action.bound_variables, context, pick_action.designator_parameter
     )
+    assert pre_condition._name_ == GripperIsFree.__name__
+    assert evaluate_condition(pre_condition)
 
-    false_statements = get_false_statements(pre_condition)
-
-    assert len(false_statements) == 1
-    assert false_statements[0]._name_ == "AreReachableBy"
-
-    with pytest.raises(ConditionNotSatisfied):
-        pick_action.evaluate_pre_condition()
-
-    view.root.parent_connection.origin = HomogeneousTransformationMatrix.from_xyz_rpy(
-        1.9, 1.4, 0
-    )
-
-    pre_condition = pick_action.pre_condition(
-        pick_action.bound_variables, context, pick_action.designator_parameter
-    )
-
-    assert evaluate_condition(pre_condition) == True
-
-    with simulated_robot:
+    with kinematically_simulated_robot:
         plan.perform()
 
-    assert evaluate_condition(pre_condition) == False
-    pick_action.evaluate_post_condition()
-    assert pick_action.evaluate_post_condition() == True
+    assert not evaluate_condition(pre_condition)
 
 
-def test_pick_up_post_condition(mutable_model_world):
-    world, view, context = mutable_model_world
-    pick_action = PickUpAction(
-        world.get_body_by_name("milk.stl"),
-        Arms.LEFT,
-        GraspDescription(
-            ApproachDirection.FRONT,
-            VerticalAlignment.NoAlignment,
-            view.left_arm.end_effector,
-        ),
+def test_pick_up_post_condition_needs_the_object_itself_in_the_gripper(
+    pr2_apartment_context,
+):
+    """
+    A gripper holding another body has not picked up the object.
+    """
+    world, view, context = pr2_apartment_context
+    milk = world.get_semantic_annotations_by_type(Milk)[0]
+    pick_action = PickUpAction(milk.grasp_candidates()[0], context.robot.left_arm)
+    sequential([pick_action], context)
+    with world.modify_world():
+        world.add_connection(
+            FixedConnection(
+                parent=view.left_arm.end_effector.tool_frame,
+                child=Body(name=PrefixedName("something_else")),
+            )
+        )
+
+    post_condition = pick_action.post_condition(
+        pick_action.bound_variables, context, pick_action.designator_parameter
     )
-    view.root.parent_connection.origin = HomogeneousTransformationMatrix.from_xyz_rpy(
-        1.8, 2, 0
-    )
+
+    assert not evaluate_condition(post_condition)
+
+
+def test_pick_up_post_condition(pr2_apartment_context):
+    world, view, context = pr2_apartment_context
+    milk = world.get_semantic_annotations_by_type(Milk)[0]
+    pick_action = PickUpAction(milk.grasp_candidates()[0], context.robot.left_arm)
+    view.root.parent_connection.origin = LEFT_ARM_REACHES_THE_MILK_FROM
 
     plan = sequential([pick_action], context)
 
-    assert pick_action.evaluate_pre_condition()
+    assert _construct_and_evaluate_condition(pick_action, pick_action.pre_condition)
 
-    with simulated_robot:
+    with kinematically_simulated_robot:
         plan.perform()
 
     assert world.get_body_by_name(
@@ -119,33 +144,35 @@ def test_pick_up_post_condition(mutable_model_world):
         view.left_arm.end_effector.tool_frame
     )
 
-    assert pick_action.evaluate_post_condition()
+    assert _construct_and_evaluate_condition(pick_action, pick_action.post_condition)
 
 
-def test_context_evaluate_condition(mutable_model_world):
-    world, view, context = mutable_model_world
-
-    pick_action = PickUpAction(
-        world.get_body_by_name("milk.stl"),
-        Arms.LEFT,
-        GraspDescription(
-            ApproachDirection.FRONT,
-            VerticalAlignment.NoAlignment,
-            view.left_arm.end_effector,
+def _grasp_offset_from_the_tool_frame(
+    world, view, milk, offset: float
+) -> GraspCandidate:
+    """
+    :return: A grasp on the milk standing `offset` meters along the world's x-axis from
+        where the left gripper's tool frame is now.
+    """
+    world_T_tool = view.left_arm.end_effector.tool_frame.global_transform
+    world_P_grasp = world_T_tool.position.to_np()[:3] + [offset, 0.0, 0.0]
+    return GraspCandidate(
+        milk,
+        world.transform(
+            Pose.from_xyz_rpy(*world_P_grasp, reference_frame=world.root), milk.root
         ),
     )
-    # Make action impossible
-    view.root.parent_connection.origin = HomogeneousTransformationMatrix.from_xyz_rpy(
-        1.0, 2, 0
-    )
 
-    plan = sequential([pick_action], context)
-    with pytest.raises(ConditionNotSatisfied):
-        with simulated_robot:
-            plan.perform()
 
-    context.evaluate_conditions = False
+@pytest.mark.parametrize("offset, reached", [(0.0, True), (0.1, False)])
+def test_a_tool_frame_is_at_a_grasp_wherever_on_the_object_it_lies(
+    pr2_apartment_context, offset, reached
+):
+    """
+    The tool frame is compared with the grasp's position, not the object's origin.
+    """
+    world, view, context = pr2_apartment_context
+    milk = world.get_semantic_annotations_by_type(Milk)[0]
+    grasp = _grasp_offset_from_the_tool_frame(world, view, milk, offset)
 
-    with pytest.raises(MotionDidNotFinish):
-        with simulated_robot:
-            plan.perform()
+    assert ToolFrameIsAtGrasp(view.left_arm.end_effector, grasp)() is reached

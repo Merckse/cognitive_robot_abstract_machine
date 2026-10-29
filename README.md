@@ -72,6 +72,18 @@ If you also want the development dependencies, run:
 uv sync --extra dev --active 
 ```
 
+`semantic_digital_twin`'s Drake-based IRIS/GCS features (and their tests, `test/semantic_digital_twin_test/test_worlds/test_gcs_polygons.py`) need the optional `iris` extra on top of that - it is layered on separately since Drake is a large, `semantic_digital_twin`-specific dependency:
+
+```bash
+uv sync --package semantic_digital_twin --extra iris --active --inexact
+```
+
+Running the test suite does not require any dataset-loading dependencies (Drake, py7zr, usd-core/pxr) - tests that need one of these skip cleanly when it is not installed. To actually load GraspClutter6D or ArtVIP datasets (or run their tests against the real packages), add the `datasets` extra the same way:
+
+```bash
+uv sync --package semantic_digital_twin --extra datasets --active --inexact
+```
+
 
 ### Alternative: Poetry
 
@@ -89,6 +101,13 @@ Install the CRAM package along with its dependencies:
 poetry install
 ```
 
+## Browser visualization
+
+The workspace includes [CRAMERA](cramera/README.md) for live 3D visualization,
+recorded playback, EQL questions and plan/statechart inspection. Start `cramera`
+from the activated environment, then run an existing demo with
+`cramera-live path/to/demo.py`.
+
 ## To run tests
 
 **1. Install system dependencies, set up and build the ROS 2 workspace**
@@ -104,6 +123,16 @@ pytest test/<package>_test
 ```
 
 e.g. `pytest test/coraplex_test`
+
+## Developer / Agent Tooling
+
+`.claude/` holds configuration for AI coding agents (Claude Code) working in
+this repository.
+
+- **[`.claude/skills/local-code-review/`](.claude/skills/local-code-review/SKILL.md)** -
+  reviews the current branch against upstream `main` for bugs and
+  `AGENTS.md` adherence, then hands back an approval-gated plan to fix every
+  finding (including adding missing tests) before you push.
 
 ## Contribution
 

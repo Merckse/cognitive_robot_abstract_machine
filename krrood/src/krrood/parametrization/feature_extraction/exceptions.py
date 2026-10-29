@@ -10,39 +10,57 @@ from krrood.exceptions import DataclassException, InputError
 @dataclass
 class NoInstancesProvidedError(InputError):
     """
-    Raised when a :class:`~krrood.parametrization.feature_extraction.feature_extractor.FeatureExtractor`
-    is constructed from an empty instance list.
+    Raised when a :class:`~krrood.parametrization.feature_extraction.feature_extractor.F
+    eatureExtractor` is constructed from an empty instance list.
     """
 
     def error_message(self) -> str:
         return "At least one instance must be provided to build a FeatureExtractor."
 
     def suggest_correction(self) -> str:
-        return (
-            "Pass a non-empty list of DAO instances to FeatureExtractor.from_instances."
-        )
+        return "Pass a non-empty list of instances to FeatureExtractor.from_instances."
 
 
 @dataclass
 class MissingFieldNameError(InputError):
     """
-    Raised when :attr:`~krrood.parametrization.feature_extraction.aggregations.AggregationStatistic.field_name`
-    is ``None`` but :attr:`~krrood.parametrization.feature_extraction.aggregations.AggregationStatistic.aggregation_features`
-    or a method that depends on it is accessed.
+    Raised when :attr:`~krrood.parametrization.feature_extraction.aggregations.Aggregati
+    onStatistic.field_name` is ``None`` but :attr:`~krrood.parametrization.feature_extra
+    ction.aggregations.AggregationStatistic.aggregation_features` or a method that
+    depends on it is accessed.
     """
 
     def error_message(self) -> str:
         return "field_name must be set to access aggregation_features."
 
     def suggest_correction(self) -> str:
-        return "Construct AggregationStatistic with @aggregation_statistic(field_name='field name')."
+        return "Construct the AggregationStatistic with the field_name of the exchangeable-part field."
+
+
+@dataclass
+class InvalidAggregatedFieldError(InputError):
+    """
+    Raised when :func:`~krrood.parametrization.feature_extraction.aggregations.aggregati
+    on_statistic` is given something other than a direct attribute of a variable.
+    """
+
+    aggregated_field: Any
+    """
+    The object that was passed as the aggregated field.
+    """
+
+    def error_message(self) -> str:
+        return f"{self.aggregated_field!r} is not an attribute of a variable."
+
+    def suggest_correction(self) -> str:
+        return "Pass an attribute of a variable, e.g. @aggregation_statistic(variable(Shelf).layers)."
 
 
 @dataclass
 class OutOfDomainValueError(DataclassException):
     """
-    Raised when a computed aggregation statistic falls outside the training
-    domain of its latent variable.
+    Raised when a computed aggregation statistic falls outside the training domain of
+    its latent variable.
     """
 
     feature_name: str

@@ -20,7 +20,7 @@ The following three cells initilaize the CoraPlex world with a kitchen environme
 
 ```python
 from geometry_msgs.msg import PoseStamped
-from coraplex.graph_of_convex_sets import BoundingBox, GraphOfConvexSets
+from coraplex.graph_of_convex_sets import BoundingBox, VolumetricGraphOfBoundingBoxes
 from coraplex.datastructures.enums import WorldMode
 from pycrap.ontologies import Robot, Kitchen
 from coraplex.worlds.bullet_world import BulletWorld
@@ -60,10 +60,9 @@ giskard_wrapper.execute()
 ```
 
 ```python
-from coraplex.datastructures.enums import Arms
 with real_robot:
     try:
-        ParkArmsActionDescription([Arms.BOTH]).resolve().perform()
+        ParkArmsActionDescription(robot.all_arms).resolve().perform()
     except:
         pass
 ```
@@ -73,7 +72,7 @@ Now, we define a search space for the GCS algorithm around the open drawer and t
 ```python
 search_space = BoundingBox(min_x=-0.0, max_x=1.5, min_y=0.1, max_y=2, min_z=0, max_z=1.45)
 print('Calculating graph of convex sets...')
-cg = GraphOfConvexSets.free_space_from_world(world, search_space=search_space)
+cg = VolumetricGraphOfBoundingBoxes.free_space_from_world(world, search_space=search_space)
 ```
 
 Given the connectivity graph a start pose and a goal pose for the path search is needed.
@@ -106,7 +105,7 @@ For the path that we provide here the first value is skipped as that is equal to
 print('move along path to goal pose...')
 from coraplex.datastructures.enums import WaypointsMovementType
 with real_robot:
-    MoveTCPWaypointsMotion(path[1:], Arms.RIGHT, movement_type=WaypointsMovementType.ENFORCE_ORIENTATION_FINAL_POINT, allow_gripper_collision=False).perform()
+    MoveTCPWaypointsMotion(path[1:], robot.right_arm, movement_type=WaypointsMovementType.ENFORCE_ORIENTATION_FINAL_POINT, allow_gripper_collision=False).perform()
 ```
 
 Alternatively, before executing the planned path with the MoveTCPWaypointsMotion Designator the path could be further improved by postprocessing the output from the GCS path finding algorithm.
@@ -138,5 +137,5 @@ print(len(new_path))
 ```python
 print('move along path to goal pose...')
 with real_robot:
-    MoveTCPWaypointsMotion(filter_path(path), Arms.RIGHT).perform()
+    MoveTCPWaypointsMotion(filter_path(path), robot.right_arm).perform()
 ```

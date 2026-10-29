@@ -6,11 +6,9 @@ import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, Field, replace
 from dataclasses import fields
 from functools import cached_property
-from functools import lru_cache, cached_property
-from typing import assert_never
 from uuid import UUID, uuid4
 
 import numpy as np
@@ -28,6 +26,8 @@ from typing_extensions import (
 )
 
 from krrood.adapters.json_serializer import (
+    DataclassJSONSerializer,
+    ReferenceWriter,
     SubclassJSONSerializer,
     to_json,
     from_json,
@@ -35,39 +35,38 @@ from krrood.adapters.json_serializer import (
 )
 from krrood.class_diagrams.attribute_introspector import DataclassOnlyIntrospector
 from krrood.entity_query_language.predicate import Symbol
+from krrood.patterns.caching import memoize
 from krrood.symbolic_math.symbolic_math import Matrix
-from krrood.utils import get_full_class_name, memoize
-from semantic_digital_twin.datastructures.joint_state import JointState
-from semantic_digital_twin.world_description.geometry import Mesh
-from semantic_digital_twin.world_description.inertial_properties import Inertial
-from semantic_digital_twin.world_description.shape_collection import (
-    ShapeCollection,
-    BoundingBoxCollection,
-)
-from semantic_digital_twin.mixin import HasSimulatorProperties
 from krrood.utils import get_full_class_name
 from semantic_digital_twin.adapters.world_entity_kwargs_tracker import (
+    WorldEntityReference,
     WorldEntityWithIDKwargsTracker,
 )
 from semantic_digital_twin.datastructures.joint_state import JointState
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.exceptions import (
+    AlreadyBelongsToAWorldError,
     ReferenceFrameMismatchError,
-    WorldEntityWithIDNotInKwargs,
-    MissingWorldError,
 )
-from semantic_digital_twin.mixin import HasSimulatorProperties
+from semantic_digital_twin.mixin import HasSimulatorProperties, UniqueSimulatorProperty
+from semantic_digital_twin.world_description.connection_properties import (
+    ServoGains,
+    VelocityServoGains,
+)
 from semantic_digital_twin.spatial_types.spatial_types import (
     HomogeneousTransformationMatrix,
     Point3,
     Pose,
 )
-from semantic_digital_twin.utils import IDGenerator, camel_case_split
+from semantic_digital_twin.utils import camel_case_split
 from semantic_digital_twin.world_description.geometry import Mesh
 from semantic_digital_twin.world_description.inertial_properties import Inertial
 from semantic_digital_twin.world_description.shape_collection import (
     ShapeCollection,
     BoundingBoxCollection,
+)
+from semantic_digital_twin.world_description.world_modification import (
+    synchronized_attribute_modification,
 )
 
 if TYPE_CHECKING:
@@ -75,8 +74,6 @@ if TYPE_CHECKING:
         DegreeOfFreedom,
     )
     from semantic_digital_twin.world import World, GenericSemanticAnnotation
-
-id_generator = IDGenerator()
 
 
 @dataclass(eq=False)
@@ -120,12 +117,34 @@ class WorldEntity(Symbol):
         return hash(self) == hash(other)
 
     def add_to_world(self, world: World):
+        """
+        Register this entity as part of the given world.
+
+        :param world: The world this entity becomes part of.
+        :raises AlreadyBelongsToAWorldError: If this entity belongs to another world,
+            which has to release it first. Re-registering it would leave it in the
+            previous world's lookup table under a world it no longer reports.
+        """
+        if self._world is not None and self._world is not world:
+            raise AlreadyBelongsToAWorldError(
+                world=self._world, type_trying_to_add=type(self)
+            )
         self._world = world
         world._world_entity_hash_table[hash(self)] = self
 
     def remove_from_world(self):
         self._world._world_entity_hash_table.pop(hash(self), None)
         self._world = None
+
+    @synchronized_attribute_modification
+    def update_name(self, name: PrefixedName) -> None:
+        """
+        Rename this world entity and record the change in the world's modification
+        history.
+
+        :param name: The new name for this world entity.
+        """
+        self.name = name
 
 
 @dataclass(eq=False)
@@ -152,28 +171,29 @@ class WorldEntityWithID(WorldEntity, SubclassJSONSerializer):
     def add_to_world(self, world: World):
         super().add_to_world(world)
 
-    def to_json(self) -> Dict[str, Any]:
-        result = super().to_json()
+    def to_json(self, **kwargs) -> Dict[str, Any]:
+        result = super().to_json(**kwargs)
         introspector = DataclassOnlyIntrospector()
         for field_ in introspector.discover(self.__class__):
             value = getattr(self, field_.public_name)
 
             if isinstance(value, (list, set)):
-                current_result = [self._item_to_json(item) for item in value]
+                current_result = [self._item_to_json(item, **kwargs) for item in value]
             else:
-                current_result = self._item_to_json(value)
+                current_result = self._item_to_json(value, **kwargs)
             result[field_.public_name] = current_result
         return result
 
     @classmethod
-    def _item_to_json(cls, item: Any):
+    def _item_to_json(cls, item: Any, **kwargs):
         """
-        Convert an item to JSON format, handling WorldEntityWithID objects by serializing their ID.
+        Convert an item to JSON format, handling WorldEntityWithID objects by
+        serializing their ID.
         """
         if isinstance(item, WorldEntityWithID):
-            result = to_json(item.id)
+            result = to_json(item.id, **kwargs)
         else:
-            result = to_json(item)
+            result = to_json(item, **kwargs)
         return result
 
     def _track_object_in_from_json(
@@ -190,7 +210,7 @@ class WorldEntityWithID(WorldEntity, SubclassJSONSerializer):
         :return: The instance of WorldEntityWithIDKwargsTracker.
         """
         tracker = WorldEntityWithIDKwargsTracker.from_kwargs(from_json_kwargs)
-        tracker.add_world_entity_with_id(self)
+        tracker.add(self.id, self)
         return tracker
 
     @classmethod
@@ -206,9 +226,9 @@ class WorldEntityWithID(WorldEntity, SubclassJSONSerializer):
 
         half_initialized_instance = cls.__new__(cls)
         half_initialized_instance.id = from_json(data["id"], **kwargs)
-        if tracker.has_world_entity_with_id(half_initialized_instance.id):
-            return tracker.get_world_entity_with_id(half_initialized_instance.id)
-        tracker.add_world_entity_with_id(half_initialized_instance)
+        if tracker.has(half_initialized_instance.id):
+            return tracker.get(half_initialized_instance.id)
+        tracker.add(half_initialized_instance.id, half_initialized_instance)
 
         fields_ = {f.name: f for f in fields(cls)}
 
@@ -246,13 +266,15 @@ class WorldEntityWithID(WorldEntity, SubclassJSONSerializer):
 
         if isinstance(obj, uuid.UUID):
             obj = from_json(data, **kwargs)
-            return state.get_world_entity_with_id(obj)
+            return state.get(obj)
         else:
             return obj
 
     def copy_for_world(self, world: World) -> Self:
         """
-        Copy the object, while updating all references to WorldEntityWithID objects to point to the new world.
+        Copy the object, while updating all references to WorldEntityWithID objects to
+        point to the new world.
+
         This assumes that the referenced objects are already in the new world.
         """
 
@@ -278,11 +300,60 @@ class WorldEntityWithID(WorldEntity, SubclassJSONSerializer):
         return self.__class__(**result)
 
 
+@dataclass
+class ReferencedWorldEntity(SubclassJSONSerializer):
+    """
+    Stands in a JSON document for a world entity that whoever reads the document already
+    has.
+
+    Reading it yields the entity of the reader's world, see
+    :class:`WorldEntityWithIDKwargsTracker`.
+    """
+
+    id: UUID
+    """
+    The id of the entity referred to.
+    """
+
+    name: PrefixedName
+    """
+    The name of the entity referred to, which says which entity was meant where it
+    cannot be found.
+    """
+
+    def to_json(self, **kwargs) -> Dict[str, Any]:
+        return DataclassJSONSerializer.to_json(self, **kwargs)
+
+    @classmethod
+    def _from_json(cls, data: Dict[str, Any], **kwargs) -> WorldEntityWithID:
+        """
+        :return: The entity of the reader's world that the reference refers to.
+        :raises MissingWorldError: If the keyword arguments carry no world to find the
+            entity in.
+        :raises WorldEntityWithIDNotInKwargs: If the world holds no entity with the id.
+        """
+        reference = DataclassJSONSerializer.from_json(data, clazz=cls, **kwargs)
+        tracker = WorldEntityWithIDKwargsTracker.from_kwargs(kwargs)
+        return tracker.get(reference.id, name=reference.name)
+
+
+@dataclass
+class WorldEntityReferenceWriter(ReferenceWriter[WorldEntityWithID]):
+    """
+    Writes world entities as :class:`ReferencedWorldEntity`, for documents whose reader
+    has the world the entities belong to.
+    """
+
+    def write_reference(self, entity: WorldEntityWithID) -> Dict[str, Any]:
+        return ReferencedWorldEntity(id=entity.id, name=entity.name).to_json()
+
+
 @dataclass(eq=False)
 class WorldEntityWithClassBasedID(WorldEntityWithID):
     """
-    A WorldEntity that has a unique identifier based on its class name. As a consequence, all instances of a class will
-    have the same ID.
+    A WorldEntity that has a unique identifier based on its class name.
+
+    As a consequence, all instances of a class will have the same ID.
     """
 
     id: UUID = field(init=False)
@@ -305,14 +376,15 @@ class WorldEntityWithSimulatorProperties(WorldEntityWithID, HasSimulatorProperti
 
 
 @dataclass(eq=False)
-class KinematicStructureEntity(WorldEntityWithSimulatorProperties, ABC):
+class KinematicStructureEntity(ABC, WorldEntityWithSimulatorProperties):
     """
     An entity that is part of the kinematic structure of the world.
     """
 
     _world: Optional[World] = field(default=None, repr=False, hash=False, init=False)
     """
-    Setting init=False because it should only be set by the World, not during initialization.
+    Setting init=False because it should only be set by the World, not during
+    initialization.
     """
 
     index: Optional[int] = field(default=None, init=False)
@@ -352,6 +424,7 @@ class KinematicStructureEntity(WorldEntityWithSimulatorProperties, ABC):
     def global_transform(self) -> HomogeneousTransformationMatrix:
         """
         Computes the transform of the KinematicStructureEntity in the world frame.
+
         :return: TransformationMatrix representing the global transform.
         """
         return self._world.compute_forward_kinematics(self._world.root, self)
@@ -360,9 +433,10 @@ class KinematicStructureEntity(WorldEntityWithSimulatorProperties, ABC):
     def global_pose(self) -> Pose:
         """
         Computes the Pose of the KinematicStructureEntity in the world frame.
+
         :return: Pose representing the global pose.
         """
-        return self._world.compute_forward_kinematics(self._world.root, self).to_pose()
+        return self._world.compute_forward_kinematics(self._world.root, self).pose
 
     @property
     def parent_connection(self) -> Connection:
@@ -413,44 +487,64 @@ class KinematicStructureEntity(WorldEntityWithSimulatorProperties, ABC):
         name: PrefixedName,
         points_3d: List[Point3],
         minimum_thickness: float = 0.005,
-        sv_ratio_tol: float = 1e-7,
+        singular_value_ratio_tolerance: float = 1e-7,
     ) -> Self:
         """
-        Constructs a Region from a list of 3D points by creating a convex hull around them.
-        The points are analyzed to determine if they are approximately planar. If they are,
-        a minimum thickness is added to ensure the region has a non-zero volume.
+        Constructs a Region from a list of 3D points by creating a convex hull around
+        them. The points are analyzed to determine if they are approximately planar. If
+        they are, a minimum thickness is added to ensure the region has a non-zero
+        volume.
 
         :param name: Prefixed name for the region.
         :param points_3d: List of 3D points.
         :param minimum_thickness: Minimum thickness to add if points are near-planar.
-        :param sv_ratio_tol: Tolerance for determining planarity based on singular value ratio.
-
+        :param singular_value_ratio_tolerance: Tolerance for determining planarity based
+            on singular value ratio.
         :return: Region object.
         """
         area_mesh = Mesh.from_3d_points(
             points_3d,
             minimum_thickness=minimum_thickness,
-            sv_ratio_tol=sv_ratio_tol,
+            singular_value_ratio_tolerance=singular_value_ratio_tolerance,
         )
         return cls.from_shape_collection(name, ShapeCollection([area_mesh]))
+
+
+@dataclass
+class GravityCompensation(UniqueSimulatorProperty):
+    """
+    How much of a body's weight a physical simulation carries for it: a link a servo
+    drives is carried by that servo in reality, so a simulation compensates its gravity
+    rather than making the servo spend torque holding it up.
+    """
+
+    fraction: float = 1.0
+    """
+    The fraction of the body's weight the simulation carries; ``1`` cancels gravity
+    exactly.
+    """
 
 
 @dataclass(eq=False)
 class Body(KinematicStructureEntity):
     """
     Represents a body in the world.
-    A body is a semantic atom, meaning that it cannot be decomposed into meaningful smaller parts.
+
+    A body is a semantic atom, meaning that it cannot be decomposed into meaningful
+    smaller parts.
     """
 
     visual: ShapeCollection = field(default_factory=ShapeCollection, repr=False)
     """
     List of shapes that represent the visual appearance of the link.
+
     The poses of the shapes are relative to the link.
     """
 
     collision: ShapeCollection = field(default_factory=ShapeCollection, repr=False)
     """
     List of shapes that represent the collision geometry of the link.
+
     The poses of the shapes are relative to the link.
     """
 
@@ -459,14 +553,14 @@ class Body(KinematicStructureEntity):
     The index of the entity in `_world.kinematic_structure`.
     """
 
-    inertial: Optional[Inertial] = field(default_factory=Inertial, repr=False)
+    inertial: Optional[Inertial] = field(default=None, repr=False)
     """
-    Inertia properties of the body.
+    Inertia properties of the body, or ``None`` if its description gives none.
     """
 
     def __post_init__(self):
         if not self.name:
-            self.name = PrefixedName(f"body_{id_generator(self)}")
+            self.name = PrefixedName(f"body_{self.id}")
 
         self.visual.reference_frame = self
         self.collision.reference_frame = self
@@ -475,9 +569,37 @@ class Body(KinematicStructureEntity):
 
     @classmethod
     def from_shape_collection(
-        cls, name: PrefixedName, shape_collection: ShapeCollection
+        cls,
+        name: PrefixedName,
+        shape_collection: ShapeCollection,
+        *,
+        visuals_shape_collection: ShapeCollection | None = None,
     ) -> Self:
-        return cls(name=name, collision=shape_collection, visual=shape_collection)
+        if visuals_shape_collection is None:
+            visuals_shape_collection = shape_collection
+        return cls(
+            name=name, collision=shape_collection, visual=visuals_shape_collection
+        )
+
+    @synchronized_attribute_modification
+    def update_shapes(
+        self, visual: ShapeCollection, collision: ShapeCollection
+    ) -> None:
+        """
+        Replace the shapes of this body and record the change in the world's
+        modification history, so that it is synchronized and can be rolled back.
+
+        :param visual: The shapes that represent how the body looks. Shapes whose origin
+            has no reference frame are taken relative to the body; the others are
+            expressed relative to it.
+        :param collision: The shapes that represent how the body collides, taken like
+            ``visual``.
+        """
+        for shapes in (visual, collision):
+            shapes.reference_frame = self
+            shapes.transform_all_shapes_to_own_frame()
+        self.visual = visual
+        self.collision = collision
 
     @property
     def combined_mesh(self) -> Optional[trimesh.Trimesh]:
@@ -492,20 +614,25 @@ class Body(KinematicStructureEntity):
         self, volume_threshold: float = 1.001e-6, surface_threshold: float = 0.00061
     ) -> bool:
         """
-        Check if collision geometry is mesh or simple shape with volume/surface bigger than thresholds.
+        Check if collision geometry is mesh or simple shape with volume/surface bigger
+        than thresholds.
 
-        :param volume_threshold: Ignore simple geometry shapes with a volume less than this (in m^3)
-        :param surface_threshold: Ignore simple geometry shapes with a surface area less than this (in m^2)
+        :param volume_threshold: Ignore simple geometry shapes with a volume less than
+            this (in m^3)
+        :param surface_threshold: Ignore simple geometry shapes with a surface area less
+            than this (in m^2)
         :return: True if collision geometry is mesh or simple shape exceeding thresholds
+
+        .. note:: A primitive is measured by :attr:`~...geometry.Shape.volume` rather than
+            by the volume of the mesh standing in for it, so only a shape that is too
+            flat to be caught by volume has to build that mesh for its surface area.
         """
         for shape in self.collision:
             if isinstance(shape, Mesh):
                 return True
-            shape_mesh = shape.mesh
-            if (
-                shape_mesh.volume > volume_threshold
-                or shape_mesh.area > surface_threshold
-            ):
+            if shape.volume > volume_threshold:
+                return True
+            if shape.mesh.area > surface_threshold:
                 return True
         return False
 
@@ -514,6 +641,7 @@ class Body(KinematicStructureEntity):
     ) -> List[GenericSemanticAnnotation]:
         """
         Returns all semantic annotations of a given type which belong to this body.
+
         :param type_: The type of semantic annotations to return.
         :returns: A list of semantic annotations of the given type.
         """
@@ -525,8 +653,8 @@ class Body(KinematicStructureEntity):
         return Body(
             name=self.name,
             id=self.id,
-            visual=self.visual.copy_for_world(new_world),
-            collision=self.collision.copy_for_world(new_world),
+            visual=self.visual.copy_without_reference_frame(),
+            collision=self.collision.copy_without_reference_frame(),
             inertial=deepcopy(self.inertial),
         )
 
@@ -558,10 +686,10 @@ class Region(KinematicStructureEntity):
             return None
         return self.area.combined_mesh
 
-    def to_json(self) -> Dict[str, Any]:
-        result = super().to_json()
-        result["name"] = to_json(self.name)
-        result["area"] = to_json(self.area)
+    def to_json(self, **kwargs) -> Dict[str, Any]:
+        result = super().to_json(**kwargs)
+        result["name"] = to_json(self.name, **kwargs)
+        result["area"] = to_json(self.area, **kwargs)
         return result
 
     @classmethod
@@ -578,7 +706,7 @@ class Region(KinematicStructureEntity):
         return Region(
             name=self.name,
             id=self.id,
-            area=self.area.copy_for_world(new_world),
+            area=self.area.copy_without_reference_frame(),
         )
 
 
@@ -587,6 +715,16 @@ GenericKinematicStructureEntity = TypeVar(
 )
 
 GenericWorldEntity = TypeVar("GenericWorldEntity", bound=WorldEntity)
+
+TBody = TypeVar("TBody", bound=Body)
+"""
+A kind of body.
+"""
+
+TRegion = TypeVar("TRegion", bound=Region)
+"""
+A kind of region.
+"""
 
 
 @dataclass(eq=False)
@@ -648,12 +786,15 @@ class SemanticAnnotation(WorldEntityWithSimulatorProperties):
     @property
     def kinematic_structure_entities(self) -> list[KinematicStructureEntity]:
         """
-        Returns the kinematic structure entities that are part of this semantic annotation.
+        Returns the kinematic structure entities that are part of this semantic
+        annotation.
 
-        Do not override this property. If your semantic annotation subclass has a specific way of aggregating its
-        kinematic structure entities, override the `_kinematic_structure_entities` method instead.
+        Do not override this property. If your semantic annotation subclass has a
+        specific way of aggregating its kinematic structure entities, override the
+        `_kinematic_structure_entities` method instead.
 
-        :returns: A list of kinematic structure entities that are part of this semantic annotation.
+        :returns: A list of kinematic structure entities that are part of this semantic
+            annotation.
         """
         visited: Set[int] = set()
         return self._kinematic_structure_entities(visited)
@@ -662,16 +803,18 @@ class SemanticAnnotation(WorldEntityWithSimulatorProperties):
         self, visited: Set[int]
     ) -> list[KinematicStructureEntity]:
         """
-        Returns the kinematic structure entities that are part of this semantic annotation.
-        This is done by iterating over all fields of the semantic annotation and checking if they are kinematic
-        structure entities or lists of kinematic structure entities.
-        If a field is a semantic annotation, its kinematic structure entities are also added to the result, via the
-        potentially overridden `kinematic_structure_entities` property.
+        Returns the kinematic structure entities that are part of this semantic
+        annotation. This is done by iterating over all fields of the semantic annotation
+        and checking if they are kinematic structure entities or lists of kinematic
+        structure entities. If a field is a semantic annotation, its kinematic structure
+        entities are also added to the result, via the potentially overridden
+        `kinematic_structure_entities` property.
 
-        :param visited: A set of ids of semantic annotations that have already been visited in the current chain of calls.
-        :returns: A list of kinematic structure entities that are part of this semantic annotation.
+        :param visited: A set of ids of semantic annotations that have already been
+            visited in the current chain of calls.
+        :returns: A list of kinematic structure entities that are part of this semantic
+            annotation.
         """
-
         if id(self) in visited:
             return []
         visited.add(id(self))
@@ -722,32 +865,48 @@ class SemanticAnnotation(WorldEntityWithSimulatorProperties):
     def bodies_with_collision(self) -> List[Body]:
         return [x for x in self.bodies if x.has_collision()]
 
+    @property
+    def mass(self) -> float:
+        """
+        :return: The mass of what the annotation references: the sum of the masses of
+            its bodies, the bodies of its parts included. A body that states no inertial
+            properties counts as weightless.
+        """
+        return sum(
+            body.inertial.mass
+            for body in self._distinct_bodies()
+            if body.inertial is not None
+        )
+
+    def _distinct_bodies(self) -> List[Body]:
+        """
+        :return: :attr:`bodies`, each once, told apart by their ids.
+        """
+        return list({body.id: body for body in self.bodies}.values())
+
     def as_bounding_box_collection_at_origin(
         self, origin: HomogeneousTransformationMatrix
     ) -> BoundingBoxCollection:
         """
-        Returns a bounding box collection that contains the bounding boxes of all bodies in this semantic annotation.
+        Returns a bounding box collection that contains the bounding boxes of all bodies
+        in this semantic annotation.
+
         :param reference_frame: The reference frame to express the bounding boxes in.
         :returns: A collection of bounding boxes in world-space coordinates.
         """
-
-        collections = iter(
+        collections = (
             entity.collision.as_bounding_box_collection_at_origin(origin)
-            for entity in self.kinematic_structure_entities
-            if isinstance(entity, Body) and entity.has_collision()
+            for entity in self.bodies_with_collision
         )
-        bbs = BoundingBoxCollection([], origin.reference_frame)
-
-        for bb_collection in collections:
-            bbs = bbs.merge(bb_collection)
-
-        return bbs
+        return BoundingBoxCollection.merge_all(collections, origin.reference_frame)
 
     def as_bounding_box_collection_in_frame(
         self, reference_frame: KinematicStructureEntity
     ) -> BoundingBoxCollection:
         """
-        Provides the bounding box collection for this entity in the given reference frame.
+        Provides the bounding box collection for this entity in the given reference
+        frame.
+
         :param reference_frame: The reference frame to express the bounding boxes in.
         :returns: A collection of bounding boxes in world-space coordinates.
         """
@@ -759,8 +918,11 @@ class SemanticAnnotation(WorldEntityWithSimulatorProperties):
         self,
     ) -> Set[SemanticAnnotation]:
         """
-        Extract all direct SemanticAnnotation dependencies from a given SemanticAnnotation.
-        :return: A set of SemanticAnnotations that are referenced by the given annotation.
+        Extract all direct SemanticAnnotation dependencies from a given
+        SemanticAnnotation.
+
+        :return: A set of SemanticAnnotations that are referenced by the given
+            annotation.
         """
         dependencies = set()
         introspector = DataclassOnlyIntrospector()
@@ -779,14 +941,22 @@ class SemanticAnnotation(WorldEntityWithSimulatorProperties):
 
 
 @dataclass(eq=False)
-class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, ABC):
+class Connection(WorldEntityWithSimulatorProperties, ABC):
     """
     Represents a connection between two entities in the world.
     """
 
+    id: UUID = field(init=False)
+    """
+    The identifier of this connection, derived from the ids of its parent and child.
+
+    Every copy of a connection, in any world, therefore carries the same id.
+    """
+
     _world: Optional[World] = field(default=None, repr=False, hash=False, init=False)
     """
-    Setting init=False because it should only be set by the World, not during initialization.
+    Setting init=False because it should only be set by the World, not during
+    initialization.
     """
 
     parent: KinematicStructureEntity
@@ -820,6 +990,7 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
     """
 
     def __post_init__(self):
+        self.id = uuid.uuid5(self.parent.id, str(self.child.id))
         self.name = self.name or self._generate_default_name(
             parent=self.parent, child=self.child
         )
@@ -861,35 +1032,39 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
         self.parent_T_connection_expression.reference_frame = self.parent
         self.connection_T_child_expression.child_frame = self.child
 
-    def to_json(self) -> Dict[str, Any]:
-        result = super().to_json()
-        result["name"] = to_json(self.name)
-        result["parent_id"] = to_json(self.parent.id)
-        result["child_id"] = to_json(self.child.id)
-        result["parent_T_connection_expression"] = to_json(
-            self.parent_T_connection_expression
-        )
-        result["connection_T_child_expression"] = to_json(
-            self.connection_T_child_expression
-        )
+    @classmethod
+    def _serialized_fields(cls) -> List[Field]:
+        """
+        The fields a connection carries in its json.
+
+        Everything its constructor takes, since that is what makes the connection what
+        it is; what it computes from those is left out and computed again when it is
+        read.
+        """
+        return [field_ for field_ in fields(cls) if field_.init]
+
+    def to_json(self, **kwargs) -> Dict[str, Any]:
+        # A connection writes its own fields, so it skips the field dump of
+        # WorldEntityWithID.to_json
+        result = SubclassJSONSerializer.to_json(self, **kwargs)
+        for field_ in self._serialized_fields():
+            value = getattr(self, field_.name)
+            if isinstance(value, WorldEntityWithID):
+                WorldEntityReference(field_.name).write(result, value)
+            else:
+                result[field_.name] = to_json(value, **kwargs)
         return result
 
     @classmethod
     def _from_json(cls, data: Dict[str, Any], **kwargs) -> Self:
-        tracker = WorldEntityWithIDKwargsTracker.from_kwargs(kwargs)
-        parent = tracker.get_world_entity_with_id(id=from_json(data["parent_id"]))
-        child = tracker.get_world_entity_with_id(id=from_json(data["child_id"]))
-        return cls(
-            name=from_json(data["name"]),
-            parent=parent,
-            child=child,
-            parent_T_connection_expression=from_json(
-                data["parent_T_connection_expression"], **kwargs
-            ),
-            connection_T_child_expression=from_json(
-                data["connection_T_child_expression"], **kwargs
-            ),
-        )
+        arguments = {}
+        for field_ in cls._serialized_fields():
+            reference = WorldEntityReference(field_.name)
+            if reference.id_key in data:
+                arguments[field_.name] = reference.resolve(data, **kwargs)
+            elif field_.name in data:
+                arguments[field_.name] = from_json(data[field_.name], **kwargs)
+        return cls(**arguments)
 
     @property
     def origin_expression(self) -> HomogeneousTransformationMatrix:
@@ -898,6 +1073,21 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
             @ self._kinematics
             @ self.connection_T_child_expression
         )
+
+    @property
+    def reference_origin_expression(self) -> HomogeneousTransformationMatrix:
+        """
+        The parent-to-child transform at the reference configuration, excluding the
+        variable joint :attr:`_kinematics`.
+
+        .. note::
+            A simulator must place a body's static frame with this rather than
+            :attr:`origin_expression`: the latter depends on the current joint
+            state, which the simulator joint would then apply a second time.
+
+        :return: The constant parent-to-child transform with the joint at zero.
+        """
+        return self.parent_T_connection_expression @ self.connection_T_child_expression
 
     @property
     def active_dofs(self) -> List[DegreeOfFreedom]:
@@ -918,9 +1108,6 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
     @property
     def has_hardware_interface(self) -> bool:
         return False
-
-    def add_to_world(self, world: World):
-        self._world = world
 
     @classmethod
     def _generate_default_name(
@@ -946,15 +1133,37 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
             f"Origin can not be set for Connection: {self.__class__.__name__}"
         )
 
-    def origin_as_position_quaternion(self) -> Matrix:
-        position = self.origin_expression.to_position()[:3]
-        orientation = self.origin_expression.to_quaternion()
+    @staticmethod
+    def _as_position_quaternion(
+        parent_T_child: HomogeneousTransformationMatrix,
+    ) -> Matrix:
+        """
+        Stack a transform's translation and rotation into a single row.
+
+        :return: A 1x7 matrix of ``[x, y, z, qx, qy, qz, qw]``.
+        """
+        position = parent_T_child.position[:3]
+        orientation = parent_T_child.quaternion
         return Matrix.vstack([position, orientation]).T
+
+    def origin_as_position_quaternion(self) -> Matrix:
+        return self._as_position_quaternion(self.origin_expression)
+
+    def reference_origin_as_position_quaternion(self) -> Matrix:
+        """
+        The reference-configuration origin (see :attr:`reference_origin_expression`) as
+        a stacked position and quaternion, so a simulator can place a body's static
+        frame independently of the current joint state.
+
+        :return: A 1x7 matrix of ``[x, y, z, qx, qy, qz, qw]``.
+        """
+        return self._as_position_quaternion(self.reference_origin_expression)
 
     @property
     def dofs(self) -> list[DegreeOfFreedom]:
         """
-        Returns the degrees of freedom associated with this connection, active ones first.
+        Returns the degrees of freedom associated with this connection, active ones
+        first.
         """
         return self.active_dofs + self.passive_dofs
 
@@ -973,15 +1182,18 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
         connection_T_child_expression: Optional[HomogeneousTransformationMatrix] = None,
     ) -> Self:
         """
-        Generates the degrees of freedom for this connection into the given world and initializes the
-        connection with them.
+        Generates the degrees of freedom for this connection into the given world and
+        initializes the connection with them.
 
         :param world: Reference to the world where the dofs should be added.
         :param parent: Parent of the connection.
         :param child: Child of the connection.
-        :param name: Name of the connection. If ``None``, a default is generated from parent and child.
-        :param parent_T_connection_expression: Constant pose of the connection relative to its parent.
-        :param connection_T_child_expression: Constant pose of the child relative to the connection.
+        :param name: Name of the connection. If ``None``, a default is generated from
+            parent and child.
+        :param parent_T_connection_expression: Constant pose of the connection relative
+            to its parent.
+        :param connection_T_child_expression: Constant pose of the child relative to the
+            connection.
         """
 
     def _find_references_in_world(self, world: World) -> Tuple[
@@ -991,9 +1203,12 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
         HomogeneousTransformationMatrix,
     ]:
         """
-        Finds the reference frames to this connection in the given world and returns them as usable objects.
+        Finds the reference frames to this connection in the given world and returns
+        them as usable objects.
+
         :param world: Reference to the world where the reference frames are searched.
-        :return: The other parent and child and new connection expressions with correct reference frames.
+        :return: The other parent and child and new connection expressions with correct
+            reference frames.
         """
         other_parent = world.get_kinematic_structure_entity_by_id(self.parent.id)
         other_child = world.get_kinematic_structure_entity_by_id(self.child.id)
@@ -1013,8 +1228,9 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
 
     def copy_for_world(self, world: World) -> Self:
         """
-        Copies this connection to the given world the parent and child references are updated to the new world as well
-        as the references from the expression.
+        Copies this connection to the given world the parent and child references are
+        updated to the new world as well as the references from the expression.
+
         :param world: World in which the connection should be copied.
         :return: The copied connection.
         """
@@ -1040,9 +1256,11 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
     ) -> Self:
         """
         Create a copy of this connection re-parented under ``new_parent``, using
-        ``parent_T_connection_expression`` as the new parent offset and keeping the same child and
-        ``connection_T_child_expression``. Subclasses carrying extra state (e.g. an active degree of
-        freedom) override this to preserve it. Used to move a branch without collapsing its connection.
+        ``parent_T_connection_expression`` as the new parent offset and keeping the same
+        child and ``connection_T_child_expression``.
+
+        Subclasses carrying extra state (e.g. an active degree of freedom) override this
+        to preserve it. Used to move a branch without collapsing its connection.
         """
         return self.__class__(
             parent=new_parent,
@@ -1051,9 +1269,27 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
             connection_T_child_expression=self.connection_T_child_expression,
         )
 
+    def copy_with_new_child(self, new_child: KinematicStructureEntity) -> Self:
+        """
+        Create a copy of this connection that connects its parent to ``new_child``,
+        keeping everything else the connection was built with.
+
+        :param new_child: The child of the copy.
+        :return: The copy, named after its parent and new child.
+        """
+        connection_T_child_expression = deepcopy(self.connection_T_child_expression)
+        connection_T_child_expression.child_frame = new_child
+        return replace(
+            self,
+            child=new_child,
+            connection_T_child_expression=connection_T_child_expression,
+            name=None,
+        )
+
     def update_references_for_world(self, world: World):
         """
-        Updates the parent and child references of this connection to the given world as well as the references from the expression.
+        Updates the parent and child references of this connection to the given world as
+        well as the references from the expression.
         """
         if world.is_kinematic_structure_entity_in_world(self.parent):
             parent = world.get_kinematic_structure_entity_by_id(self.parent.id)
@@ -1065,6 +1301,26 @@ class Connection(WorldEntity, HasSimulatorProperties, SubclassJSONSerializer, AB
         self.parent_T_connection_expression.reference_frame = self.parent
         self.parent_T_connection_expression.child_frame = self.child
 
+    def _calculate_local_kinematics(
+        self, transformation: HomogeneousTransformationMatrix
+    ) -> HomogeneousTransformationMatrix:
+        """
+        Un-compose an origin with this connection's constant offsets, leaving the part a
+        degree of freedom can carry.
+
+        :param transformation: The desired origin, already expressed in the parent
+            frame. Callers accepting other frames convert first.
+        :return: The local kinematics producing that origin.
+        """
+        if isinstance(transformation, np.ndarray):
+            transformation = HomogeneousTransformationMatrix(data=transformation)
+        local_kinematics = (
+            self.parent_T_connection_expression.inverse()
+            @ transformation
+            @ self.connection_T_child_expression.inverse()
+        )
+        return local_kinematics
+
 
 GenericConnection = TypeVar("GenericConnection", bound=Connection)
 
@@ -1073,7 +1329,8 @@ def _is_entity_semantic_annotation_or_iterable(
     obj: object, aggregation_type: Type[KinematicStructureEntity]
 ) -> bool:
     """
-    Determines if an object is a KinematicStructureEntity, a semantic annotation, or an Iterable (excluding strings and bytes).
+    Determines if an object is a KinematicStructureEntity, a semantic annotation, or an
+    Iterable (excluding strings and bytes).
     """
     return isinstance(obj, (aggregation_type, SemanticAnnotation)) or (
         isinstance(obj, Iterable) and not isinstance(obj, (str, bytes, bytearray))
@@ -1086,6 +1343,7 @@ def _attr_values(
 ) -> Iterable[object]:
     """
     Yields all dataclass fields and set properties of this semantic annotation.
+
     Skips private fields (those starting with '_'), as well as the 'bodies' property.
 
     :param semantic_annotation: The semantic annotation to extract attributes from.
@@ -1137,3 +1395,46 @@ class Actuator(WorldEntityWithSimulatorProperties):
         :param dof: The degree of freedom to add.
         """
         self._dofs.append(dof)
+
+    @property
+    def set_point(self) -> float:
+        """
+        The value the world commands this actuator to: by default, the position the
+        world holds for its one degree of freedom.
+        """
+        [degree_of_freedom] = self.dofs
+        return float(self._world.state[degree_of_freedom.id].position)
+
+
+@dataclass(eq=False)
+class PositionServo(Actuator):
+    """
+    An actuator that drives its degree of freedom towards a commanded position with a
+    PD law: the position the world holds for the degree of freedom is the servo's set
+    point, which the degree of freedom then reaches through the physics rather than
+    being teleported there.
+    """
+
+    gains: ServoGains = field(kw_only=True)
+    """
+    How hard the servo pulls the degree of freedom towards the set point.
+    """
+
+
+@dataclass(eq=False)
+class VelocityServo(Actuator):
+    """
+    An actuator that drives its degree of freedom at a commanded velocity: the velocity
+    the world holds for the degree of freedom is the servo's set point, and where the
+    degree of freedom ends up is what the physics makes of it.
+    """
+
+    gains: VelocityServoGains = field(kw_only=True)
+    """
+    How hard the servo pushes the degree of freedom towards the set point.
+    """
+
+    @property
+    def set_point(self) -> float:
+        [degree_of_freedom] = self.dofs
+        return float(self._world.state[degree_of_freedom.id].velocity)

@@ -1,7 +1,7 @@
 import os
 
 from semantic_digital_twin.adapters.urdf import URDFParser
-from semantic_digital_twin.predetermined_maps.kitchen_environment import (
+from semantic_digital_twin.predefined_maps.kitchen_environment import (
     KitchenEnvironment,
 )
 from semantic_digital_twin.reasoning.queries import (
@@ -12,19 +12,39 @@ from semantic_digital_twin.reasoning.queries import (
     annotation_class_by_label,
     sort_annotations_by_volume,
 )
+from semantic_digital_twin.reasoning.reasoner import CaseReasoner
 from semantic_digital_twin.reasoning.world_reasoner import WorldReasoner
 from semantic_digital_twin.semantic_annotations.semantic_annotations import *
 from semantic_digital_twin.world import World
+from semantic_digital_twin.world_description.connections import (
+    PrismaticConnection,
+    RevoluteConnection,
+)
 from semantic_digital_twin.world_description.geometry import Color
 
 
 def test_load_environment_returns_world():
     """
-    Tests that loading the environment returns a World object with the correct root name.
+    Tests that loading the environment returns a World object with the correct root
+    name.
     """
     world = KitchenEnvironment().get_world()
     assert isinstance(world, World)
     assert world.root.name == PrefixedName("root")
+
+
+def test_load_environment_names_are_stringifiable():
+    """
+    Every entity name must hold a plain string local part.
+
+    The ``create_with_new_..._in_world`` factories take the name as a string and wrap it
+    into a :class:`PrefixedName` themselves. Handing them a ``PrefixedName`` nests it
+    inside another one, which breaks every consumer that stringifies the name.
+    """
+    world = KitchenEnvironment().get_world()
+    for entity in world.kinematic_structure_entities:
+        assert isinstance(entity.name.name, str)
+        str(entity.name)
 
 
 def test_world_reasoner_reason_returns_dicts():
@@ -45,6 +65,16 @@ def test_world_reasoner_reason_returns_dicts():
     result = reasoner.reason()
 
     assert isinstance(result, dict)
+
+
+def test_each_reasoner_applies_rules_of_its_own():
+    """
+    The rules keep the last case they classified in memory for as long as they are kept,
+    so they belong to the reasoner that applied them rather than to the process.
+    """
+    world = World()
+
+    assert CaseReasoner(world).rdr is not CaseReasoner(world).rdr
 
 
 def test_semantic_annotations_on_surfaces(kitchen_environment_fixture):
@@ -70,10 +100,11 @@ def test_semantic_annotations_on_surfaces(kitchen_environment_fixture):
 
 def test_get_next_object_using_planar_distance(kitchen_environment_fixture):
     """
-    Tests the functionality of the `query_get_next_object_euclidean_x_y` function to verify that it accurately identifies
-    the next objects based on their Euclidean proximity within a simulation world. The test involves setting up a virtual
-    world, retrieving specific objects and annotations, and validating the results returned by the function against
-    predetermined expectations.
+    Tests the functionality of the `query_get_next_object_euclidean_x_y` function to
+    verify that it accurately identifies the next objects based on their Euclidean
+    proximity within a simulation world. The test involves setting up a virtual world,
+    retrieving specific objects and annotations, and validating the results returned by
+    the function against predetermined expectations.
 
     :raises AssertionError: If any of the function assertions fail during testing.
     """
@@ -112,11 +143,12 @@ def test_get_next_object_using_planar_distance(kitchen_environment_fixture):
 
 def test_goal_surface_of_object(kitchen_environment_fixture):
     """
-    Tests the `goal_surface_of_object` function for determining the surface of the most suitable
-    semantic annotation object from a set of candidates based on similarity and
-    other constraints. The function is evaluated under multiple scenarios to verify
-    its logic in choosing the correct table, handling empty tables, and cases with
-    no valid candidates.
+    Tests the `goal_surface_of_object` function for determining the surface of the most
+    suitable semantic annotation object from a set of candidates based on similarity and
+    other constraints.
+
+    The function is evaluated under multiple scenarios to verify its logic in choosing
+    the correct table, handling empty tables, and cases with no valid candidates.
     """
     table1 = kitchen_environment_fixture.get_semantic_annotation_by_name("fruit_table")
     table2 = kitchen_environment_fixture.get_semantic_annotation_by_name(
@@ -149,8 +181,8 @@ def test_goal_surface_of_object(kitchen_environment_fixture):
 
 def test_filter_annotations_by_color(kitchen_environment_fixture):
     """
-    Tests the filter_annotations_by_color function by verifying the retrieval of semantic
-    annotations by their associated colors.
+    Tests the filter_annotations_by_color function by verifying the retrieval of
+    semantic annotations by their associated colors.
 
     The function validates that calling filter_annotations_by_color with different color
     parameters returns the expected list of annotations corresponding to that color
@@ -185,7 +217,8 @@ def test_filter_annotations_by_color(kitchen_environment_fixture):
 
 def test_annotation_class_by_label():
     """
-    Tests the annotation_class_by_label function by verifying the retrieval of the semantic class
+    Tests the annotation_class_by_label function by verifying the retrieval of the
+    semantic class.
     """
     assert annotation_class_by_label("candy_autodrop_box_cadillacs") == Candy
     assert annotation_class_by_label("milk_jumbo_pack_voll") == Milk
@@ -196,7 +229,8 @@ def test_annotation_class_by_label():
 
 def test_sort_annotations_by_volume(kitchen_environment_fixture):
     """
-    Tests the sort_annotations_by_volume function by verifying the order of the returned annotations.
+    Tests the sort_annotations_by_volume function by verifying the order of the returned
+    annotations.
     """
     table1 = kitchen_environment_fixture.get_semantic_annotation_by_name("fruit_table")
     table2 = kitchen_environment_fixture.get_semantic_annotation_by_name(
@@ -222,3 +256,40 @@ def test_sort_annotations_by_volume(kitchen_environment_fixture):
     assert sort_annotations_by_volume(
         semantic_annotations_on_surfaces([table2], kitchen_environment_fixture)
     ) == [lettuce, carrot]
+
+
+def test_world_reasoner_leaves_urdf_doors_and_drawers_on_their_own_joints():
+    """
+    Doors and drawers loaded from a URDF hang straight from their cabinet on an active
+    connection, e.g. ``iai_fridge_main`` -> (revolute) -> ``iai_fridge_door`` in
+    ``coraplex``'s ``kitchen-small.urdf``.
+
+    Recognising them must not change the
+    kinematic structure: each one's joint is that connection.
+    """
+    coraplex_worlds_directory = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..",
+        "..",
+        "..",
+        "coraplex",
+        "resources",
+        "worlds",
+    )
+    world = URDFParser.from_file(
+        file_path=os.path.join(coraplex_worlds_directory, "kitchen-small.urdf")
+    ).parse()
+    connections_before_reasoning = set(world.connections)
+    reasoner = WorldReasoner(world)
+
+    reasoner.infer_semantic_annotations()
+
+    assert set(world.connections) == connections_before_reasoning
+    doors = world.get_semantic_annotations_by_type(Door)
+    assert doors
+    for door in doors:
+        assert isinstance(door.movable_joint, RevoluteConnection)
+    drawers = world.get_semantic_annotations_by_type(Drawer)
+    assert drawers
+    for drawer in drawers:
+        assert isinstance(drawer.movable_joint, PrismaticConnection)

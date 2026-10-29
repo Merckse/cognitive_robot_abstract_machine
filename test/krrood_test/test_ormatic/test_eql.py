@@ -233,7 +233,7 @@ def test_equal(session, database):
 
     query_by_hand = select(FixedConnectionDAO).join(
         PrismaticConnectionDAO,
-        onclause=PrismaticConnectionDAO.child_id == FixedConnectionDAO.parent_id,
+        onclause=PrismaticConnectionDAO._child_id == FixedConnectionDAO._parent_id,
     )
 
     assert len(session.scalars(query_by_hand).all()) == 1
@@ -248,8 +248,10 @@ def test_equal(session, database):
 
 
 def test_complicated_equal(session, database):
-    """Verify that a multi-variable entity query with equality constraints
-    translates correctly and returns the same result as EQL evaluation."""
+    """
+    Verify that a multi-variable entity query with equality constraints translates
+    correctly and returns the same result as EQL evaluation.
+    """
     world = World(
         1,
         [
@@ -295,13 +297,13 @@ def test_complicated_equal(session, database):
         select(ContainerDAO)
         .join(
             prismatic_alias,
-            onclause=prismatic_alias.parent_id == ContainerDAO.database_id,
+            onclause=prismatic_alias._parent_id == ContainerDAO.database_id,
         )
         .join(
-            drawer_alias, onclause=prismatic_alias.child_id == drawer_alias.database_id
+            drawer_alias, onclause=prismatic_alias._child_id == drawer_alias.database_id
         )
-        .join(fixed_alias, onclause=fixed_alias.parent_id == drawer_alias.database_id)
-        .join(handle_alias, onclause=fixed_alias.child_id == handle_alias.database_id)
+        .join(fixed_alias, onclause=fixed_alias._parent_id == drawer_alias.database_id)
+        .join(handle_alias, onclause=fixed_alias._child_id == handle_alias.database_id)
         .with_only_columns(drawer_alias)
     )
 
@@ -312,7 +314,7 @@ def test_complicated_equal(session, database):
     assert str(translator.sql_query) == str(expected)
 
     # SQL result matches EQL result
-    sql_result = translator.evaluate()
+    [sql_result] = translator.evaluate()
     assert sql_result.name == eql_result[0].name
 
 
@@ -763,7 +765,9 @@ def test_no_results(session, database):
 
 
 def test_set_of(session):
-    """Verify that set_of translates to SELECT of individual columns."""
+    """
+    Verify that set_of translates to SELECT of individual columns.
+    """
     b = variable(type_=Body, domain=[])
     query = an(set_of(b.size))
 
@@ -774,7 +778,9 @@ def test_set_of(session):
 
 
 def test_set_of_with_join(session):
-    """Verify that set_of with transitive attributes generates correct JOINs."""
+    """
+    Verify that set_of with transitive attributes generates correct JOINs.
+    """
     pose = variable(type_=KRROODPose, domain=[])
     query = an(set_of(pose.position.z))
 
@@ -813,12 +819,12 @@ def test_set_of_multi_variable(session, database):
         select(ContainerDAO, HandleDAO, FixedConnectionDAO, PrismaticConnectionDAO)
         .join(
             FixedConnectionDAO,
-            onclause=FixedConnectionDAO.parent_id == ContainerDAO.database_id,
+            onclause=FixedConnectionDAO._parent_id == ContainerDAO.database_id,
         )
-        .join(HandleDAO, onclause=FixedConnectionDAO.child_id == HandleDAO.database_id)
+        .join(HandleDAO, onclause=FixedConnectionDAO._child_id == HandleDAO.database_id)
         .join(
             PrismaticConnectionDAO,
-            onclause=PrismaticConnectionDAO.child_id == ContainerDAO.database_id,
+            onclause=PrismaticConnectionDAO._child_id == ContainerDAO.database_id,
         )
     )
     assert str(translator.sql_query) == str(expected)
@@ -830,9 +836,8 @@ def test_set_of_multi_variable(session, database):
 
 def test_set_of_move_action_transitive(session):
     """
-    Verify that set_of with both direct and transitive attributes generates correct JOINs.
-    This simulates the pattern of MoveToReachDAO.robot_x and
-    MoveToReachDAO.grasp_description.rotate_gripper from coraplex.
+    Verify that set_of with both direct and transitive attributes generates correct
+    JOINs.
     """
     from sqlalchemy.orm import aliased
 
@@ -860,7 +865,7 @@ def test_set_of_move_action_transitive(session):
         grasp_alias.approach_direction,
         grasp_alias.manipulation_offset,
     ).join(
-        grasp_alias, onclause=grasp_alias.database_id == MoveActionDAO.grasp_config_id
+        grasp_alias, onclause=grasp_alias.database_id == MoveActionDAO._grasp_config_id
     )
 
     assert str(translator.sql_query) == str(expected)
@@ -869,6 +874,7 @@ def test_set_of_move_action_transitive(session):
 def test_set_of_with_where(session):
     """
     Verify set_of with transitive attributes and WHERE condition.
+
     Simulates: SELECT x, y, z FROM PoseDAO JOIN PositionDAO WHERE z < 0.9
     """
     pose = variable(type_=KRROODPose, domain=[])
@@ -888,7 +894,7 @@ def test_set_of_with_where(session):
         select(KRROODPoseDAO)
         .join(
             position_alias,
-            onclause=position_alias.database_id == KRROODPoseDAO.position_id,
+            onclause=position_alias.database_id == KRROODPoseDAO._position_id,
         )
         .with_only_columns(
             position_alias.x,
@@ -904,6 +910,7 @@ def test_set_of_with_where(session):
 def test_set_of_same_table_twice(session):
     """
     Verify that two variables of the same type produce separate JOINs with aliases.
+
     Simulates: JOIN NavigateActionDAO np ON ... JOIN NavigateActionDAO np2 ON ...
     This uses two KRROODPose variables to test the same pattern.
     """
@@ -933,8 +940,8 @@ def test_set_of_same_table_twice(session):
     sql = str(translator.sql_query)
     assert "FixedConnectionDAO" in sql
     assert sql.count("JOIN") >= 2
-    assert "parent_id" in sql
-    assert "child_id" in sql
+    assert "_parent_id" in sql
+    assert "_child_id" in sql
     assert str(ContainerDAO.__tablename__) in sql
 
 
@@ -986,11 +993,11 @@ def test_plan_like_query(session):
         )
         .join(
             GraspConfigDAO,
-            onclause=GraspConfigDAO.database_id == MoveActionDAO.grasp_config_id,
+            onclause=GraspConfigDAO.database_id == MoveActionDAO._grasp_config_id,
         )
         .join(
             FixedConnectionDAO,
-            onclause=FixedConnectionDAO.parent_id == MoveActionDAO.grasp_config_id,
+            onclause=FixedConnectionDAO._parent_id == MoveActionDAO._grasp_config_id,
         )
         .where(MoveActionDAO.robot_x > 0.0)
     )
@@ -998,7 +1005,9 @@ def test_plan_like_query(session):
 
 
 def test_set_of_multi_variable_evaluate(session, database):
-    """Verify that evaluate() for set_of with multiple variables returns dicts."""
+    """
+    Verify that evaluate() for set_of with multiple variables returns dicts.
+    """
     world = World(
         1,
         [
@@ -1035,7 +1044,9 @@ def test_set_of_multi_variable_evaluate(session, database):
 
 
 def test_set_of_attribute_evaluate(session, database):
-    """Verify that evaluate() for set_of with Attribute variables returns dicts."""
+    """
+    Verify that evaluate() for set_of with Attribute variables returns dicts.
+    """
     session.add(BodyDAO(name="Body1", size=10))
     session.add(BodyDAO(name="Body2", size=20))
     session.commit()
@@ -1055,7 +1066,9 @@ def test_set_of_attribute_evaluate(session, database):
 
 
 def test_set_of_transitive_evaluate(session, database):
-    """Verify evaluate() for set_of with transitive attributes returns dicts."""
+    """
+    Verify evaluate() for set_of with transitive attributes returns dicts.
+    """
     session.add(
         KRROODPoseDAO(
             position=KRROODPositionDAO(x=1.0, y=2.0, z=3.0),
@@ -1089,10 +1102,10 @@ def test_set_of_transitive_evaluate(session, database):
 def test_big_query_select_part(session):
     """
     Simulate the SELECT part of the big plan query using existing test classes.
+
     Simulates: SELECT robot_x, robot_y, rotate_gripper FROM ...
                WHERE rotate_gripper < 0.9 ORDER BY robot_x
     """
-
     move_pick = variable(type_=MoveAction, domain=[])
     move_place = variable(type_=MoveAction, domain=[])
 
@@ -1124,7 +1137,7 @@ def test_big_query_select_part(session):
         )
         .join(
             grasp_alias,
-            onclause=grasp_alias.database_id == MoveActionDAO.grasp_config_id,
+            onclause=grasp_alias.database_id == MoveActionDAO._grasp_config_id,
         )
         .where(grasp_alias.rotate_gripper < 0.9)
         .order_by(MoveActionDAO.robot_x)
@@ -1174,9 +1187,10 @@ def test_cte_from_eql(session, database):
 
 def test_case_when_with_min(session):
     """
-    Verify that min(case_when(...)) translates to SQL MIN(CASE WHEN ... THEN ... END).
-    Simulates: MIN(CASE WHEN d.polymorphic_type='PickUpActionDAO' THEN id END)
-    from the big plan query.
+    Verify that min(case_when(...)) translates to SQL MIN(CASE WHEN ...
+
+    THEN ... END). Simulates: MIN(CASE WHEN d.polymorphic_type='PickUpActionDAO' THEN id
+    END) from the big plan query.
     """
     action = variable(MoveAction, domain=None)
 
@@ -1207,7 +1221,9 @@ def test_case_when_with_min(session):
 
 
 def test_case_when_direct_in_set_of(session, database):
-    """Verify case_when directly in set_of without aggregator using rich setup."""
+    """
+    Verify case_when directly in set_of without aggregator using rich setup.
+    """
     action_obj = MoveAction(robot_x=15.5, robot_y=0.0, hip_rotation=0.0)
 
     dao = to_dao(action_obj)
@@ -1237,7 +1253,9 @@ def test_case_when_direct_in_set_of(session, database):
 
 
 def test_case_when_with_max(session):
-    """Verify max(case_when(...)) translates correctly."""
+    """
+    Verify max(case_when(...)) translates correctly.
+    """
     action = variable(MoveAction, domain=None)
     query = an(
         set_of(
@@ -1266,11 +1284,11 @@ def test_case_when_with_max(session):
 
 def test_entity_from_multi_hop_attribute(session, database):
     """
-    Prove bug: entity(a.pose.position) where the chain is two hops deep
-    (NestedAction → pose → KRROODPose → position → KRROODPosition) raises
-    AttributeResolutionError because _translate_entity_from_attribute looks up the
-    outermost attribute name ('position') directly on the leaf DAO (NestedActionDAO)
-    instead of walking the full chain.
+    Prove bug: entity(a.pose.position) where the chain is two hops deep (NestedAction →
+    pose → KRROODPose → position → KRROODPosition) raises AttributeResolutionError
+    because _translate_entity_from_attribute looks up the outermost attribute name
+    ('position') directly on the leaf DAO (NestedActionDAO) instead of walking the full
+    chain.
 
     After the fix the translator must join through KRROODPoseDAO and return
     KRROODPositionDAO instances for all linked actions.
@@ -1281,12 +1299,10 @@ def test_entity_from_multi_hop_attribute(session, database):
     pose_low = KRROODPoseDAO(position=position_low, orientation=orientation)
     pose_high = KRROODPoseDAO(position=position_high, orientation=orientation)
     body = BodyDAO(name="TestBody", size=1)
-    session.add_all(
-        [
-            NestedActionDAO(obj=body, pose=pose_low),
-            NestedActionDAO(obj=body, pose=pose_high),
-        ]
-    )
+    session.add_all([
+        NestedActionDAO(obj=body, pose=pose_low),
+        NestedActionDAO(obj=body, pose=pose_high),
+    ])
     session.commit()
 
     a = variable(NestedAction, domain=[])
@@ -1306,15 +1322,11 @@ def test_entity_with_relationship_selected_variable(session, database):
     Prove bug: entity(m.grasp_config).where(m.robot_x > 0.5) produces a cross-join
     instead of an INNER JOIN, returning too many results.
 
-    After the fix, GraspConfigDAO must be joined with MoveActionDAO via the FK so
-    only the grasp_config linked to a high-robot_x move is returned.
+    After the fix, GraspConfigDAO must be joined with MoveActionDAO via the FK so only
+    the grasp_config linked to a high-robot_x move is returned.
     """
-    grasp_matching = GraspConfigDAO(
-        rotate_gripper=0.3, approach_direction=0.0, manipulation_offset=0.0
-    )
-    grasp_not_matching = GraspConfigDAO(
-        rotate_gripper=0.9, approach_direction=0.0, manipulation_offset=0.0
-    )
+    grasp_matching = GraspConfigDAO(rotate_gripper=0.3, approach_direction=0.0, manipulation_offset=0.0)
+    grasp_not_matching = GraspConfigDAO(rotate_gripper=0.9, approach_direction=0.0, manipulation_offset=0.0)
     session.add(grasp_matching)
     session.add(grasp_not_matching)
 
@@ -1341,11 +1353,11 @@ def test_entity_with_relationship_selected_variable(session, database):
 
 def test_count_all_derives_dao_from_where_clause(session, database):
     """
-    Prove bug: set_of(count_all()).where(m.robot_x > 0.5) raises NoDAOFoundError
-    because CountAll carries no DAO information.
+    Prove bug: set_of(count_all()).where(m.robot_x > 0.5) raises NoDAOFoundError because
+    CountAll carries no DAO information.
 
-    After the fix, the translator must fall back to the WHERE clause to find the
-    base DAO (MoveActionDAO via m.robot_x) and emit SELECT count(*) FROM MoveActionDAO.
+    After the fix, the translator must fall back to the WHERE clause to find the base
+    DAO (MoveActionDAO via m.robot_x) and emit SELECT count(*) FROM MoveActionDAO.
     """
     session.add(MoveActionDAO(robot_x=1.0, robot_y=0.0, hip_rotation=0.0))
     session.add(MoveActionDAO(robot_x=2.0, robot_y=0.0, hip_rotation=0.0))
@@ -1369,19 +1381,17 @@ def test_order_by_aggregate(session, database):
     raises an error because _apply_clauses calls translate_attribute() on a Count
     aggregator instead of _translate_comparator_operand().
 
-    After the fix, the translator must emit:
-    SELECT size, COUNT(*) FROM BodyDAO GROUP BY size ORDER BY COUNT(*) DESC
-    and return rows ordered with the most-frequent size first.
+    After the fix, the translator must emit: SELECT size, COUNT(*) FROM BodyDAO GROUP BY
+    size ORDER BY COUNT(*) DESC and return rows ordered with the most-frequent size
+    first.
     """
-    session.add_all(
-        [
-            BodyDAO(name="Body1", size=10),
-            BodyDAO(name="Body2", size=10),
-            BodyDAO(name="Body3", size=10),
-            BodyDAO(name="Body4", size=20),
-            BodyDAO(name="Body5", size=20),
-        ]
-    )
+    session.add_all([
+        BodyDAO(name="Body1", size=10),
+        BodyDAO(name="Body2", size=10),
+        BodyDAO(name="Body3", size=10),
+        BodyDAO(name="Body4", size=20),
+        BodyDAO(name="Body5", size=20),
+    ])
     session.commit()
 
     b = variable(type_=Body, domain=[])
@@ -1408,17 +1418,13 @@ def test_exists_in_where_clause(session, database):
     FROM MoveActionDAO
     WHERE EXISTS (
         SELECT 1 FROM GraspConfigDAO
-        WHERE MoveActionDAO.grasp_config_id = GraspConfigDAO.database_id
+        WHERE MoveActionDAO._grasp_config_id = GraspConfigDAO.database_id
     )
 
     so only MoveActions that have an associated GraspConfig are returned.
     """
-    grasp_a = GraspConfigDAO(
-        rotate_gripper=0.1, approach_direction=0.0, manipulation_offset=0.0
-    )
-    grasp_b = GraspConfigDAO(
-        rotate_gripper=0.5, approach_direction=0.0, manipulation_offset=0.0
-    )
+    grasp_a = GraspConfigDAO(rotate_gripper=0.1, approach_direction=0.0, manipulation_offset=0.0)
+    grasp_b = GraspConfigDAO(rotate_gripper=0.5, approach_direction=0.0, manipulation_offset=0.0)
     session.add_all([grasp_a, grasp_b])
 
     move_with_grasp_a = MoveActionDAO(robot_x=1.0, robot_y=0.0, hip_rotation=0.0)

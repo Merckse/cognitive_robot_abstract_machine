@@ -1,4 +1,4 @@
----
+from coraplex.plans.plan import Plan---
 jupyter:
   jupytext:
     text_representation:
@@ -22,10 +22,10 @@ are associated with a designator and can be performed by the robot.
 We will now go through a simple example of how to create a plan using the CoraPlex language. To create a plan you always 
 need a language expression.
 
-# Setup a World 
+# Setup a World
 
 ```python
-from coraplex.motion_executor import simulated_robot
+from coraplex.execution_environment import kinematically_simulated_robot
 from coraplex.testing import setup_world
 from coraplex.datastructures.dataclasses import Context
 from semantic_digital_twin.robots.pr2 import PR2
@@ -42,22 +42,21 @@ context = Context(world, pr2)
 
 ```python
 from coraplex.robot_plans import *
-from coraplex.datastructures.enums import Arms
 from coraplex.plans.factories import *
 from coraplex.robot_plans.actions.core.robot_body import ParkArmsAction
 from coraplex.robot_plans.actions.core.navigation import NavigateAction
 
 navigate = NavigateAction(Pose.from_xyz_quaternion(1, 1, 0, reference_frame=world.root))
-park = ParkArmsAction(Arms.BOTH)
+park = ParkArmsAction(pr2.all_arms)
 
 plan = sequential([navigate, park], context=context).plan
 ```
 
 This will create a simple plan which has a SequentialNode as its root and two DesignatorNodes as its children. You can 
-plot the plan using the `plot_plan_structure` method.
+open an interactive, real-time visualization of the plan using the `visualize` method.
 
 ```python
-plan.plot_plan_structure()
+plan.visualize()
 ```
 
 ## Arguments of Nodes
@@ -86,11 +85,34 @@ of Action Designators.
 
 ```python
 
-with simulated_robot:
+with kinematically_simulated_robot:
     plan.perform()
 ```
 
-This will execute the plan in a simulated environment. Now we can take a look at the arguments of the plan after execution.
+This will execute the plan in a simulated environment.
+
+### Collision Avoidance
+The execution environments accept a `collision_avoidance` flag. When set to `True`, an
+`ExternalCollisionAvoidance` goal is added to every motion state chart created within the
+environment, keeping the robot from colliding with the rest of the world while the motions run.
+
+```python
+with kinematically_simulated_robot(collision_avoidance=True):
+    plan.perform()
+```
+
+The flag also works when constructing an environment directly, and is restored correctly for
+nested environments:
+
+```python
+from coraplex.datastructures.enums import ExecutionType
+from coraplex.execution_environment import ExecutionEnvironment
+
+with ExecutionEnvironment(ExecutionType.KINEMATICALLY_SIMULATED, collision_avoidance=True):
+    plan.perform()
+```
+
+Now we can take a look at the arguments of the plan after execution.
 
 ```python
 print(plan.root.status)

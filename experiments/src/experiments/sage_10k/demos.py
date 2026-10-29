@@ -8,8 +8,6 @@ import numpy as np
 from krrood.entity_query_language.backends import ProbabilisticBackend
 from krrood.entity_query_language.factories import *
 from coraplex.datastructures.dataclasses import Context
-from coraplex.datastructures.enums import Arms, ApproachDirection, VerticalAlignment
-from coraplex.datastructures.grasp import GraspDescription
 from coraplex.plans.factories import sequential
 from coraplex.plans.plan import Plan
 from experiments.sage_10k.sage10k_actions import Sage10kOpenDoor
@@ -33,10 +31,12 @@ from semantic_digital_twin.semantic_annotations.natural_language import (
 )
 from semantic_digital_twin.reasoning.predicates import (
     compute_euclidean_planar_distance,
-    is_supported_by,
+    SupportedBy,
 )
 from semantic_digital_twin.robots.hsrb import HSRB
+from semantic_digital_twin.robots.robot_parts import Arm
 from semantic_digital_twin.semantic_annotations.mixins import HasRootBody
+from semantic_digital_twin.grasping.grasp_candidates import HasGraspCandidates
 from semantic_digital_twin.spatial_types import Point3, Pose, Vector3
 from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.world_entity import Body
@@ -46,6 +46,7 @@ from semantic_digital_twin.world_description.world_entity import Body
 class Sage10kAbstractDemoHSRB:
     """
     Base class for all Sage10k demos with the HSRB robot.
+
     Extend this class to create a new demo.
     """
 
@@ -56,12 +57,15 @@ class Sage10kAbstractDemoHSRB:
 
     world: Optional[World] = field(init=False, default=None)
     """
-    The world to execute the demo in. Only available after calling `create_world()`.
+    The world to execute the demo in.
+
+    Only available after calling `create_world()`.
     """
 
     def create_world(self):
         """
         Create the world and the HSRB robot.
+
         Updated self.world `in-place`.
         """
         loader = Sage10kDatasetLoader()
@@ -72,8 +76,9 @@ class Sage10kAbstractDemoHSRB:
     def preprocess_world(self):
         """
         Preprocess the world before executing the demo `in-place`.
-        Removes every body associated with a NaturalLanguageWithTypeDescription too close to the
-        main entrance.
+
+        Removes every body associated with a NaturalLanguageWithTypeDescription too
+        close to the main entrance.
 
         Can only be used after the world has been created.
         """
@@ -96,6 +101,13 @@ class Sage10kAbstractDemoHSRB:
     @cached_property
     def robot(self) -> HSRB:
         return self.world.get_semantic_annotations_by_type(HSRB)[0]
+
+    @property
+    def arm(self) -> Arm:
+        """
+        :return: The HSRB's only arm.
+        """
+        return self.robot.all_arms[0]
 
     def remove_rooted_annotations(self, semantic_annotations: Iterable[HasRootBody]):
         """
@@ -171,23 +183,25 @@ class Sage10kGymDemo(Sage10kAbstractDemoHSRB):
 
     @property
     def plan(self):
-        arm = Arms.RIGHT
+        arm = self.arm
         context = Context.from_world(self.world, query_backend=ProbabilisticBackend())
-        grasp_description = GraspDescription(
-            ApproachDirection.FRONT,
-            VerticalAlignment.NoAlignment,
-            self.robot.arm.end_effector,
-        )
         open_door = Sage10kOpenDoor(self.main_entrance)
 
         [body] = self.world.get_bodies_by_global_position(
             self.world_P_object_of_interest, 0.1
         )
+        object_of_interest = an(
+            entity(
+                semantic_annotation := variable(
+                    HasGraspCandidates, domain=self.world.semantic_annotations
+                )
+            ).where(semantic_annotation.root == body)
+        ).first()
 
         plan = sequential(
             [
                 open_door,
-                ParkArmsAction(Arms.BOTH),
+                ParkArmsAction(self.robot.all_arms),
                 NavigateAction(
                     Pose.from_xyz_rpy(2.81, -3.76, reference_frame=self.world.root)
                 ),
@@ -197,17 +211,15 @@ class Sage10kGymDemo(Sage10kAbstractDemoHSRB):
                 NavigateAction(
                     Pose.from_xyz_rpy(0, 0.8, reference_frame=self.world.root)
                 ),
-                MoveAndPickUpAction(
-                    object_designator=body,
+                MoveAndPickUpAction.from_standing_position(
+                    grasp=object_of_interest.grasp_candidates()[0],
                     standing_position=self.pickup_navigation_pose,
                     arm=arm,
-                    grasp_description=grasp_description,
                 ),
-                ParkArmsAction(Arms.BOTH),
-                MoveAndPlaceAction(
-                    object_designator=body,
+                ParkArmsAction(self.robot.all_arms),
+                MoveAndPlaceAction.from_standing_position(
                     standing_position=self.place_navigation_pose,
-                    arm=arm,
+                    object_designator=object_of_interest,
                     target_location=self.place_pose,
                 ),
             ],
@@ -229,7 +241,7 @@ class Sage10kTVStudioDemo(Sage10kAbstractDemoHSRB):
         return Pose.from_xyz_rpy(x=12.5, y=3, z=0, reference_frame=self.world.root)
 
     @property
-    def book_to_pick(self) -> Body:
+    def book_to_pick(self) -> NaturalLanguageWithTypeDescription:
         @symbolic_function
         def closes_to_border(target) -> float:
             return self.world.transform(target.global_pose, couch_table.root).y
@@ -250,7 +262,7 @@ class Sage10kTVStudioDemo(Sage10kAbstractDemoHSRB):
             entity(v)
             .where(
                 contains(v.type_description, "book"),
-                is_supported_by(v.root, couch_table.root),
+                SupportedBy(v.root, couch_table.root),
             )
             .ordered_by(
                 v,
@@ -260,20 +272,13 @@ class Sage10kTVStudioDemo(Sage10kAbstractDemoHSRB):
                 descending=False,
             )
         )
-        book = target.first()
-        return book.root
+        return target.first()
 
     @property
     def plan(self) -> Plan:
         context = Context.from_world(self.world, query_backend=ProbabilisticBackend())
-        grasp_description = GraspDescription(
-            approach_direction=ApproachDirection.FRONT,
-            vertical_alignment=VerticalAlignment.NoAlignment,
-            end_effector=context.robot.arm.end_effector,
-            rotate_gripper=True,
-        )
         open_door = Sage10kOpenDoor(self.main_entrance)
-        mpa = MoveAndPickUpAction(
+        mpa = MoveAndPickUpAction.from_standing_position(
             standing_position=Pose.from_xyz_rpy(
                 x=6.83,
                 y=5.38,
@@ -281,9 +286,8 @@ class Sage10kTVStudioDemo(Sage10kAbstractDemoHSRB):
                 yaw=1.78,
                 reference_frame=self.world.root,
             ),
-            object_designator=self.book_to_pick,
-            arm=Arms.LEFT,
-            grasp_description=grasp_description,
+            grasp=self.book_to_pick.grasp_candidates()[0],
+            arm=self.arm,
         )
         present_book = NavigateAction(target_location=self.robot_starting_pose)
 
@@ -313,7 +317,7 @@ class Sage10kCraftsmanLobbyDemo(Sage10kAbstractDemoHSRB):
         )
 
     @property
-    def book_to_pick(self) -> Body:
+    def book_to_pick(self) -> NaturalLanguageWithTypeDescription:
         @symbolic_function
         def closes_to_border(target) -> float:
             return self.world.transform(target.global_pose, couch_table.root).y
@@ -334,7 +338,7 @@ class Sage10kCraftsmanLobbyDemo(Sage10kAbstractDemoHSRB):
             entity(v)
             .where(
                 contains(v.type_description, "book"),
-                is_supported_by(v.root, couch_table.root),
+                SupportedBy(v.root, couch_table.root),
             )
             .ordered_by(
                 v,
@@ -344,8 +348,7 @@ class Sage10kCraftsmanLobbyDemo(Sage10kAbstractDemoHSRB):
                 descending=False,
             )
         )
-        book = target.first()
-        return book.root
+        return target.first()
 
     @property
     def plan(self):
@@ -354,25 +357,17 @@ class Sage10kCraftsmanLobbyDemo(Sage10kAbstractDemoHSRB):
         )
         context = Context.from_world(self.world, query_backend=ProbabilisticBackend())
         open_door = Sage10kOpenDoor(self.main_entrance)
-        grasp_description = GraspDescription(
-            approach_direction=ApproachDirection.BACK,
-            vertical_alignment=VerticalAlignment.NoAlignment,
-            end_effector=context.robot.arm.end_effector,
-            rotate_gripper=True,
-        )
-        mpu = MoveAndPickUpAction(
+        mpu = MoveAndPickUpAction.from_standing_position(
             standing_position=self.pickup_navigation_pose,
-            object_designator=self.book_to_pick,
-            arm=Arms.LEFT,
-            grasp_description=grasp_description,
+            grasp=self.book_to_pick.grasp_candidates()[0],
+            arm=self.arm,
         )
-        mpp = MoveAndPlaceAction(
+        mpp = MoveAndPlaceAction.from_standing_position(
             standing_position=Pose.from_xyz_rpy(
                 x=5.48, y=6.96, reference_frame=self.world.root
             ),
-            object_designator=self.book_to_pick,
             target_location=target_pose,
-            arm=Arms.LEFT,
+            object_designator=self.book_to_pick,
         )
 
         return sequential([open_door, mpu, mpp], context=context).plan
@@ -397,7 +392,7 @@ class Sage10kTropicalWarehouse(Sage10kAbstractDemoHSRB):
         )
 
     @property
-    def target_to_pick(self) -> Body:
+    def target_to_pick(self) -> NaturalLanguageWithTypeDescription:
 
         @symbolic_function
         def planar_distance(point1: Point3, point2: Point3):
@@ -419,17 +414,11 @@ class Sage10kTropicalWarehouse(Sage10kAbstractDemoHSRB):
             )
             .first()
         )
-        return target.root
+        return target
 
     @property
     def plan(self) -> Plan:
         context = Context.from_world(self.world, query_backend=ProbabilisticBackend())
-        grasp_description = GraspDescription(
-            approach_direction=ApproachDirection.RIGHT,
-            vertical_alignment=VerticalAlignment.NoAlignment,
-            end_effector=context.robot.arm.end_effector,
-            rotate_gripper=False,
-        )
         navigate1 = NavigateAction(
             target_location=Pose.from_xyz_rpy(
                 2.86, 5.89, reference_frame=self.world.root
@@ -440,15 +429,14 @@ class Sage10kTropicalWarehouse(Sage10kAbstractDemoHSRB):
                 2.86, 5.89, reference_frame=self.world.root
             )
         )
-        mpu = MoveAndPickUpAction(
+        mpu = MoveAndPickUpAction.from_standing_position(
             standing_position=self.pickup_navigation_pose,
-            object_designator=self.target_to_pick,
-            arm=Arms.LEFT,
-            grasp_description=grasp_description,
+            grasp=self.target_to_pick.grasp_candidates()[0],
+            arm=self.arm,
         )
 
         open_door = Sage10kOpenDoor(self.main_entrance)
-        park_arms = ParkArmsAction(arm=Arms.LEFT)
+        park_arms = ParkArmsAction([self.arm])
         present = NavigateAction(target_location=self.robot_starting_pose)
 
         return sequential(
@@ -476,7 +464,7 @@ class Sage10kVaporwave(Sage10kAbstractDemoHSRB):
         )
 
     @property
-    def target_to_pick(self) -> Body:
+    def target_to_pick(self) -> NaturalLanguageWithTypeDescription:
 
         @symbolic_function
         def planar_distance(point1: Point3, point2: Point3):
@@ -490,7 +478,7 @@ class Sage10kVaporwave(Sage10kAbstractDemoHSRB):
             self.world.semantic_annotations,
         )
         target = (
-            an(entity(target_v.root))
+            an(entity(target_v))
             .ordered_by(
                 variable=target_v,
                 key=lambda x: planar_distance(x.root.global_pose.position, point_guess),
@@ -503,35 +491,33 @@ class Sage10kVaporwave(Sage10kAbstractDemoHSRB):
     @property
     def plan(self) -> Plan:
         context = Context.from_world(self.world, query_backend=ProbabilisticBackend())
-        grasp_description = GraspDescription(
-            approach_direction=ApproachDirection.FRONT,
-            vertical_alignment=VerticalAlignment.TOP,
-            end_effector=context.robot.arm.end_effector,
-            rotate_gripper=True,
-        )
-        mpu = MoveAndPickUpAction(
+        mpu = MoveAndPickUpAction.from_standing_position(
             standing_position=self.pickup_navigation_pose,
-            object_designator=self.target_to_pick,
-            arm=Arms.LEFT,
-            grasp_description=grasp_description,
+            grasp=self.target_to_pick.grasp_candidates()[0],
+            arm=self.arm,
         )
 
         open_door = Sage10kOpenDoor(self.main_entrance)
-        park_arms = ParkArmsAction(arm=Arms.LEFT)
+        park_arms = ParkArmsAction([self.arm])
         place_target_pose = Pose.from_xyz_rpy(
             x=0.605, y=1.615, z=0.66, reference_frame=self.world.root
         )
-        mpp = MoveAndPlaceAction(
+        mpp = MoveAndPlaceAction.from_standing_position(
             standing_position=Pose.from_xyz_rpy(
                 x=0.605, y=2.115, yaw=-1.5708, reference_frame=self.world.root
             ),
             target_location=place_target_pose,
             object_designator=self.target_to_pick,
-            arm=Arms.LEFT,
         )
 
         return sequential(
-            [open_door, park_arms, mpu, ParkArmsAction(arm=Arms.LEFT), mpp],
+            [
+                open_door,
+                park_arms,
+                mpu,
+                ParkArmsAction([self.arm]),
+                mpp,
+            ],
             context=context,
         ).plan
 
@@ -557,7 +543,7 @@ class Sage10kEclecticResidence(Sage10kAbstractDemoHSRB):
         )
 
     @property
-    def target_to_pick(self) -> Body:
+    def target_to_pick(self) -> NaturalLanguageWithTypeDescription:
 
         @symbolic_function
         def planar_distance(point1: Point3, point2: Point3):
@@ -571,7 +557,7 @@ class Sage10kEclecticResidence(Sage10kAbstractDemoHSRB):
             self.world.semantic_annotations,
         )
         target = (
-            an(entity(target_v.root))
+            an(entity(target_v))
             .ordered_by(
                 variable=target_v,
                 key=lambda x: planar_distance(x.root.global_pose.position, point_guess),
@@ -584,27 +570,20 @@ class Sage10kEclecticResidence(Sage10kAbstractDemoHSRB):
     @property
     def plan(self) -> Plan:
         context = Context.from_world(self.world, query_backend=ProbabilisticBackend())
-        grasp_description = GraspDescription(
-            approach_direction=ApproachDirection.RIGHT,
-            vertical_alignment=VerticalAlignment.TOP,
-            end_effector=context.robot.arm.end_effector,
-            rotate_gripper=True,
-        )
         navigate1 = NavigateAction(
             Pose.from_xyz_rpy(x=1.27, y=4.45, reference_frame=self.world.root)
         )
         navigate2 = NavigateAction(
             Pose.from_xyz_rpy(x=1.27, y=4.45, reference_frame=self.world.root)
         )
-        mpu = MoveAndPickUpAction(
+        mpu = MoveAndPickUpAction.from_standing_position(
             standing_position=self.pickup_navigation_pose,
-            object_designator=self.target_to_pick,
-            arm=Arms.LEFT,
-            grasp_description=grasp_description,
+            grasp=self.target_to_pick.grasp_candidates()[0],
+            arm=self.arm,
         )
 
         open_door = Sage10kOpenDoor(self.main_entrance)
-        park_arms = ParkArmsAction(arm=Arms.LEFT)
+        park_arms = ParkArmsAction([self.arm])
         present = NavigateAction(target_location=self.robot_starting_pose)
 
         return sequential(
@@ -613,7 +592,7 @@ class Sage10kEclecticResidence(Sage10kAbstractDemoHSRB):
                 navigate1,
                 park_arms,
                 mpu,
-                ParkArmsAction(arm=Arms.LEFT),
+                ParkArmsAction([self.arm]),
                 navigate2,
                 present,
             ],
@@ -627,43 +606,36 @@ class Sage10kSouthwesternStoreDemo(Sage10kAbstractDemoHSRB):
 
     @property
     def plan(self):
-        arm = Arms.RIGHT
+        arm = self.arm
         context = Context.from_world(self.world, query_backend=ProbabilisticBackend())
-        grasp_description = GraspDescription(
-            ApproachDirection.RIGHT,
-            VerticalAlignment.NoAlignment,
-            self.robot.arm.end_effector,
-        )
         open_door = Sage10kOpenDoor(self.main_entrance)
 
         plan = sequential(
             [
                 open_door,
-                ParkArmsAction(Arms.BOTH),
+                ParkArmsAction(self.robot.all_arms),
                 NavigateAction(
                     target_location=Pose.from_xyz_rpy(
                         x=0.81, y=4.81, reference_frame=self.world.root
                     )
                 ),
-                MoveAndPickUpAction(
-                    object_designator=self.world_P_object_of_interest,
+                MoveAndPickUpAction.from_standing_position(
+                    grasp=self.object_of_interest.grasp_candidates()[0],
                     standing_position=self.pickup_navigation_pose,
                     arm=arm,
-                    grasp_description=grasp_description,
                 ),
-                ParkArmsAction(Arms.BOTH),
+                ParkArmsAction(self.robot.all_arms),
                 NavigateAction(
                     target_location=Pose.from_xyz_rpy(
                         x=0.81, y=4.81, reference_frame=self.world.root
                     )
                 ),
-                MoveAndPlaceAction(
-                    object_designator=self.world_P_object_of_interest,
+                MoveAndPlaceAction.from_standing_position(
                     standing_position=self.place_navigation_pose,
-                    arm=arm,
+                    object_designator=self.object_of_interest,
                     target_location=self.place_pose,
                 ),
-                ParkArmsAction(Arms.BOTH),
+                ParkArmsAction(self.robot.all_arms),
                 NavigateAction(
                     target_location=Pose.from_xyz_rpy(
                         x=0.48, y=4.81, reference_frame=self.world.root
@@ -675,7 +647,7 @@ class Sage10kSouthwesternStoreDemo(Sage10kAbstractDemoHSRB):
         return plan
 
     @property
-    def world_P_object_of_interest(self):
+    def object_of_interest(self) -> NaturalLanguageWithTypeDescription:
         @symbolic_function
         def planar_distance(point1: Point3, point2: Point3):
             return point1.euclidean_distance(point2)
@@ -695,7 +667,7 @@ class Sage10kSouthwesternStoreDemo(Sage10kAbstractDemoHSRB):
             )
         ).first()
 
-        return bottle.root
+        return bottle
 
     @property
     def robot_starting_pose(self):
@@ -751,35 +723,28 @@ class Sage10kBrutalistStoreDemo(Sage10kAbstractDemoHSRB):
 
     @property
     def plan(self):
-        arm = Arms.RIGHT
+        arm = self.arm
         context = Context.from_world(self.world, query_backend=ProbabilisticBackend())
-        grasp_description = GraspDescription(
-            ApproachDirection.RIGHT,
-            VerticalAlignment.NoAlignment,
-            self.robot.arm.end_effector,
-        )
         open_door = Sage10kOpenDoor(self.main_entrance)
 
         plan = sequential(
             [
                 open_door,
-                ParkArmsAction(Arms.BOTH),
+                ParkArmsAction(self.robot.all_arms),
                 NavigateAction(
                     target_location=Pose.from_xyz_rpy(
                         x=12, y=8.13, reference_frame=self.world.root
                     )
                 ),
-                MoveAndPickUpAction(
-                    object_designator=self.world_P_object_of_interest,
+                MoveAndPickUpAction.from_standing_position(
+                    grasp=self.object_of_interest.grasp_candidates()[0],
                     standing_position=self.pickup_navigation_pose,
                     arm=arm,
-                    grasp_description=grasp_description,
                 ),
-                ParkArmsAction(Arms.BOTH),
-                MoveAndPlaceAction(
-                    object_designator=self.world_P_object_of_interest,
+                ParkArmsAction(self.robot.all_arms),
+                MoveAndPlaceAction.from_standing_position(
                     standing_position=self.place_navigation_pose,
-                    arm=arm,
+                    object_designator=self.object_of_interest,
                     target_location=self.place_pose,
                 ),
                 NavigateAction(
@@ -793,7 +758,7 @@ class Sage10kBrutalistStoreDemo(Sage10kAbstractDemoHSRB):
         return plan
 
     @property
-    def world_P_object_of_interest(self):
+    def object_of_interest(self) -> NaturalLanguageWithTypeDescription:
         @symbolic_function
         def planar_distance(point1: Point3, point2: Point3):
             return point1.euclidean_distance(point2)
@@ -813,7 +778,7 @@ class Sage10kBrutalistStoreDemo(Sage10kAbstractDemoHSRB):
             )
         ).first()
 
-        return bottle.root
+        return bottle
 
     @property
     def robot_starting_pose(self):
@@ -857,32 +822,25 @@ class Sage10kAmericanBuffetDemo(Sage10kAbstractDemoHSRB):
 
     @property
     def plan(self):
-        arm = Arms.RIGHT
+        arm = self.arm
         context = Context.from_world(self.world, query_backend=ProbabilisticBackend())
-        grasp_description = GraspDescription(
-            ApproachDirection.LEFT,
-            VerticalAlignment.NoAlignment,
-            self.robot.arm.end_effector,
-        )
         open_door = Sage10kOpenDoor(self.main_entrance)
         navigate = Pose.from_xyz_rpy(x=5.14, y=2.85, reference_frame=self.world.root)
 
         plan = sequential(
             [
                 open_door,
-                ParkArmsAction(Arms.BOTH),
-                MoveAndPickUpAction(
-                    object_designator=self.world_P_object_of_interest,
+                ParkArmsAction(self.robot.all_arms),
+                MoveAndPickUpAction.from_standing_position(
+                    grasp=self.object_of_interest.grasp_candidates()[0],
                     standing_position=self.pickup_navigation_pose,
                     arm=arm,
-                    grasp_description=grasp_description,
                 ),
-                ParkArmsAction(Arms.BOTH),
+                ParkArmsAction(self.robot.all_arms),
                 NavigateAction(target_location=navigate),
-                MoveAndPlaceAction(
-                    object_designator=self.world_P_object_of_interest,
+                MoveAndPlaceAction.from_standing_position(
                     standing_position=self.place_navigation_pose,
-                    arm=arm,
+                    object_designator=self.object_of_interest,
                     target_location=self.place_pose,
                 ),
             ],
@@ -895,7 +853,7 @@ class Sage10kAmericanBuffetDemo(Sage10kAbstractDemoHSRB):
         return Pose.from_xyz_rpy(5.45, 13.00, reference_frame=self.world.root)
 
     @property
-    def world_P_object_of_interest(self) -> Body:
+    def object_of_interest(self) -> NaturalLanguageWithTypeDescription:
         @symbolic_function
         def planar_distance(point1: Point3, point2: Point3):
             return point1.euclidean_distance(point2)
@@ -917,10 +875,10 @@ class Sage10kAmericanBuffetDemo(Sage10kAbstractDemoHSRB):
         cup = (
             an(entity(v_cup)).where(
                 contains(v_cup.type_description, "cup"),
-                is_supported_by(v_cup.root, table.root, 0.05),
+                SupportedBy(v_cup.root, table.root, 0.05),
             )
         ).first()
-        return cup.root
+        return cup
 
     @property
     def pickup_navigation_pose(self) -> Pose:

@@ -1,7 +1,7 @@
 """
 The HSR lays a place setting in the SuTuRo lab of
-:class:`~suturo_resources.suturo_map_new.SuturoLabWithSuturoMapKitchen`: it carries the
-milk, a bowl and a spoon from the kitchen counter top onto the desk.
+:class:`~semantic_digital_twin.predefined_maps.kitchen_environment.KitchenEnvironment`:
+it carries the milk, a bowl and a spoon from the kitchen counter top onto the desk.
 
 Runs in simulation, so nothing on the network is needed. The scaffolding in
 :mod:`coraplex.demonstrations` owns the ROS session and publishes the world to Rviz, so
@@ -28,6 +28,7 @@ from coraplex.demonstrations import RobotDemonstration
 from coraplex.plans.context_extensions import RobotAccess, StatementGrounding
 from coraplex.plans.executors import KinematicallySimulatedPlanExecutor, PlanExecutor
 from coraplex.robot_plans.actions.composite.transporting import TransportAction
+from coraplex.robot_plans.actions.core.pick_up import PickUpAction
 from coraplex.robot_plans.actions.core.robot_body import MoveTorsoAction, ParkArmsAction
 from cramph.composites import Sequence
 from cramph.context import ContextExtension, StatechartContext
@@ -45,12 +46,14 @@ from semantic_digital_twin.collision_checking.collision_rules import (
     AllowCollisionBetweenGroups,
 )
 from semantic_digital_twin.datastructures.definitions import TorsoState
+from semantic_digital_twin.predefined_maps.kitchen_environment import KitchenEnvironment
 from semantic_digital_twin.robots.hsrb import HSRB
 from semantic_digital_twin.semantic_annotations.mixins import (
     HasRootKinematicStructureEntity,
 )
 from semantic_digital_twin.semantic_annotations.semantic_annotations import (
     Bowl,
+    Floor,
     Milk,
     Spoon,
 )
@@ -65,7 +68,7 @@ from semantic_digital_twin.specifications.semantic_annotations import (
 )
 from semantic_digital_twin.specifications.worlds import WorldSpecification
 from semantic_digital_twin.world import World
-from suturo_resources.suturo_map import SuturoLabWithSuturoMapKitchen
+from semantic_digital_twin.world_description.connections import FixedConnection
 
 # %% what the scene is built from
 
@@ -85,7 +88,7 @@ class LabBody(StrEnum):
     The lab's own bodies the demonstration refers to.
     """
 
-    COUNTER_TOP = "counterTop"
+    COUNTER_TOP = "counter_top"
     """
     The kitchen counter top the place setting starts on, which also marks whether the
     scene was already populated.
@@ -108,7 +111,7 @@ class LabSurfaceHeight(float, Enum):
     How high above the floor the lab's surfaces the place setting stands on lie.
     """
 
-    COUNTER_TOP = 0.545
+    COUNTER_TOP = 0.85
     DESK = 0.765
 
 
@@ -252,11 +255,18 @@ class SuturoNewLabDemonstration(RobotDemonstration):
 
     ros_node_name: str = "suturo_new_lab_demo_node"
 
-    lab: SuturoLabWithSuturoMapKitchen = field(
-        default_factory=SuturoLabWithSuturoMapKitchen
-    )
+    lab: KitchenEnvironment = field(default_factory=KitchenEnvironment)
     """
     The lab the demonstration runs in.
+    """
+
+    map_T_room: HomogeneousTransformationMatrix = field(
+        default_factory=lambda: HomogeneousTransformationMatrix.from_xyz_rpy(
+            x=0.33, y=0.28, yaw=0.10707963267
+        )
+    )
+    """
+    Where the frame :attr:`lab` is laid out in lies in the map the robot localizes in.
     """
 
     robot_yaw_at_desk: float = np.pi
@@ -280,7 +290,7 @@ class SuturoNewLabDemonstration(RobotDemonstration):
             Milk,
             SceneFile.MILK,
             LabSurfaceHeight.COUNTER_TOP,
-            start_x=1.7,
+            start_x=2.3,
             start_y=-1.97,
             along_desk=1.08,
             origin_height=0.09,
@@ -295,7 +305,7 @@ class SuturoNewLabDemonstration(RobotDemonstration):
             Bowl,
             SceneFile.BOWL,
             LabSurfaceHeight.COUNTER_TOP,
-            start_x=1.95,
+            start_x=2.55,
             start_y=-1.97,
             along_desk=1.28,
             origin_height=0.035,
@@ -310,7 +320,7 @@ class SuturoNewLabDemonstration(RobotDemonstration):
             Spoon,
             SceneFile.SPOON,
             LabSurfaceHeight.COUNTER_TOP,
-            start_x=2.2,
+            start_x=2.8,
             start_y=-1.97,
             along_desk=1.48,
             origin_height=0.01,
@@ -330,21 +340,30 @@ class SuturoNewLabDemonstration(RobotDemonstration):
 
         They are laid 20 cm apart, so placing one keeps the gripper clear of the last.
         """
-        return self.milk, self.bowl, self.spoon
+        return self.milk, self.bowl
 
     def scene_specification(self) -> WorldSpecification:
         """
         :return: An empty world: the lab is not described by a model file, so
-            :meth:`build_scene` builds it with :class:`SuturoLabWithSuturoMapKitchen`
-            instead.
+            :meth:`build_scene` builds it with :class:`KitchenEnvironment` instead.
         """
         return WorldSpecification()
 
     def build_scene(self) -> World:
         """
-        :return: The lab, populated by :meth:`populate_scene`.
+        :return: The map, holding :attr:`lab` at :attr:`map_T_room`, populated by
+            :meth:`populate_scene`.
         """
-        scene = self.lab.build()
+        scene = World.create_with_root_body()
+        lab = self.lab.get_world()
+        scene.merge_world(
+            lab,
+            root_connection=FixedConnection(
+                parent=scene.root,
+                child=lab.root,
+                parent_T_connection_expression=self.map_T_room,
+            ),
+        )
         self.populate_scene(scene)
         return scene
 
@@ -354,7 +373,7 @@ class SuturoNewLabDemonstration(RobotDemonstration):
         """
         return RobotSpecification(
             semantic_annotation_type=self.used_robot,
-            world_T_odom=self.lab.map_T_room @ self.robot_start_in_room,
+            world_T_odom=self.map_T_room @ self.robot_start_in_room,
         )
 
     def is_scene_populated(self, world: World) -> bool:
@@ -365,24 +384,27 @@ class SuturoNewLabDemonstration(RobotDemonstration):
         Put the place setting where it starts.
         """
         for placed_object in self.place_setting:
-            placed_object.spawn(world, self.lab.map_T_room)
+            placed_object.spawn(world, self.map_T_room)
 
     def build_context_extensions(self, world: World) -> list[ContextExtension]:
         """
-        Resolve the robot and let its wrist touch the place setting, see
+        Resolve the robot and let it touch the place setting and the floors, see
         :meth:`relax_collision_rules`.
         """
         robot = world.get_semantic_annotations_by_type(self.used_robot)[0]
-        self.relax_collision_rules(world)
+        self.relax_collision_rules(world, robot)
         return [RobotAccess(robot), StatementGrounding()]
 
-    def relax_collision_rules(self, world: World) -> None:
+    def relax_collision_rules(self, world: World, robot: HSRB) -> None:
         """
         Let the HSR's wrist come as close to the place setting as a grasp needs: the
         HSR's end effector begins at its palm, so the wrist behind it would otherwise
         stall short of the grasp.
 
+        Let the HSR touch the floors of the lab, which its wheels stand on.
+
         :param world: The world holding the robot, the lab and the place setting.
+        :param robot: The HSR.
         """
         with world.modify_world():
             world.collision_manager.add_ignore_collision_rule(
@@ -391,6 +413,15 @@ class SuturoNewLabDemonstration(RobotDemonstration):
                     body_group_b=[
                         placed_object.annotation_in(world).root
                         for placed_object in self.place_setting
+                    ],
+                )
+            )
+            world.collision_manager.add_ignore_collision_rule(
+                AllowCollisionBetweenGroups(
+                    body_group_a=robot.bodies_with_collision,
+                    body_group_b=[
+                        floor.root
+                        for floor in world.get_semantic_annotations_by_type(Floor)
                     ],
                 )
             )
@@ -413,6 +444,7 @@ class SuturoNewLabDemonstration(RobotDemonstration):
             ),
         )
 
+
     def build_statechart(self, context: StatechartContext) -> Statechart:
         """
         Carry each object to its place on the desk.
@@ -430,7 +462,7 @@ class SuturoNewLabDemonstration(RobotDemonstration):
                         TransportAction.from_graspable_by_closest_grasps(
                             placed_object.annotation_in(world),
                             placed_object.target_location(
-                                world, self.lab.map_T_room, self.robot_yaw_at_desk
+                                world, self.map_T_room, self.robot_yaw_at_desk
                             ),
                             arm,
                             context,

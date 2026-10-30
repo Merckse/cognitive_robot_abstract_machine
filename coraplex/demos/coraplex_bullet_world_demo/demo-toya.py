@@ -24,13 +24,14 @@ from pathlib import Path
 import numpy as np
 from typing_extensions import Type
 
-from coraplex.datastructures.dataclasses import Context
-from coraplex.datastructures.enums import ExecutionType
 from coraplex.demonstrations import RobotDemonstration
-from coraplex.plans.factories import sequential
-from coraplex.plans.plan_node import PlanNode
+from coraplex.plans.context_extensions import RobotAccess, StatementGrounding
+from coraplex.plans.executors import KinematicallySimulatedPlanExecutor, PlanExecutor
 from coraplex.robot_plans.actions.composite.transporting import TransportAction
 from coraplex.robot_plans.actions.core.robot_body import MoveTorsoAction, ParkArmsAction
+from cramph.composites import Sequence
+from cramph.context import ContextExtension, StatechartContext
+from cramph.statechart import Statechart
 from krrood.entity_query_language.factories import an, entity, variable
 from krrood.patterns.path_enumeration import PathEnumeration
 from segmind.detectors.agent_event_detector_nodes import GraspDetector
@@ -50,7 +51,6 @@ from semantic_digital_twin.semantic_annotations.mixins import (
 )
 from semantic_digital_twin.semantic_annotations.semantic_annotations import (
     Bowl,
-    Floor,
     Milk,
     Spoon,
 )
@@ -367,44 +367,24 @@ class SuturoNewLabDemonstration(RobotDemonstration):
         for placed_object in self.place_setting:
             placed_object.spawn(world, self.lab.map_T_room)
 
-    def build_context(self, world: World) -> Context:
+    def build_context_extensions(self, world: World) -> list[ContextExtension]:
         """
-        Resolve the robot, let it stand on the floors and let its wrist touch the place
-        setting, see :meth:`relax_collision_rules`.
+        Resolve the robot and let its wrist touch the place setting, see
+        :meth:`relax_collision_rules`.
         """
         robot = world.get_semantic_annotations_by_type(self.used_robot)[0]
-        self.relax_collision_rules(world, robot)
-        return Context(
-            world=world,
-            robot=robot,
-            ros_node=self.ros_node,
-            sampling_seed=0,
-            alternative_motion_mappings=self.alternative_motion_mappings,
-            _debug=self.debug,
-        )
+        self.relax_collision_rules(world)
+        return [RobotAccess(robot), StatementGrounding()]
 
-    def relax_collision_rules(self, world: World, robot: HSRB) -> None:
+    def relax_collision_rules(self, world: World) -> None:
         """
-        Let the HSR stand on the lab's floors, whose collision geometry its bumpers stand
-        closer to than collision avoidance allows, and let its wrist come as close to
-        the place setting as a grasp needs: the HSR's end effector begins at its palm,
-        so the wrist behind it would otherwise stall short of the grasp.
+        Let the HSR's wrist come as close to the place setting as a grasp needs: the
+        HSR's end effector begins at its palm, so the wrist behind it would otherwise
+        stall short of the grasp.
 
         :param world: The world holding the robot, the lab and the place setting.
-        :param robot: The robot.
         """
         with world.modify_world():
-            world.collision_manager.add_ignore_collision_rule(
-                AllowCollisionBetweenGroups(
-                    body_group_a=[
-                        body for body in robot.bodies if body.has_collision()
-                    ],
-                    body_group_b=[
-                        floor.root
-                        for floor in world.get_semantic_annotations_by_type(Floor)
-                    ],
-                )
-            )
             world.collision_manager.add_ignore_collision_rule(
                 AllowCollisionBetweenGroups(
                     body_group_a=[world.get_body_by_name(HSRBBody.WRIST)],
@@ -433,34 +413,38 @@ class SuturoNewLabDemonstration(RobotDemonstration):
             ),
         )
 
-    def build_plan(self, context: Context) -> PlanNode:
+    def build_statechart(self, context: StatechartContext) -> Statechart:
         """
         Carry each object to its place on the desk.
         """
         world = context.world
-        arm = context.robot.all_arms[0]
-        return sequential(
-            [
-                ParkArmsAction(context.robot.all_arms),
-                MoveTorsoAction(TorsoState.HIGH),
-                *(
-                    TransportAction.from_graspable_by_closest_grasps(
-                        placed_object.annotation_in(world),
-                        placed_object.target_location(
-                            world, self.lab.map_T_room, self.robot_yaw_at_desk
-                        ),
-                        arm,
-                        context,
-                    )
-                    for placed_object in self.place_setting
-                ),
-            ],
-            context=context,
-        ).plan
+        robot = context.require_extension(RobotAccess).robot
+        arm = robot.all_arms[0]
+        statechart = Statechart(context=context)
+        statechart.add_node(
+            Sequence(
+                nodes=[
+                    ParkArmsAction(arms=robot.all_arms),
+                    MoveTorsoAction(torso_state=TorsoState.HIGH),
+                    *(
+                        TransportAction.from_graspable_by_closest_grasps(
+                            placed_object.annotation_in(world),
+                            placed_object.target_location(
+                                world, self.lab.map_T_room, self.robot_yaw_at_desk
+                            ),
+                            arm,
+                            context,
+                        )
+                        for placed_object in self.place_setting
+                    ),
+                ]
+            )
+        )
+        return statechart
 
 
 def main(
-    execution_type: ExecutionType = ExecutionType.KINEMATICALLY_SIMULATED,
+    executor_type: type[PlanExecutor] = KinematicallySimulatedPlanExecutor,
     collision_avoidance: bool = True,
     event_segmentation: bool = True,
     debug: bool = False,
@@ -468,14 +452,15 @@ def main(
     """
     Run the demonstration.
 
-    :param execution_type: Whether to drive the real robot or simulate it.
-    :param collision_avoidance: Whether every motion state chart avoids collisions.
+    :param executor_type: The executor running the plan, which decides whether it drives
+        the real robot or simulates it.
+    :param collision_avoidance: Whether the statechart avoids collisions.
     :param event_segmentation: Whether SegMind segments the run into events.
     :param debug: Whether to run in debug mode, publishing every copy of the world a
         candidate is tried in.
     """
     SuturoNewLabDemonstration(
-        execution_type=execution_type,
+        executor_type=executor_type,
         collision_avoidance=collision_avoidance,
         event_segmentation=event_segmentation,
         debug=debug,

@@ -32,7 +32,7 @@ from typing_extensions import TYPE_CHECKING
 from coraplex.datastructures.enums import ReachFraction
 from coraplex.demonstrations import RobotDemonstration
 from coraplex.plans.context_extensions import RobotAccess, StatementGrounding
-from coraplex.plans.executors import KinematicallySimulatedPlanExecutor, PlanExecutor
+from coraplex.plans.executors import KinematicallySimulatedPlanExecutor, PlanExecutor, PhysicallySimulatedPlanExecutor
 from coraplex.robot_plans.actions.composite.carrying import CarryAction
 from coraplex.robot_plans.actions.composite.facing import FaceAndLookAtAction
 from coraplex.robot_plans.actions.composite.transporting import (
@@ -474,8 +474,8 @@ class ThrowAwayDemonstration(RobotDemonstration):
 
 
 def main(
-    executor_type: type[PlanExecutor] = KinematicallySimulatedPlanExecutor,
-    collision_avoidance: bool = True,
+    executor_type: type[PlanExecutor] = PhysicallySimulatedPlanExecutor,
+    collision_avoidance: bool = False,
     event_segmentation: bool = True,
     debug: bool = False,
 ) -> None:

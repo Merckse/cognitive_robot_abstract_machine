@@ -49,7 +49,8 @@ from semantic_digital_twin.specifications.semantic_annotations import (
 from semantic_digital_twin.specifications.worlds import WorldSpecification
 from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.contact import ContactParameters
-from semantic_digital_twin.world_description.geometry import Scale
+from semantic_digital_twin.world_description.geometry import Box, Mesh, Scale
+from semantic_digital_twin.world_description.shape_collection import ShapeCollection
 from semantic_digital_twin.world_description.world_entity import Body
 
 # %% the scene
@@ -63,6 +64,13 @@ class SceneFile(PathEnumeration):
     MILK = Path(__file__).resolve().parents[2] / "resources" / "objects" / "milk.stl"
     """
     The mesh of the milk carton.
+    """
+
+    TRASHCAN = (
+        Path(__file__).resolve().parents[2] / "resources" / "objects" / "trashcan.stl"
+    )
+    """
+    The mesh of the trash can.
     """
 
 
@@ -114,24 +122,23 @@ class MilkTransportDemonstration(RobotDemonstration):
     """
     The counter the milk starts on, in front of the robot.
     """
-
-    table: BodySpecification = field(
-        default_factory=lambda: BodySpecification.box(
-            SceneBody.TABLE,
-            Scale(0.6, 1.0, 0.7),
-            parent_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=-1.0, z=0.35),
-        )
-    )
+    #
+    # table: BodySpecification = field(
+    #     default_factory=lambda: BodySpecification.box(
+    #         SceneBody.TABLE,
+    #         Scale(0.6, 1.0, 0.7),
+    #         parent_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=-1.0, z=0.35),
+    #     )
+    # )
+    # """
+    # The table the milk is carried to, behind the robot.
+    # """
 
     trashcan: BodySpecification = field(
-        default_factory=lambda: BodySpecification.box(
-            SceneBody.TRASHCAN,
-            Scale(0.3, 0.3, 0.3),
-            parent_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=0,y=1, z=0.15),
-        )
+        default_factory=lambda: MilkTransportDemonstration._hollow_trashcan()
     )
     """
-    The table the milk is carried to, behind the robot.
+    The trash can standing on the floor behind the robot.
     """
 
     milk_depth: float = 0.15
@@ -170,8 +177,66 @@ class MilkTransportDemonstration(RobotDemonstration):
     fingers hold it.
     """
 
+    @classmethod
+    def _hollow_trashcan(
+        cls,
+        width: float = 0.31,
+        depth: float = 0.32,
+        height: float = 0.39,
+        wall_thickness: float = 0.01,
+    ) -> BodySpecification:
+        """
+        :param width: The outer extent of the trash can along x, in meters.
+        :param depth: The outer extent of the trash can along y, in meters.
+        :param height: The height of the trash can, in meters.
+        :param wall_thickness: The thickness of its walls and bottom, in meters.
+        :return: The trash can, shown as its mesh but colliding as an open-top box of
+            thin walls, since MuJoCo would collide with the mesh's closed convex hull.
+        """
+        half_height = height / 2
+        walls = [
+            Box(
+                scale=Scale(width, depth, wall_thickness),
+                origin=HomogeneousTransformationMatrix.from_xyz_rpy(
+                    z=wall_thickness / 2
+                ),
+            ),
+            *(
+                Box(
+                    scale=Scale(wall_thickness, depth, height),
+                    origin=HomogeneousTransformationMatrix.from_xyz_rpy(
+                        x=side * (width - wall_thickness) / 2, z=half_height
+                    ),
+                )
+                for side in (-1, 1)
+            ),
+            *(
+                Box(
+                    scale=Scale(width, wall_thickness, height),
+                    origin=HomogeneousTransformationMatrix.from_xyz_rpy(
+                        y=side * (depth - wall_thickness) / 2, z=half_height
+                    ),
+                )
+                for side in (-1, 1)
+            ),
+        ]
+        return BodySpecification(
+            SceneBody.TRASHCAN,
+            ShapeCollection(walls),
+            visual_shapes=Mesh(
+                filename=str(SceneFile.TRASHCAN),
+                # The mesh is in millimetres, with its base off-centre around
+                # (125, 105), enlarged 2.25-fold.
+                scale=Scale(0.00225, 0.00225, 0.00225),
+                origin=HomogeneousTransformationMatrix.from_xyz_rpy(
+                    x=-0.28125, y=-0.23625
+                ),
+            ).as_shape_collection(),
+            parent_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(x=-1.0),
+        )
+
     def scene_specification(self) -> WorldSpecification:
-        return WorldSpecification(objects=[self.floor, self.counter, self.table, self.trashcan])
+        return WorldSpecification(objects=[self.floor, self.counter, self.trashcan])
 
     def robot_specification(self) -> RobotSpecification:
         return RobotSpecification(self.used_robot)
@@ -212,18 +277,22 @@ class MilkTransportDemonstration(RobotDemonstration):
         taking_pose = self._standing_pose_facing(
             self._milk_pose_on(world.get_body_by_name(SceneBody.COUNTER), milk)
         )
-        target = self._milk_pose_on(world.get_body_by_name(SceneBody.TABLE), milk)
+        target = self._milk_pose_on(world.get_body_by_name(SceneBody.TRASHCAN), milk)
         statechart = Statechart(context=context)
         statechart.add_node(
             Sequence(
                 nodes=[
-                    MoveTorsoAction(torso_state=TorsoState.HIGH),
                     ParkArmsAction(arms=hsrb.all_arms),
                     NavigateAction(target_location=taking_pose),
+                    MoveTorsoAction(torso_state=TorsoState.HIGH),
                     PickUpAction(grasp=self._grasp_from(taking_pose, milk), arm=arm),
+                    ParkArmsAction(arms=hsrb.all_arms),
+                    MoveTorsoAction(torso_state=TorsoState.LOW),
                     NavigateAction(target_location=self._standing_pose_facing(target)),
+                    MoveTorsoAction(torso_state=TorsoState.HIGH),
                     PlaceAction(object_designator=milk, target_location=target),
                     ParkArmsAction(arms=hsrb.all_arms),
+                    MoveTorsoAction(torso_state=TorsoState.LOW),
                 ]
             )
         )

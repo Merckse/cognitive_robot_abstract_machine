@@ -10,7 +10,8 @@ the run can be watched while it happens.
 
 The pick-up leaves the grasp and the standing pose open: each pair is tried out before
 it is executed, and the first that succeeds is taken. At the trash can the robot stands
-in front of its open side, facing it, and holds the milk turned the way it took it.
+on the side it comes from, clear of the trash can and within reach of its opening,
+facing it, and holds the milk turned the way it took it.
 
 .. note:: A kinematically simulated world has no gravity, so there the milk stays where
     it is let go, above the trash can.
@@ -30,36 +31,24 @@ import mujoco
 import numpy as np
 from typing_extensions import TYPE_CHECKING
 
-from coraplex.datastructures.enums import ReachFraction
 from coraplex.demonstrations import RobotDemonstration
+from coraplex.locations.locations import ReachabilityLocation
 from coraplex.plans.context_extensions import RobotAccess, StatementGrounding
 from coraplex.plans.executors import (
-    KinematicallySimulatedPlanExecutor,
     PlanExecutor,
     PhysicallySimulatedPlanExecutor,
 )
-from coraplex.plans.plan_transformation import PlanTransformation
 from coraplex.querying.grasp_closeness import GraspsByCloseness
-from coraplex.robot_plans.actions.composite.carrying import CarryAction
-from coraplex.robot_plans.actions.composite.facing import FaceAndLookAtAction
 from coraplex.robot_plans.actions.composite.transporting import (
     MoveAndPickUpAction,
     MoveAndPlaceAction,
     TransportAction,
 )
-from coraplex.robot_plans.actions.core.navigation import (
-    FaceAtAction,
-    LookAtAction,
-    NavigateAction,
-)
-from coraplex.robot_plans.actions.core.pick_up import PickUpAction
-from coraplex.robot_plans.actions.core.placing import PlaceAction
 from coraplex.robot_plans.actions.core.robot_body import MoveTorsoAction, ParkArmsAction
-from coraplex.robot_plans.plan_transformations import CloseFingersToObjectWidth
 from cramph.composites import Sequence
 from cramph.context import ContextExtension, StatechartContext
 from cramph.statechart import Statechart
-from krrood.entity_query_language.factories import a, an, entity, variable
+from krrood.entity_query_language.factories import an, entity, variable
 from krrood.patterns.path_enumeration import PathEnumeration
 from segmind.detectors.agent_event_detector_nodes import GraspDetector
 from segmind.detectors.coarse_event_detector_nodes import (
@@ -86,7 +75,7 @@ from semantic_digital_twin.semantic_annotations.semantic_annotations import (
     TrashCan,
 )
 from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix
-from semantic_digital_twin.spatial_types.spatial_types import Pose
+from semantic_digital_twin.spatial_types.spatial_types import Point3, Pose
 from semantic_digital_twin.specifications.connections import Connection6DoFSpecification
 from semantic_digital_twin.specifications.kinematic_structure_entities import (
     BodySpecification,
@@ -100,7 +89,6 @@ from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import FixedConnection
 from semantic_digital_twin.world_description.contact import ContactParameters
 from semantic_digital_twin.world_description.geometry import Scale
-from semantic_digital_twin.world_description.world_entity import Body
 
 if TYPE_CHECKING:
     from semantic_digital_twin.robots.robot_parts import Arm
@@ -144,8 +132,14 @@ class LabSurfaceHeight(float, Enum):
     """
 
     COUNTER_TOP = 0.85
+    """
+    The kitchen counter top.
+    """
 
     DINING_TABLE = 0.78
+    """
+    The dining table.
+    """
 
 
 @dataclass
@@ -203,6 +197,16 @@ class Garbage:
     How far above the trash can's rim the bottom of the object is when it is let go.
     """
 
+    box_scale: Scale = field(default_factory=lambda: Scale(0.05, 0.05, 0.2))
+    """
+    The size of the box the object is simulated as.
+    """
+
+    grasp_height: float = 0.05
+    """
+    How far above the grasp closest to the robot the object is taken hold of.
+    """
+
     def spawn(self, world: World, map_T_room: HomogeneousTransformationMatrix) -> None:
         """
         Put the object where it starts and name it among the world's annotations.
@@ -211,12 +215,12 @@ class Garbage:
         :param map_T_room: Where the frame the lab is laid out in lies in the map.
         """
         name = self.semantic_annotation_type.__name__
-        obj = SemanticAnnotationWithRootSpecification(
+        garbage = SemanticAnnotationWithRootSpecification(
             name=name,
             semantic_annotation_type=self.semantic_annotation_type,
-            root_specification=BodySpecification.box(
+            root_specification=BodySpecification.mesh(
                 name,
-                scale=Scale(0.05, 0.05, 0.2),
+                str(self.mesh),
                 connection_specification=Connection6DoFSpecification(),
             ),
         ).spawn(
@@ -229,7 +233,7 @@ class Garbage:
                 yaw=self.start_yaw,
             ),
         )
-        ContactParameters.create_for_grasped_object().apply_to([obj.root])
+        ContactParameters.create_for_grasped_object().apply_to([garbage.root])
 
     def annotation_in(self, world: World) -> HasRootKinematicStructureEntity:
         """
@@ -247,17 +251,12 @@ class Garbage:
             ).evaluate()
         )
 
-    def drop_location(
-        self, world: World, trash_can: TrashCan, robot_yaw_at_trash_can: float
-    ) -> Pose:
+    def drop_point(self, world: World, trash_can: TrashCan) -> Point3:
         """
         :param world: The world the trash can stands in.
         :param trash_can: The trash can the object is thrown into.
-        :param robot_yaw_at_trash_can: Which way the robot faces in the trash can's
-            frame while it stands at the trash can.
-        :return: Where the object is let go: centred above the trash can's opening,
-            :attr:`drop_clearance` above its rim, and turned against the robot as it was
-            when the robot picked it up.
+        :return: Where the object's origin is when it is let go, in the world frame:
+            centred above the trash can's opening, :attr:`drop_clearance` above its rim.
         """
         rim_height = (
             trash_can.as_bounding_box_collection_in_frame(trash_can.root)
@@ -265,12 +264,27 @@ class Garbage:
             .max_z
         )
         return world.transform(
-            Pose.from_xyz_rpy(
+            Point3(
                 z=rim_height + self.drop_clearance + self.origin_height,
-                yaw=robot_yaw_at_trash_can + self.yaw_against_robot,
                 reference_frame=trash_can.root,
             ),
             world.root,
+        )
+
+    def drop_location(self, drop_point: Point3, robot_yaw: float) -> Pose:
+        """
+        :param drop_point: Where the object's origin is when it is let go.
+        :param robot_yaw: Which way the robot faces in the frame of `drop_point` while
+            it lets go of the object.
+        :return: The object at `drop_point`, turned against the robot as it was when
+            the robot picked it up.
+        """
+        return Pose.from_xyz_rpy(
+            x=float(drop_point.x),
+            y=float(drop_point.y),
+            z=float(drop_point.z),
+            yaw=robot_yaw + self.yaw_against_robot,
+            reference_frame=drop_point.reference_frame,
         )
 
 
@@ -299,13 +313,6 @@ class ThrowAwayDemonstration(RobotDemonstration):
     )
     """
     Where the frame :attr:`lab` is laid out in lies in the map the robot localizes in.
-    """
-
-    robot_yaw_at_trash_can: float = np.pi / 2
-    """
-    Which way the robot faces in the trash can's frame while it stands at the trash can:
-    towards the dining table, so the robot stands on the open floor in front of the
-    trash can.
     """
 
     trash_can_in_room: HomogeneousTransformationMatrix = field(
@@ -473,41 +480,80 @@ class ThrowAwayDemonstration(RobotDemonstration):
             ),
         )
 
-    def standing_position_at(self, world: World, trash_can: TrashCan, arm: Arm) -> Pose:
+    def standing_position_at(
+        self,
+        context: StatechartContext,
+        drop_point: Point3,
+        arm: Arm,
+        approach_from: Pose,
+    ) -> Pose:
         """
-        :param world: The world the trash can stands in.
-        :param trash_can: The trash can the robot throws the garbage into.
+        :param context: The context of the plan, whose robot throws the garbage away.
+        :param drop_point: Where the garbage is let go, in the world frame.
         :param arm: The arm that holds the garbage over the trash can.
-        :return: Where the robot stands to throw the garbage away: in front of the trash
-            can, facing it along :attr:`robot_yaw_at_trash_can`, as far off it as the
-            robot stands off what it grasps.
+        :param approach_from: Where the robot stands before it goes to the trash can,
+            in the world frame.
+        :return: Of the poses clear of the surroundings from which `arm` reaches
+            `drop_point`, the one closest to standing at the arm's reach
+            distance off `drop_point` on the side of `approach_from`.
         """
-        stand_off = arm.approximate_length() * ReachFraction.GRASPING
-        return world.transform(
-            Pose.from_xyz_rpy(
-                x=-stand_off * np.cos(self.robot_yaw_at_trash_can),
-                y=-stand_off * np.sin(self.robot_yaw_at_trash_can),
-                yaw=self.robot_yaw_at_trash_can,
-                reference_frame=trash_can.root,
+        location = ReachabilityLocation(
+            target_pose=Pose(
+                position=drop_point, reference_frame=drop_point.reference_frame
             ),
-            world.root,
+            arm=arm,
+            context=context,
+        )
+        drop_position = drop_point.to_np()[:2]
+        approach_direction = approach_from.position.to_np()[:2] - drop_position
+        ideal_position = drop_position + (
+            approach_direction
+            / np.linalg.norm(approach_direction)
+            * float(arm.approximate_length())
+            * location.reach_fraction
+        )
+        return min(
+            location,
+            key=lambda candidate: np.linalg.norm(
+                candidate.position.to_np()[:2] - ideal_position
+            ),
         )
 
-    def _grasp_from(self, standing_pose: Pose, milk: Milk) -> GraspCandidate:
+    @staticmethod
+    def orient_towards(pose: Pose, target: HasRootKinematicStructureEntity) -> Pose:
         """
+        :param pose: The pose to turn, in the world frame.
+        :param target: The object to face.
+        :return: `pose` at its position, turned level about the vertical so that its
+            x-axis points at the origin of `target`.
+        """
+        offset = (
+            target.root.global_pose.position.to_np()[:2] - pose.position.to_np()[:2]
+        )
+        return Pose.from_xyz_rpy(
+            x=float(pose.x),
+            y=float(pose.y),
+            z=float(pose.z),
+            yaw=float(np.arctan2(offset[1], offset[0])),
+            reference_frame=pose.reference_frame,
+        )
+
+    def _grasp_from(
+        self, world: World, standing_pose: Pose, milk: Milk
+    ) -> GraspCandidate:
+        """
+        :param world: The world the milk stands in.
         :param standing_pose: Where the robot stands to take the milk.
         :param milk: The milk.
         :return: The milk's grasp closest to the robot standing there, raised
-            :attr:`grasp_height` above the milk's origin.
+            :attr:`Garbage.grasp_height` along the milk's vertical.
         """
         [closest] = GraspsByCloseness(milk, standing_pose, number_of_grasps=1)()
         milk_T_raised_grasp = (
             HomogeneousTransformationMatrix.from_xyz_rpy(
-                z=0.05, reference_frame=milk.root
+                z=self.garbage.grasp_height, reference_frame=milk.root
             )
-            @ milk.root._world.transform(
-                closest.grasp_pose, milk.root
-            ).homogeneous_matrix
+            @ world.transform(closest.grasp_pose, milk.root).homogeneous_matrix
         )
         return replace(closest, grasp_pose=milk_T_raised_grasp.pose)
 
@@ -537,10 +583,12 @@ class ThrowAwayDemonstration(RobotDemonstration):
         arm = robot.all_arms[0]
         [trash_can] = world.get_semantic_annotations_by_type(TrashCan)
         garbage = self.garbage.annotation_in(world)
-        drop_location = self.garbage.drop_location(
-            world, trash_can, self.robot_yaw_at_trash_can
-        )
         taking_pose = self._standing_pose_facing(garbage.root.global_pose)
+        drop_point = self.garbage.drop_point(world, trash_can)
+        throwing_pose = self.orient_towards(
+            self.standing_position_at(context, drop_point, arm, taking_pose), trash_can
+        )
+        drop_location = self.garbage.drop_location(drop_point, float(throwing_pose.yaw))
         statechart = Statechart(context=context)
         statechart.add_node(
             Sequence(
@@ -551,48 +599,18 @@ class ThrowAwayDemonstration(RobotDemonstration):
                     # it, which a statement's trial run of the place would not see.
                     TransportAction(
                         pick_up=MoveAndPickUpAction.from_standing_position(
-                            taking_pose, self._grasp_from(taking_pose, garbage), arm
+                            taking_pose,
+                            self._grasp_from(world, taking_pose, garbage),
+                            arm,
                         ),
                         place=MoveAndPlaceAction.from_standing_position(
-                            self.standing_position_at(world, trash_can, arm),
+                            throwing_pose,
                             drop_location,
                             garbage,
                         ),
                     ),
                     ParkArmsAction(arms=robot.all_arms),
                     MoveTorsoAction(torso_state=TorsoState.HIGH),
-                    # PickUpAction(
-                    #     grasp=self._grasp_from(garbage.global_transform.pose, garbage),
-                    #     arm=arm,
-                    # ),
-                    # TODO: Transport action, not recognizing object in gripper somehow
-                    # TransportAction(
-                    #     pick_up=MoveAndPickUpAction.from_graspable_by_closest_grasps(
-                    #         garbage, arm, context
-                    #     ),
-                    #     # A statement, so the place is built once the pick-up it
-                    #     # takes the grasp from has run.
-                    #     place=a(MoveAndPlaceAction)(
-                    #         carry=a(CarryAction)(
-                    #             navigate=a(NavigateAction)(
-                    #                 target_location=self.standing_position_at(
-                    #                     world, trash_can, arm
-                    #                 )
-                    #             )
-                    #         ),
-                    #         face_and_look_at=a(FaceAndLookAtAction)(
-                    #             face_at=a(FaceAtAction)(target=drop_location),
-                    #             look_at=a(LookAtAction)(target=drop_location),
-                    #         ),
-                    #         place=a(PlaceAction)(
-                    #             object_designator=garbage,
-                    #             target_location=drop_location,
-                    #         ),
-                    #     ),
-                    # ),
-                    # ParkArmsAction(arms=robot.all_arms),
-                    # MoveTorsoAction(torso_state=TorsoState.LOW),
-                    # NavigateAction(target_location=drop_location)
                 ]
             )
         )
@@ -608,16 +626,20 @@ class ThrowAwayDemonstration(RobotDemonstration):
         )
 
 
+# %% running the demonstration
+
+
 def main(
     headless: bool = False,
     executor_type: type[PlanExecutor] = PhysicallySimulatedPlanExecutor,
-    collision_avoidance: bool = False,
+    collision_avoidance: bool = True,
     event_segmentation: bool = True,
     debug: bool = False,
 ) -> None:
     """
     Run the demonstration.
 
+    :param headless: Whether to run the simulation without a viewer.
     :param executor_type: The executor running the plan, which decides whether it drives
         the real robot or simulates it.
     :param collision_avoidance: Whether the statechart avoids collisions.

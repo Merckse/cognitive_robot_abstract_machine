@@ -10,7 +10,8 @@ the run can be watched while it happens.
 
 The pick-up leaves the grasp and the standing pose open: each pair is tried out before
 it is executed, and the first that succeeds is taken. At the trash can the robot stands
-in front of its open side, facing it, and holds the milk turned the way it took it.
+on the side it comes from, clear of the trash can and within reach of its opening,
+facing it, and holds the milk turned the way it took it.
 
 .. note:: A kinematically simulated world has no gravity, so there the milk stays where
     it is let go, above the trash can.
@@ -29,10 +30,10 @@ from pathlib import Path
 import numpy as np
 from typing_extensions import TYPE_CHECKING
 
-from coraplex.datastructures.enums import ReachFraction
 from coraplex.demonstrations import RobotDemonstration
+from coraplex.locations.locations import ReachabilityLocation
 from coraplex.plans.context_extensions import RobotAccess, StatementGrounding
-from coraplex.plans.executors import KinematicallySimulatedPlanExecutor, PlanExecutor, PhysicallySimulatedPlanExecutor
+from coraplex.plans.executors import KinematicallySimulatedPlanExecutor, PlanExecutor
 from coraplex.robot_plans.actions.composite.carrying import CarryAction
 from coraplex.robot_plans.actions.composite.facing import FaceAndLookAtAction
 from coraplex.robot_plans.actions.composite.transporting import (
@@ -74,7 +75,7 @@ from semantic_digital_twin.semantic_annotations.semantic_annotations import (
     TrashCan,
 )
 from semantic_digital_twin.spatial_types import HomogeneousTransformationMatrix
-from semantic_digital_twin.spatial_types.spatial_types import Pose
+from semantic_digital_twin.spatial_types.spatial_types import Point3, Pose
 from semantic_digital_twin.specifications.kinematic_structure_entities import (
     BodySpecification,
 )
@@ -129,6 +130,9 @@ class LabSurfaceHeight(float, Enum):
     """
 
     COUNTER_TOP = 0.85
+    """
+    The kitchen counter top.
+    """
 
 
 @dataclass
@@ -225,17 +229,12 @@ class Garbage:
             ).evaluate()
         )
 
-    def drop_location(
-        self, world: World, trash_can: TrashCan, robot_yaw_at_trash_can: float
-    ) -> Pose:
+    def drop_point(self, world: World, trash_can: TrashCan) -> Point3:
         """
         :param world: The world the trash can stands in.
         :param trash_can: The trash can the object is thrown into.
-        :param robot_yaw_at_trash_can: Which way the robot faces in the trash can's
-            frame while it stands at the trash can.
-        :return: Where the object is let go: centred above the trash can's opening,
-            :attr:`drop_clearance` above its rim, and turned against the robot as it was
-            when the robot picked it up.
+        :return: Where the object's origin is when it is let go, in the world frame:
+            centred above the trash can's opening, :attr:`drop_clearance` above its rim.
         """
         rim_height = (
             trash_can.as_bounding_box_collection_in_frame(trash_can.root)
@@ -243,12 +242,27 @@ class Garbage:
             .max_z
         )
         return world.transform(
-            Pose.from_xyz_rpy(
+            Point3(
                 z=rim_height + self.drop_clearance + self.origin_height,
-                yaw=robot_yaw_at_trash_can + self.yaw_against_robot,
                 reference_frame=trash_can.root,
             ),
             world.root,
+        )
+
+    def drop_location(self, drop_point: Point3, robot_yaw: float) -> Pose:
+        """
+        :param drop_point: Where the object's origin is when it is let go.
+        :param robot_yaw: Which way the robot faces in the frame of `drop_point` while
+            it lets go of the object.
+        :return: The object at `drop_point`, turned against the robot as it was when
+            the robot picked it up.
+        """
+        return Pose.from_xyz_rpy(
+            x=float(drop_point.x),
+            y=float(drop_point.y),
+            z=float(drop_point.z),
+            yaw=robot_yaw + self.yaw_against_robot,
+            reference_frame=drop_point.reference_frame,
         )
 
 
@@ -277,13 +291,6 @@ class ThrowAwayDemonstration(RobotDemonstration):
     )
     """
     Where the frame :attr:`lab` is laid out in lies in the map the robot localizes in.
-    """
-
-    robot_yaw_at_trash_can: float = np.pi / 2
-    """
-    Which way the robot faces in the trash can's frame while it stands at the trash can:
-    towards the cooking table that stands right behind the trash can, so the robot
-    stands on the open floor in front of it.
     """
 
     robot_start_in_room: HomogeneousTransformationMatrix = field(
@@ -405,24 +412,62 @@ class ThrowAwayDemonstration(RobotDemonstration):
             ),
         )
 
-    def standing_position_at(self, world: World, trash_can: TrashCan, arm: Arm) -> Pose:
+    def standing_position_at(
+        self,
+        context: StatechartContext,
+        drop_point: Point3,
+        arm: Arm,
+        approach_from: Pose,
+    ) -> Pose:
         """
-        :param world: The world the trash can stands in.
-        :param trash_can: The trash can the robot throws the garbage into.
+        :param context: The context of the plan, whose robot throws the garbage away.
+        :param drop_point: Where the garbage is let go, in the world frame.
         :param arm: The arm that holds the garbage over the trash can.
-        :return: Where the robot stands to throw the garbage away: in front of the trash
-            can, facing it along :attr:`robot_yaw_at_trash_can`, as far off it as the
-            robot stands off what it grasps.
+        :param approach_from: Where the robot comes from to the trash can, in the world
+            frame.
+        :return: Of the poses clear of the surroundings from which `arm` reaches
+            `drop_point`, the one closest to standing at the arm's reach distance off
+            `drop_point` on the side of `approach_from`.
         """
-        stand_off = arm.approximate_length() * ReachFraction.GRASPING
-        return world.transform(
-            Pose.from_xyz_rpy(
-                x=-stand_off * np.cos(self.robot_yaw_at_trash_can),
-                y=-stand_off * np.sin(self.robot_yaw_at_trash_can),
-                yaw=self.robot_yaw_at_trash_can,
-                reference_frame=trash_can.root,
+        location = ReachabilityLocation(
+            target_pose=Pose(
+                position=drop_point, reference_frame=drop_point.reference_frame
             ),
-            world.root,
+            arm=arm,
+            context=context,
+        )
+        drop_position = drop_point.to_np()[:2]
+        approach_direction = approach_from.position.to_np()[:2] - drop_position
+        ideal_position = drop_position + (
+            approach_direction
+            / np.linalg.norm(approach_direction)
+            * float(arm.approximate_length())
+            * location.reach_fraction
+        )
+        return min(
+            location,
+            key=lambda candidate: np.linalg.norm(
+                candidate.position.to_np()[:2] - ideal_position
+            ),
+        )
+
+    @staticmethod
+    def orient_towards(pose: Pose, target: HasRootKinematicStructureEntity) -> Pose:
+        """
+        :param pose: The pose to turn, in the world frame.
+        :param target: The object to face.
+        :return: `pose` at its position, turned level about the vertical so that its
+            x-axis points at the origin of `target`.
+        """
+        offset = (
+            target.root.global_pose.position.to_np()[:2] - pose.position.to_np()[:2]
+        )
+        return Pose.from_xyz_rpy(
+            x=float(pose.x),
+            y=float(pose.y),
+            z=float(pose.z),
+            yaw=float(np.arctan2(offset[1], offset[0])),
+            reference_frame=pose.reference_frame,
         )
 
     def build_statechart(self, context: StatechartContext) -> Statechart:
@@ -434,9 +479,14 @@ class ThrowAwayDemonstration(RobotDemonstration):
         arm = robot.all_arms[0]
         [trash_can] = world.get_semantic_annotations_by_type(TrashCan)
         garbage = self.garbage.annotation_in(world)
-        drop_location = self.garbage.drop_location(
-            world, trash_can, self.robot_yaw_at_trash_can
+        drop_point = self.garbage.drop_point(world, trash_can)
+        throwing_pose = self.orient_towards(
+            self.standing_position_at(
+                context, drop_point, arm, garbage.root.global_pose
+            ),
+            trash_can,
         )
+        drop_location = self.garbage.drop_location(drop_point, float(throwing_pose.yaw))
         statechart = Statechart(context=context)
         statechart.add_node(
             Sequence(
@@ -452,9 +502,7 @@ class ThrowAwayDemonstration(RobotDemonstration):
                         place=a(MoveAndPlaceAction)(
                             carry=a(CarryAction)(
                                 navigate=a(NavigateAction)(
-                                    target_location=self.standing_position_at(
-                                        world, trash_can, arm
-                                    )
+                                    target_location=throwing_pose
                                 )
                             ),
                             face_and_look_at=a(FaceAndLookAtAction)(
@@ -473,8 +521,11 @@ class ThrowAwayDemonstration(RobotDemonstration):
         return statechart
 
 
+# %% running the demonstration
+
+
 def main(
-    executor_type: type[PlanExecutor] = PhysicallySimulatedPlanExecutor,
+    executor_type: type[PlanExecutor] = KinematicallySimulatedPlanExecutor,
     collision_avoidance: bool = False,
     event_segmentation: bool = True,
     debug: bool = False,

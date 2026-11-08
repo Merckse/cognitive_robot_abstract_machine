@@ -38,6 +38,8 @@ from coraplex.plans.executors import (
     PlanExecutor,
     PhysicallySimulatedPlanExecutor,
 )
+from coraplex.robot_plans.actions.core.pick_up import PickUpAction
+
 from coraplex.querying.grasp_closeness import GraspsByCloseness
 from coraplex.robot_plans.actions.composite.transporting import (
     MoveAndPickUpAction,
@@ -86,7 +88,10 @@ from semantic_digital_twin.specifications.semantic_annotations import (
 )
 from semantic_digital_twin.specifications.worlds import WorldSpecification
 from semantic_digital_twin.world import World
-from semantic_digital_twin.world_description.connections import FixedConnection
+from semantic_digital_twin.world_description.connections import (
+    ActiveConnection1DOF,
+    FixedConnection,
+)
 from semantic_digital_twin.world_description.contact import ContactParameters
 from semantic_digital_twin.world_description.geometry import Scale
 
@@ -306,6 +311,14 @@ class ThrowAwayDemonstration(RobotDemonstration):
     The lab the demonstration runs in.
     """
 
+    lab_parts_movable: bool = False
+    """
+    Whether the drawers and doors of :attr:`lab` can move.
+
+    Parts that cannot move are welded in place, so the physics simulates no joints for
+    them.
+    """
+
     map_T_room: HomogeneousTransformationMatrix = field(
         default_factory=lambda: HomogeneousTransformationMatrix.from_xyz_rpy(
             x=0.33, y=0.28, yaw=0.10707963267
@@ -358,7 +371,7 @@ class ThrowAwayDemonstration(RobotDemonstration):
             SceneFile.MILK,
             LabSurfaceHeight.DINING_TABLE,
             start_x=2.81,
-            start_y=5.3,
+            start_y=5.6,
             origin_height=0.09,
             start_yaw=np.pi,
         )
@@ -378,7 +391,8 @@ class ThrowAwayDemonstration(RobotDemonstration):
     def build_scene(self) -> World:
         """
         :return: The map, holding :attr:`lab` at :attr:`map_T_room` with its trash can
-            moved to :attr:`trash_can_in_room`, populated by :meth:`populate_scene`.
+            moved to :attr:`trash_can_in_room` and its movable parts welded in place
+            unless :attr:`lab_parts_movable`, populated by :meth:`populate_scene`.
         """
         scene = World.create_with_root_body()
         lab = self.lab.get_world()
@@ -407,8 +421,37 @@ class ThrowAwayDemonstration(RobotDemonstration):
                     @ HomogeneousTransformationMatrix.from_xyz_rpy(z=-base_height),
                 )
             )
+        if not self.lab_parts_movable:
+            self.weld_movable_parts(scene)
         self.populate_scene(scene)
         return scene
+
+    @staticmethod
+    def weld_movable_parts(scene: World) -> None:
+        """
+        Replace every joint of `scene` that moves along or about one axis by a fixed
+        connection holding its child where it currently is.
+
+        :param scene: The world whose joints are replaced.
+        """
+        joints = [
+            connection
+            for connection in scene.connections
+            if isinstance(connection, ActiveConnection1DOF)
+        ]
+        welds = [
+            FixedConnection(
+                parent=joint.parent,
+                child=joint.child,
+                parent_T_connection_expression=joint.origin,
+            )
+            for joint in joints
+        ]
+        with scene.modify_world():
+            for joint in joints:
+                scene.remove_connection(joint)
+            for weld in welds:
+                scene.add_connection(weld)
 
     def robot_specification(self) -> RobotSpecification:
         """
@@ -449,12 +492,6 @@ class ThrowAwayDemonstration(RobotDemonstration):
         :param robot: The HSR.
         """
         with world.modify_world():
-            world.collision_manager.add_ignore_collision_rule(
-                AllowCollisionBetweenGroups(
-                    body_group_a=[world.get_body_by_name(HSRBBody.WRIST)],
-                    body_group_b=[self.garbage.annotation_in(world).root],
-                )
-            )
             world.collision_manager.add_ignore_collision_rule(
                 AllowCollisionBetweenGroups(
                     body_group_a=robot.bodies_with_collision,
@@ -581,6 +618,7 @@ class ThrowAwayDemonstration(RobotDemonstration):
         world = context.world
         robot = context.require_extension(RobotAccess).robot
         arm = robot.all_arms[0]
+
         [trash_can] = world.get_semantic_annotations_by_type(TrashCan)
         garbage = self.garbage.annotation_in(world)
         taking_pose = self._standing_pose_facing(garbage.root.global_pose)
@@ -589,26 +627,32 @@ class ThrowAwayDemonstration(RobotDemonstration):
             self.standing_position_at(context, drop_point, arm, taking_pose), trash_can
         )
         drop_location = self.garbage.drop_location(drop_point, float(throwing_pose.yaw))
+
         statechart = Statechart(context=context)
         statechart.add_node(
             Sequence(
                 nodes=[
-                    MoveTorsoAction(torso_state=TorsoState.HIGH),
                     # Concrete steps: in a physics run the milk is held by contact
                     # only, so the place finds what it holds from the pick-up before
                     # it, which a statement's trial run of the place would not see.
-                    TransportAction(
-                        pick_up=MoveAndPickUpAction.from_standing_position(
-                            taking_pose,
-                            self._grasp_from(world, taking_pose, garbage),
-                            arm,
-                        ),
-                        place=MoveAndPlaceAction.from_standing_position(
-                            throwing_pose,
-                            drop_location,
-                            garbage,
-                        ),
-                    ),
+                    PickUpAction(grasp=self._grasp_from(world, taking_pose, garbage), arm=arm),
+                    # TransportAction(
+                    #     pick_up=MoveAndPickUpAction.from_standing_position(
+                    #         taking_pose,
+                    #         self._grasp_from(world, taking_pose, garbage),
+                    #         arm,
+                    #     ),
+                    #     # pick_up=MoveAndPickUpAction.from_graspable_by_closest_grasps(
+                    #     #     garbage,
+                    #     #     arm,
+                    #     #     context
+                    #     # ),
+                    #     place=MoveAndPlaceAction.from_standing_position(
+                    #         throwing_pose,
+                    #         drop_location,
+                    #         garbage,
+                    #     ),
+                    # ),
                     ParkArmsAction(arms=robot.all_arms),
                     MoveTorsoAction(torso_state=TorsoState.HIGH),
                 ]
@@ -632,9 +676,10 @@ class ThrowAwayDemonstration(RobotDemonstration):
 def main(
     headless: bool = False,
     executor_type: type[PlanExecutor] = PhysicallySimulatedPlanExecutor,
-    collision_avoidance: bool = True,
+    collision_avoidance: bool = False,
     event_segmentation: bool = True,
     debug: bool = False,
+    lab_parts_movable: bool = False,
 ) -> None:
     """
     Run the demonstration.
@@ -646,8 +691,10 @@ def main(
     :param event_segmentation: Whether SegMind segments the run into events.
     :param debug: Whether to run in debug mode, publishing every copy of the world a
         candidate is tried in.
+    :param lab_parts_movable: Whether the drawers and doors of the lab can move.
     """
     ThrowAwayDemonstration(
+        lab_parts_movable=lab_parts_movable,
         executor_type=executor_type,
         collision_avoidance=collision_avoidance,
         event_segmentation=event_segmentation,

@@ -15,8 +15,10 @@ from pathlib import Path
 import mujoco
 import numpy as np
 from coraplex.demonstrations import RobotDemonstration
+from coraplex.locations.locations import ReachabilityLocation
 from coraplex.plans.context_extensions import RobotAccess
 from coraplex.plans.executors import PhysicallySimulatedPlanExecutor
+from coraplex.querying.grasp_closeness import GraspsByCloseness
 from coraplex.robot_plans.actions.core.navigation import NavigateAction
 from coraplex.robot_plans.actions.core.pick_up import PickUpAction
 from coraplex.robot_plans.actions.core.placing import PlaceAction
@@ -24,7 +26,12 @@ from coraplex.robot_plans.actions.core.robot_body import MoveTorsoAction, ParkAr
 from cramph.composites import Sequence
 from cramph.statechart import Statechart
 from krrood.patterns.path_enumeration import PathEnumeration
-from krrood_spatial_math.spatial_types import HomogeneousTransformationMatrix, Pose
+from krrood_spatial_math.spatial_types import (
+    HomogeneousTransformationMatrix,
+    Point3,
+    Pose,
+    RotationMatrix,
+)
 from segmind.detectors.agent_event_detector_nodes import GraspDetector
 from segmind.detectors.coarse_event_detector_nodes import (
     PickUpDetector,
@@ -47,9 +54,6 @@ from semantic_digital_twin.specifications.kinematic_structure_entities import (
     BodySpecification,
 )
 from semantic_digital_twin.specifications.robots import RobotSpecification
-from semantic_digital_twin.specifications.semantic_annotations import (
-    SemanticAnnotationWithRootSpecification,
-)
 from semantic_digital_twin.specifications.worlds import WorldSpecification
 from semantic_digital_twin.world_description.contact import ContactParameters
 from typing_extensions import TYPE_CHECKING
@@ -130,16 +134,11 @@ class SurfaceSpot:
     Where the milk stands along the world's y axis, in meters.
     """
 
-    yaw: float
-    """
-    Which way the milk faces in the world, which is the way the robot faces it there.
-    """
-
-    def compute_milk_pose(self, milk: Body) -> Pose:
+    def compute_milk_position(self, milk: Body) -> Point3:
         """
         :param milk: The body of the milk.
-        :return: The pose of ``milk`` in the world root at which its lowest point rests
-            on the surface.
+        :return: The position of ``milk`` in the world root at which its lowest point
+            rests on the surface.
         """
         world = milk._world
         surface_box = (
@@ -150,11 +149,10 @@ class SurfaceSpot:
         milk_box = milk.collision.as_bounding_box_collection_in_frame(
             milk
         ).bounding_box()
-        return Pose.from_xyz_rpy(
+        return Point3(
             x=self.x,
             y=self.y,
             z=surface_box.max_z - milk_box.min_z,
-            yaw=self.yaw,
             reference_frame=world.root,
         )
 
@@ -201,28 +199,31 @@ class LabMilkTransportDemonstration(RobotDemonstration):
     """
 
     milk_start: SurfaceSpot = field(
-        default_factory=lambda: SurfaceSpot(
-            SceneBody.COUNTER, x=2.6, y=-2.05, yaw=-np.pi / 2
-        )
+        default_factory=lambda: SurfaceSpot(SceneBody.COUNTER, x=2.6, y=-2.05)
     )
     """
     Where the milk stands before the plan begins: on the counter, beside the sink and
     near the edge the robot approaches.
     """
 
+    milk_start_yaw: float = -np.pi / 2
+    """
+    How the milk is turned about the world's z axis before the plan begins, in radians.
+    The robot stands in the same place whatever this is, and takes the milk by the face
+    closest to it.
+    """
+
     milk_target: SurfaceSpot = field(
-        default_factory=lambda: SurfaceSpot(
-            SceneBody.KITCHEN_SURFACE, x=3.0, y=0.22, yaw=np.pi / 2
-        )
+        default_factory=lambda: SurfaceSpot(SceneBody.KITCHEN_SURFACE, x=3.0, y=0.22)
     )
     """
     Where the milk is set down: on the kitchen island, near the edge facing the counter.
     """
 
-    standing_distance: float = 0.7
+    milk_face_count: int = 4
     """
-    How far from the milk the robot's base stands to take it and to set it down, in
-    meters.
+    How many grasps the milk offers, evenly spaced around it so that each is square onto
+    a face of the carton.
     """
 
     friction_cone: mujoco.mjtCone = mujoco.mjtCone.mjCONE_ELLIPTIC
@@ -260,18 +261,20 @@ class LabMilkTransportDemonstration(RobotDemonstration):
         Stand the milk on the counter, free to be picked up, see
         :meth:`RobotDemonstration.populate_scene`.
         """
-        milk = SemanticAnnotationWithRootSpecification(
+        milk = Milk.get_annotation_specification(
             name=SceneBody.MILK,
-            semantic_annotation_type=Milk,
             root_specification=BodySpecification.mesh(
                 SceneBody.MILK,
                 str(SceneFile.MILK),
                 connection_specification=Connection6DoFSpecification(),
             ),
+            annotation_kwargs={"grasp_candidate_count": self.milk_face_count},
         ).spawn(world)
         ContactParameters.create_for_grasped_object().apply_to([milk.root])
-        milk.root.parent_connection.origin = self.milk_start.compute_milk_pose(
-            milk.root
+        milk.root.parent_connection.origin = Pose(
+            position=self.milk_start.compute_milk_position(milk.root),
+            orientation=RotationMatrix.from_rpy(yaw=self.milk_start_yaw).quaternion,
+            reference_frame=world.root,
         ).homogeneous_matrix
 
     def acquire_world(self) -> World:
@@ -320,14 +323,21 @@ class LabMilkTransportDemonstration(RobotDemonstration):
         )
 
     def build_statechart(self, context: StatechartContext) -> Statechart:
+        world = context.world
         robot = context.require_extension(RobotAccess).robot
-        [milk] = context.world.get_semantic_annotations_by_type(Milk)
+        [milk] = world.get_semantic_annotations_by_type(Milk)
         [arm] = robot.all_arms
-        taking_pose = self._standing_pose_facing(
-            self.milk_start.compute_milk_pose(milk.root)
-        )
-        target = self.milk_target.compute_milk_pose(milk.root)
-        grasp_target = self.find_grasp_pose(milk.root)
+        taking_pose = ReachabilityLocation(
+            target_pose=Pose(reference_frame=milk.root), arm=arm, context=context
+        ).ground()
+        grasp = self.find_grasp(milk, taking_pose)
+        target_position = self.milk_target.compute_milk_position(milk.root)
+        placing_pose = ReachabilityLocation(
+            target_pose=Pose(position=target_position, reference_frame=world.root),
+            arm=arm,
+            context=context,
+        ).ground()
+        target = self._milk_pose_setting_down(target_position, placing_pose, grasp)
         statechart = Statechart(context=context)
         statechart.add_node(
             Sequence(
@@ -335,10 +345,10 @@ class LabMilkTransportDemonstration(RobotDemonstration):
                     MoveTorsoAction(torso_state=TorsoState.HIGH),
                     ParkArmsAction(arms=robot.all_arms),
                     NavigateAction(target_location=taking_pose),
-                    PickUpAction(grasp=GraspCandidate(milk, grasp_target), arm=arm),
+                    PickUpAction(grasp=grasp, arm=arm),
                     ParkArmsAction(arms=robot.all_arms),
                     MoveTorsoAction(torso_state=TorsoState.LOW),
-                    NavigateAction(target_location=self._standing_pose_facing(target)),
+                    NavigateAction(target_location=placing_pose),
                     MoveTorsoAction(torso_state=TorsoState.HIGH),
                     PlaceAction(object_designator=milk, target_location=target),
                     ParkArmsAction(arms=robot.all_arms),
@@ -361,31 +371,49 @@ class LabMilkTransportDemonstration(RobotDemonstration):
             noslip_iterations=self.no_slip_iterations,
         )
 
-    def find_grasp_pose(self, body: Body, fraction_of_height: float = 4 / 6) -> Pose:
+    def find_grasp(
+        self, milk: Milk, standing_pose: Pose, fraction_of_height: float = 4 / 6
+    ) -> GraspCandidate:
         """
-        :param body: The object to grasp, standing upright in its own frame.
-        :param fraction_of_height: How far up the bounding box of ``body`` the grasp is,
+        :param milk: The milk, standing upright in its own frame.
+        :param standing_pose: Where the robot stands to take the milk.
+        :param fraction_of_height: How far up the bounding box of the milk the grasp is,
             from 0 at its bottom to 1 at its top; by default where its upper third begins.
-        :return: The grasp frame at that height on the z axis of ``body``, in its frame.
+        :return: The milk's grasp closest to the robot standing there, at that height.
         """
+        [closest] = GraspsByCloseness(milk, standing_pose, number_of_grasps=1)()
+        body = milk.root
         box = body.collision.as_bounding_box_collection_in_frame(body).bounding_box()
-        return Pose.from_xyz_rpy(
-            z=box.min_z + fraction_of_height * (box.max_z - box.min_z),
-            reference_frame=body,
+        return GraspCandidate(
+            milk,
+            Pose(
+                position=Point3(
+                    z=box.min_z + fraction_of_height * (box.max_z - box.min_z),
+                    reference_frame=body,
+                ),
+                orientation=closest.grasp_pose.quaternion,
+                reference_frame=body,
+            ),
         )
 
-    def _standing_pose_facing(self, milk_pose: Pose) -> Pose:
+    def _milk_pose_setting_down(
+        self, position: Point3, placing_pose: Pose, grasp: GraspCandidate
+    ) -> Pose:
         """
-        :param milk_pose: Where the milk stands or is set down.
-        :return: Where the robot's base stands on the floor to reach the milk there,
-            :attr:`standing_distance` before it and facing it.
+        :param position: Where the milk is set down.
+        :param placing_pose: Where the robot stands to set it down, facing `position`.
+        :param grasp: The grasp the robot holds the milk by.
+        :return: The milk at `position`, turned so the hand holding it points straight
+            ahead from the robot's base.
         """
-        return (
-            milk_pose.homogeneous_matrix
-            @ HomogeneousTransformationMatrix.from_xyz_rpy(
-                x=-self.standing_distance, z=-float(milk_pose.z)
-            )
-        ).pose
+        world_R_milk = (
+            placing_pose.rotation_matrix @ grasp.grasp_pose.rotation_matrix.inverse()
+        )
+        return Pose(
+            position=position,
+            orientation=world_R_milk.quaternion,
+            reference_frame=position.reference_frame,
+        )
 
 
 def main(

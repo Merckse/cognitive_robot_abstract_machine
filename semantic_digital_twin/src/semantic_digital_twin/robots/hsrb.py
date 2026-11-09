@@ -635,6 +635,16 @@ class HSRB(AbstractRobot, HasMobileBase[HSRBMobileBase]):
                 buffer_zone_distance=0.05, violated_distance=0.0, robot=self
             )
         )
+        self._world.collision_manager.add_default_rule(
+            AvoidExternalCollisions(
+                buffer_zone_distance=0.02,
+                violated_distance=0.0,
+                robot=self,
+                body_subset={
+                    self._world.get_body_in_branch_by_name(self.root, "wrist_roll_link")
+                },
+            )
+        )
 
         self._world.collision_manager.add_default_rule(
             AvoidExternalCollisions(

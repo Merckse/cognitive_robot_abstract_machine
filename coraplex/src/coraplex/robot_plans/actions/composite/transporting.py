@@ -24,6 +24,8 @@ from coraplex.robot_plans.actions.core.pick_up import PickUpAction
 from coraplex.robot_plans.actions.core.placing import PlaceAction
 from coraplex.robot_plans.actions.core.robot_body import ParkArmsAction
 from krrood.entity_query_language.query.match import Match
+from semantic_digital_twin.collision_checking.collision_matrix import CollisionRule
+from semantic_digital_twin.collision_checking.collision_rules import AllowCollisionForEndEffector
 from semantic_digital_twin.robots.robot_parts import Arm
 from semantic_digital_twin.grasping.grasp_candidates import GraspCandidate
 from semantic_digital_twin.semantic_annotations.mixins import HasGraspCandidates
@@ -48,6 +50,18 @@ class TransportAction(SequentialAction):
     """
     The step that puts down what :attr:`pick_up` picked up.
     """
+
+
+    def create_temporary_collision_rules(self) -> list[CollisionRule]:
+        """
+        :return: An allowance for the gripper to touch the surroundings of its object,
+            which it is around from reaching for it until it has lifted it clear, the
+            moment the object is put under it included.
+        """
+        collision_rules : list[CollisionRule]= []
+        for end_effector in self.robot.all_end_effectors:
+            collision_rules.append(AllowCollisionForEndEffector(end_effector=end_effector))
+        return collision_rules
 
     @classmethod
     def from_graspable_by_closest_grasps(

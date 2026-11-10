@@ -309,7 +309,7 @@ class ThrowAwayDemonstration(RobotDemonstration):
     The lab the demonstration runs in.
     """
 
-    lab_parts_movable: bool = False
+    scene_joints_movable: bool = False
     """
     Whether the drawers and doors of :attr:`lab` can move.
 
@@ -448,8 +448,6 @@ class ThrowAwayDemonstration(RobotDemonstration):
         world = super().acquire_world()
         [robot] = world.get_semantic_annotations_by_type(self.used_robot)
         self.relax_collision_rules(world, robot)
-        if not self.lab_parts_movable:
-            self.weld_movable_parts(world, robot)
         return world
 
     def build_context_extensions(self, world: World) -> list[ContextExtension]:
@@ -490,35 +488,6 @@ class ThrowAwayDemonstration(RobotDemonstration):
                 )
             )
 
-    @staticmethod
-    def weld_movable_parts(world: World, robot: HSRB) -> None:
-        """
-        Replace every joint of `world` outside `robot` that moves along or about one
-        axis by a fixed connection holding its child where it currently is.
-
-        :param world: The world whose joints are replaced.
-        :param robot: The robot whose joints stay movable.
-        """
-        robot_connections = set(robot.connections)
-        joints = [
-            connection
-            for connection in world.connections
-            if isinstance(connection, ActiveConnection1DOF)
-            and connection not in robot_connections
-        ]
-        welds = [
-            FixedConnection(
-                parent=joint.parent,
-                child=joint.child,
-                parent_T_connection_expression=joint.origin,
-            )
-            for joint in joints
-        ]
-        with world.modify_world():
-            for joint in joints:
-                world.remove_connection(joint)
-            for weld in welds:
-                world.add_connection(weld)
 
     def segment_events(self, world: World) -> AbstractContextManager:
         """
@@ -686,7 +655,7 @@ def main(
     collision_avoidance: bool = False,
     event_segmentation: bool = True,
     debug: bool = False,
-    lab_parts_movable: bool = False,
+    scene_joints_movable=False,
 ) -> None:
     """
     Run the demonstration.
@@ -701,7 +670,7 @@ def main(
     :param lab_parts_movable: Whether the drawers and doors of the lab can move.
     """
     ThrowAwayDemonstration(
-        lab_parts_movable=lab_parts_movable,
+        scene_joints_movable=scene_joints_movable,
         executor_type=executor_type,
         collision_avoidance=collision_avoidance,
         event_segmentation=event_segmentation,

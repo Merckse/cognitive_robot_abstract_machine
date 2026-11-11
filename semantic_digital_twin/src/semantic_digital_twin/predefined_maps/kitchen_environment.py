@@ -10,6 +10,8 @@ import trimesh
 
 import numpy as np
 
+from krrood.ormatic.utils import classproperty
+
 from semantic_digital_twin.datastructures.prefixed_name import PrefixedName
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Room, Floor
 from semantic_digital_twin.semantic_annotations.semantic_annotations import (
@@ -764,6 +766,15 @@ class KitchenEnvironment(WorldSource):
     """
     Observed kitchen geometry with the existing flush-back construction constraint.
     """
+
+    @classproperty
+    def floor_half_thickness(cls) -> float:
+        """
+        How far each floor reaches above where it is placed, in meters: half the minimum
+        thickness :meth:`BodySpecification.from_3d_points` gives a flat polygon. The
+        floors are lowered by it, so their tops lie at the ground the robot stands on.
+        """
+        return 0.0025
 
     def create_world(self) -> World:
         world = World.create_with_root_body("root")
@@ -2577,7 +2588,7 @@ class KitchenEnvironment(WorldSource):
                 world=world,
                 floor_polytope=kitchen_floor_polytope,
                 world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(
-                    x=2.317, y=-0.843
+                    x=2.317, y=-0.843, z=-self.floor_half_thickness
                 ),
             )
             kitchen = Room(floor=kitchen_floor, name=PrefixedName("kitchen"))
@@ -2588,7 +2599,7 @@ class KitchenEnvironment(WorldSource):
                 world=world,
                 floor_polytope=living_room_floor_polytope,
                 world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(
-                    x=2.317, y=2.2245
+                    x=2.317, y=2.2245, z=-self.floor_half_thickness
                 ),
             )
             living_room = Room(
@@ -2601,7 +2612,7 @@ class KitchenEnvironment(WorldSource):
                 world=world,
                 floor_polytope=bed_room_floor_polytope,
                 world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(
-                    x=0.96, y=4.96
+                    x=0.96, y=4.96, z=-self.floor_half_thickness
                 ),
             )
             bed_room = Room(floor=bed_room_floor, name=PrefixedName("bed_room"))
@@ -2612,7 +2623,7 @@ class KitchenEnvironment(WorldSource):
                 world=world,
                 floor_polytope=office_floor_polytope,
                 world_root_T_self=HomogeneousTransformationMatrix.from_xyz_rpy(
-                    x=3.5625, y=4.96
+                    x=3.5625, y=4.96, z=-self.floor_half_thickness
                 ),
             )
             office = Room(floor=office_floor, name=PrefixedName("office"))

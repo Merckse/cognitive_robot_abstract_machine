@@ -51,6 +51,7 @@ from semantic_digital_twin.world_description.contact import (
     ContactImpedance,
     ContactParameters,
     ContactStiffness,
+    FrictionKinds,
 )
 from semantic_digital_twin.world_description.geometry import (
     Box,
@@ -262,7 +263,10 @@ class MJCFParser(WorldModelParser):
             shape.origin.reference_frame = body
             shape.add_simulator_property(
                 ContactParameters(
-                    friction=ContactFriction(*mujoco_geom.friction.tolist()),
+                    friction=ContactFriction(
+                        *mujoco_geom.friction.tolist(),
+                        effective_kinds=FrictionKinds(mujoco_geom.condim),
+                    ),
                     stiffness=ContactStiffness(
                         time_constant=timedelta(seconds=mujoco_geom.solref[0]),
                         damping_ratio=mujoco_geom.solref[1],

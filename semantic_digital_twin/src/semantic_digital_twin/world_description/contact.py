@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from datetime import timedelta
+from enum import IntEnum
 
 from typing_extensions import TYPE_CHECKING, Iterable
 
@@ -17,6 +18,34 @@ from semantic_digital_twin.mixin import UniqueSimulatorProperty
 
 if TYPE_CHECKING:
     from semantic_digital_twin.world_description.world_entity import Body
+
+
+class FrictionKinds(IntEnum):
+    """
+    Which kinds of friction a contact applies. Each value counts the directions the
+    contact constrains: the normal, then two for sliding, one for twisting about the
+    normal and two for rolling.
+    """
+
+    NONE = 1
+    """
+    The contact only pushes the shapes apart.
+    """
+
+    SLIDING = 3
+    """
+    The contact resists sliding along the surface.
+    """
+
+    SLIDING_AND_TORSIONAL = 4
+    """
+    The contact also resists twisting about its normal.
+    """
+
+    SLIDING_TORSIONAL_AND_ROLLING = 6
+    """
+    The contact also resists rolling over the surface.
+    """
 
 
 @dataclass
@@ -39,6 +68,12 @@ class ContactFriction:
     rolling: float = 0.0001
     """
     Friction around both axes of the tangent plane.
+    """
+
+    effective_kinds: FrictionKinds = FrictionKinds.SLIDING
+    """
+    Which of :attr:`sliding`, :attr:`torsional` and :attr:`rolling` a contact applies;
+    a physics engine ignores the others.
     """
 
     def to_list(self) -> list[float]:
@@ -180,6 +215,7 @@ class ContactParameters(UniqueSimulatorProperty):
                 sliding=sliding_friction,
                 torsional=torsional_friction,
                 rolling=rolling_friction,
+                effective_kinds=FrictionKinds.SLIDING_TORSIONAL_AND_ROLLING,
             ),
             stiffness=ContactStiffness(time_constant=resolution_time_constant),
             impedance=ContactImpedance(

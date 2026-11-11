@@ -33,7 +33,10 @@ from semantic_digital_twin.world_description.degree_of_freedom import (
     DegreeOfFreedom,
     DegreeOfFreedomLimits,
 )
-from semantic_digital_twin.world_description.contact import ContactParameters
+from semantic_digital_twin.world_description.contact import (
+    ContactParameters,
+    FrictionKinds,
+)
 from semantic_digital_twin.world_description.geometry import (
     Box,
     Scale,
@@ -657,6 +660,31 @@ def test_contact_declarations_and_gravity_compensation_survive_a_round_trip(tmp_
         GravityCompensation(fraction=0.5)
     )
     assert parsed_shape.get_simulator_property_of_type(ContactParameters) == contact
+
+
+def test_a_grasped_object_resists_twisting_and_rolling_in_the_simulation(tmp_path):
+    """
+    The torsional and rolling friction of a grasped object take effect in the built
+    model, which applies only the kinds of friction a geom's contact dimension covers.
+    """
+    cylinder = Cylinder(width=0.028, height=0.03)
+    world = _world_with_one_cylinder(cylinder)
+    contact = ContactParameters.create_for_grasped_object()
+    contact.apply_to([world.get_body_by_name("link")])
+    builder = MujocoBuilder()
+
+    builder.build_world(world=world, file_path=str(tmp_path / "scene.xml"))
+
+    [geom] = [
+        geom
+        for body in builder.spec.bodies
+        for geom in body.geoms
+        if body.name == "link"
+    ]
+    assert geom.condim == contact.friction.effective_kinds
+    assert contact.friction.effective_kinds == (
+        FrictionKinds.SLIDING_TORSIONAL_AND_ROLLING
+    )
 
 
 def test_a_simulated_body_weighs_what_its_inertial_says_not_what_its_shapes_would():

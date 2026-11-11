@@ -314,6 +314,12 @@ class LabMilkTransportDemonstration(RobotDemonstration):
     fingers hold it.
     """
 
+    flat_gripper: bool = False
+    """
+    Whether each body of the HSR's gripper collides as its bounding box instead of its
+    mesh, so the fingers touch with flat faces.
+    """
+
     def scene_specification(self) -> WorldSpecification:
         return WorldSpecification(world_source=KitchenEnvironment())
 
@@ -348,7 +354,8 @@ class LabMilkTransportDemonstration(RobotDemonstration):
         """
         Obtain the world as :meth:`RobotDemonstration.acquire_world` does, in which the
         HSR's hand and wrist may touch the milk throughout the run, as physics never
-        counts it as held, and the whole HSR may touch the lab's floors.
+        counts it as held, and the whole HSR may touch the lab's floors. With
+        :attr:`flat_gripper`, the gripper collides as boxes.
         """
         world = super().acquire_world()
         [robot] = world.get_semantic_annotations_by_type(self.used_robot)
@@ -373,6 +380,11 @@ class LabMilkTransportDemonstration(RobotDemonstration):
                     ],
                 )
             )
+            if self.flat_gripper:
+                for body in arm.end_effector.bodies_with_collision:
+                    body.collision = body.collision.as_bounding_box_collection_in_frame(
+                        body
+                    ).as_shapes()
         return world
 
     def build_context_extensions(self, world: World) -> list[ContextExtension]:

@@ -12,6 +12,7 @@ from semantic_digital_twin.predefined_maps.kitchen_environment import (
 from semantic_digital_twin.semantic_annotations.semantic_annotations import (
     Cooktop,
     CounterTop,
+    Floor,
     KitchenIsland,
 )
 from semantic_digital_twin.world import World
@@ -131,3 +132,26 @@ def test_the_island_worktop_still_carries_its_cooktop() -> None:
     assert worktop.get_objects_of_type(Cooktop) == [
         world.get_semantic_annotation_by_name("sideboard_cooktop")
     ]
+
+
+# %% the floors
+
+
+def test_every_floor_has_its_top_at_the_ground() -> None:
+    """
+    A robot standing at the ground of the world rests on the floors instead of sinking
+    into them.
+    """
+    world = KitchenEnvironment().create_world()
+
+    floor_tops = [
+        float(
+            floor.root.collision.as_bounding_box_collection_in_frame(world.root)
+            .bounding_box()
+            .max_z
+        )
+        for floor in world.get_semantic_annotations_by_type(Floor)
+    ]
+
+    # The floor meshes store their vertices in single precision.
+    assert floor_tops == pytest.approx([0.0] * len(floor_tops), abs=1e-9)

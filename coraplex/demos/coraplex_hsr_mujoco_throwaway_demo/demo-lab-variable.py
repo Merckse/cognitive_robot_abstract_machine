@@ -1,8 +1,9 @@
 """
-The HSR takes the milk from the desk in the living room of the lab and throws it away,
-with the trash can standing somewhere new around the desk or the coffee table on every
-run, to show how well it navigates to and places from the standing pose
-:meth:`ThrowAwayDemonstration.standing_position_at` works out.
+The HSR takes the milk from a table of the lab and throws it away, with the milk
+standing somewhere new on one of several tables and the trash can standing somewhere new
+around the desk or the coffee table on every run, to show how well it navigates to and
+places from the standing pose :meth:`ThrowAwayDemonstration.standing_position_at` works
+out.
 
 Run it from this folder::
 
@@ -12,12 +13,12 @@ Run it from this folder::
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum, StrEnum
 
 import numpy as np
 from numpy.typing import NDArray
-from typing_extensions import Self
+from typing_extensions import Callable, Self
 
 from coraplex import logger
 from coraplex.plans.executors import PhysicallySimulatedPlanExecutor, PlanExecutor
@@ -33,22 +34,32 @@ from semantic_digital_twin.world_description.world_entity import Body
 
 demo_lab = importlib.import_module("demo-lab")
 
-# %% the living room
+# %% the lab's furniture
 
 
-class LivingRoomBody(StrEnum):
+class LabFurniture(StrEnum):
     """
-    The living room's own bodies the demonstration refers to.
+    The pieces of furniture of the lab the demonstration refers to.
     """
 
     DESK = "desk"
     """
-    The top of the desk against the wall, which the milk starts on.
+    The top of the desk against the wall of the living room.
     """
 
     COFFEE_TABLE = "coffee_table"
     """
     The top of the coffee table beside the sofa.
+    """
+
+    DINING_TABLE = "dining_table"
+    """
+    The top of the dining table in the office.
+    """
+
+    COOKING_TABLE = "cooking_table"
+    """
+    The top of the cooking table in the bedroom.
     """
 
 
@@ -64,15 +75,137 @@ class LivingRoomSurfaceHeight(float, Enum):
 
 
 @dataclass
-class LivingRoomGarbage(demo_lab.Garbage):
+class LabGarbage(demo_lab.Garbage):
     """
-    An object the robot throws away that starts on a surface of the living room.
+    An object the robot throws away that starts on a piece of furniture of the lab.
     """
 
-    start_surface: LivingRoomSurfaceHeight
+    start_surface: float
     """
-    The surface the object starts on.
+    How high above the floor the top of the furniture the object starts on lies.
     """
+
+
+# %% placing the garbage
+
+
+@dataclass
+class NoFreeGarbageSpot(DataclassException):
+    """
+    No spot drawn for the garbage had open floor for the robot to stand on in front of
+    it.
+    """
+
+    attempts: int
+    """
+    How many spots were drawn.
+    """
+
+    def error_message(self) -> str:
+        return f"None of {self.attempts} spots drawn for the garbage was free."
+
+    def suggest_correction(self) -> str:
+        return "Add surfaces the garbage may stand on, or lower the edge margin."
+
+
+@dataclass
+class GarbagePlacement:
+    """
+    Draws where the garbage starts: somewhere on the top of one of several pieces of
+    furniture, with open floor for the robot to stand on in front of it.
+    """
+
+    seed: int | None = None
+    """
+    The seed the spot is drawn with; ``None`` draws with a fresh seed, which is logged so
+    the run can be reproduced.
+    """
+
+    edge_margin: float = 0.1
+    """
+    How far from the edges of the furniture's top the garbage stands, in meters.
+    """
+
+    clearance: float = 0.1
+    """
+    How far the robot standing in front of the garbage keeps from the surroundings, in
+    meters.
+    """
+
+    robot_radius: float = 0.3
+    """
+    Half the width of the square the robot's base covers on the floor, in meters.
+    """
+
+    attempts: int = 10000
+    """
+    How many spots are drawn before the placement gives up.
+    """
+
+    def sample_garbage(
+        self,
+        garbage: LabGarbage,
+        lab: World,
+        furniture: list[Body],
+        robot_start: Pose,
+        standing_pose: Callable[[Pose, Pose], Pose],
+    ) -> LabGarbage:
+        """
+        :param garbage: The garbage to place.
+        :param lab: The lab, holding its trash can, with nothing else spawned into it.
+        :param furniture: The pieces of furniture the garbage stands on the top of one
+            of.
+        :param robot_start: Where the robot stands before the plan begins, in the frame
+            of the lab's root.
+        :param standing_pose: Where the robot stands to take something at its first
+            argument, coming from its second.
+        :return: `garbage`, starting on the drawn spot and facing the way the robot faces
+            it while taking it.
+        :raises NoFreeGarbageSpot: If no spot drawn within :attr:`attempts` is free.
+        """
+        [trash_can] = lab.get_semantic_annotations_by_type(TrashCan)
+        floor_plan = FloorPlan.from_world(lab, trash_can.bodies)
+        tops = Footprints.from_bodies(furniture, lab.root)
+        top_heights = [
+            float(
+                body.collision.as_bounding_box_collection_in_frame(lab.root)
+                .bounding_box()
+                .max_z
+            )
+            for body in furniture
+        ]
+        seed_sequence = np.random.SeedSequence(self.seed)
+        generator = np.random.default_rng(seed_sequence)
+        for _ in range(self.attempts):
+            index = int(generator.integers(len(furniture)))
+            middle = generator.uniform(
+                tops.lower[index] + self.edge_margin,
+                tops.upper[index] - self.edge_margin,
+            )
+            taking_pose = standing_pose(
+                Pose.from_xyz_rpy(
+                    x=float(middle[0]), y=float(middle[1]), reference_frame=lab.root
+                ),
+                robot_start,
+            )
+            robot_footprint = Footprints.from_squares(
+                taking_pose.position.to_np()[:2], self.robot_radius + self.clearance
+            )
+            if not floor_plan.fits(robot_footprint)[0]:
+                continue
+            logger.info(
+                f"Garbage placed on {furniture[index].name.name} at "
+                f"x={middle[0]:.3f}, y={middle[1]:.3f} in the room, drawn with seed "
+                f"{seed_sequence.entropy}."
+            )
+            return replace(
+                garbage,
+                start_surface=top_heights[index],
+                start_x=float(middle[0]),
+                start_y=float(middle[1]),
+                start_yaw=float(taking_pose.yaw),
+            )
+        raise NoFreeGarbageSpot(attempts=self.attempts)
 
 
 # %% placing the trash can
@@ -359,10 +492,11 @@ class TrashCanPlacement:
 
 
 @dataclass
-class DeskThrowAwayDemonstration(demo_lab.ThrowAwayDemonstration):
+class RandomSceneThrowAwayDemonstration(demo_lab.ThrowAwayDemonstration):
     """
-    The HSR takes the milk from the desk and throws it into the trash can, which stands
-    somewhere new around the desk or the coffee table on every run.
+    The HSR takes the milk from a table and throws it into the trash can; the milk stands
+    somewhere new on one of :attr:`furniture_under_garbage` and the trash can somewhere
+    new around one of :attr:`furniture_near_trash_can` on every run.
     """
 
     ros_node_name: str = "suturo_throw_away_variable_demo_node"
@@ -380,8 +514,8 @@ class DeskThrowAwayDemonstration(demo_lab.ThrowAwayDemonstration):
     the living room, facing the desk.
     """
 
-    garbage: LivingRoomGarbage = field(
-        default_factory=lambda: LivingRoomGarbage(
+    garbage: LabGarbage = field(
+        default_factory=lambda: LabGarbage(
             Milk,
             demo_lab.SceneFile.MILK,
             LivingRoomSurfaceHeight.DESK,
@@ -392,12 +526,29 @@ class DeskThrowAwayDemonstration(demo_lab.ThrowAwayDemonstration):
         )
     )
     """
-    The milk, which starts in the middle of the desk near its edge facing the open
-    floor, and is thrown away.
+    The milk, which is thrown away; where it starts is drawn anew with
+    :attr:`garbage_placement` on every run.
     """
 
-    furniture_near_trash_can: list[LivingRoomBody] = field(
-        default_factory=lambda: [LivingRoomBody.DESK, LivingRoomBody.COFFEE_TABLE]
+    furniture_under_garbage: list[LabFurniture] = field(
+        default_factory=lambda: [
+            LabFurniture.DESK,
+            LabFurniture.DINING_TABLE,
+            LabFurniture.COOKING_TABLE,
+            LabFurniture.COFFEE_TABLE,
+        ]
+    )
+    """
+    The pieces of furniture the milk is drawn to stand on the top of one of.
+    """
+
+    garbage_placement: GarbagePlacement = field(default_factory=GarbagePlacement)
+    """
+    Draws where the milk starts on every run.
+    """
+
+    furniture_near_trash_can: list[LabFurniture] = field(
+        default_factory=lambda: [LabFurniture.DESK, LabFurniture.COFFEE_TABLE]
     )
     """
     The pieces of furniture the trash can is drawn to stand around one of.
@@ -411,18 +562,26 @@ class DeskThrowAwayDemonstration(demo_lab.ThrowAwayDemonstration):
     def build_scene(self) -> World:
         """
         Differs from :meth:`ThrowAwayDemonstration.build_scene` in first drawing
-        :attr:`trash_can_in_room` with :attr:`trash_can_placement`, around one of
-        :attr:`furniture_near_trash_can` and off the robot's way to where it takes the
-        milk.
+        :attr:`garbage` with :attr:`garbage_placement` on one of
+        :attr:`furniture_under_garbage`, then :attr:`trash_can_in_room` with
+        :attr:`trash_can_placement`, around one of :attr:`furniture_near_trash_can` and
+        off the robot's way to where it takes the milk.
         """
         lab = self.lab.create_world()
+        self.garbage = self.garbage_placement.sample_garbage(
+            self.garbage,
+            lab,
+            [lab.get_body_by_name(body) for body in self.furniture_under_garbage],
+            self.robot_start_in_room.pose,
+            self._standing_pose_facing,
+        )
         taking_pose = self._standing_pose_facing(
             Pose.from_xyz_rpy(
                 x=self.garbage.start_x,
                 y=self.garbage.start_y,
-                yaw=self.garbage.start_yaw,
                 reference_frame=lab.root,
-            )
+            ),
+            self.robot_start_in_room.pose,
         )
         self.trash_can_in_room = self.trash_can_placement.sample_pose(
             lab,
@@ -441,10 +600,11 @@ class DeskThrowAwayDemonstration(demo_lab.ThrowAwayDemonstration):
 def main(
     headless: bool = False,
     executor_type: type[PlanExecutor] = PhysicallySimulatedPlanExecutor,
-    collision_avoidance: bool = False,
-    event_segmentation: bool = True,
+    collision_avoidance: bool = True,
+    event_segmentation: bool = False,
     debug: bool = False,
-    lab_parts_movable: bool = False,
+    scene_joints_movable: bool = False,
+    garbage_seed: int | None = None,
     trash_can_seed: int | None = None,
 ) -> World:
     """
@@ -457,21 +617,29 @@ def main(
     :param event_segmentation: Whether SegMind segments the run into events.
     :param debug: Whether to run in debug mode, publishing every copy of the world a
         candidate is tried in.
-    :param lab_parts_movable: Whether the drawers and doors of the lab can move.
+    :param scene_joints_movable: Whether the drawers and doors of the lab can move.
+    :param garbage_seed: The seed the milk's spot is drawn with; ``None`` draws a new
+        spot every run.
     :param trash_can_seed: The seed the trash can's pose is drawn with; ``None`` draws
         a new pose every run.
     :return: The world the milk was thrown away in.
     """
-    return DeskThrowAwayDemonstration(
-        lab_parts_movable=lab_parts_movable,
+    return RandomSceneThrowAwayDemonstration(
+        scene_joints_movable=scene_joints_movable,
         executor_type=executor_type,
         collision_avoidance=collision_avoidance,
         event_segmentation=event_segmentation,
         debug=debug,
         headless=headless,
+        garbage_placement=GarbagePlacement(seed=garbage_seed),
         trash_can_placement=TrashCanPlacement(seed=trash_can_seed),
     ).run()
 
 
 if __name__ == "__main__":
-    main()
+    x= 0
+    for i in range(1,10):
+        try:
+            main()
+        except:
+            x=x+1

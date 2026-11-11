@@ -8,6 +8,7 @@ Run it from this folder::
 
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -15,6 +16,7 @@ from pathlib import Path
 import mujoco
 import numpy as np
 from copy import deepcopy
+from coraplex import logger
 from coraplex.demonstrations import RobotDemonstration
 from coraplex.plans.context_extensions import RobotAccess
 from coraplex.plans.executors import PhysicallySimulatedPlanExecutor
@@ -23,7 +25,9 @@ from coraplex.robot_plans.actions.core.pick_up import PickUpAction
 from coraplex.robot_plans.actions.core.placing import PlaceAction
 from coraplex.robot_plans.actions.core.robot_body import MoveTorsoAction, ParkArmsAction
 from coraplex.querying.grasp_closeness import GraspsByCloseness
-from cramph.composites import Sequence
+from cramph.composites import Parallel, Sequence
+from cramph.data_types import ObservationStateValues
+from cramph.node import EndedByOwner, StatechartNode
 from cramph.statechart import Statechart
 from krrood.patterns.path_enumeration import PathEnumeration
 from krrood_spatial_math.spatial_types import HomogeneousTransformationMatrix, Pose
@@ -41,6 +45,7 @@ from semantic_digital_twin.datastructures.definitions import TorsoState
 from semantic_digital_twin.grasping.grasp_candidates import GraspCandidate
 from semantic_digital_twin.predefined_maps.kitchen_environment import KitchenEnvironment
 from semantic_digital_twin.robots.hsrb import HSRB
+from semantic_digital_twin.robots.robot_parts import Arm
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Floor, Milk
 from semantic_digital_twin.specifications.connections import (
     Connection6DoFSpecification,
@@ -162,6 +167,68 @@ class SurfaceSpot:
         )
 
 
+# %% watching the grasp
+
+
+@dataclass(eq=False, repr=False, kw_only=True)
+class GripperContactLog(EndedByOwner, StatechartNode):
+    """
+    Logs the contact points the physics finds between an object and each body of an
+    arm's gripper on its first tick and whenever they change, for as long as it runs.
+    """
+
+    simulation: MujocoSim
+    """
+    The physics the contacts are read from.
+    """
+
+    graspable: HasGraspCandidates
+    """
+    The object held by the gripper.
+    """
+
+    arm: Arm
+    """
+    The arm whose gripper holds :attr:`graspable`.
+    """
+
+    logged_contacts: Counter[str] | None = field(default=None, init=False)
+    """
+    How many contact points each gripper body had when they were last logged.
+    """
+
+    def on_tick(self) -> ObservationStateValues:
+        contacts = self.count_contacts()
+        if contacts != self.logged_contacts:
+            logger.info(
+                f"Contact points between {self.graspable.root.name.name} and the "
+                f"gripper: {sum(contacts.values())} {dict(contacts)}"
+            )
+            self.logged_contacts = contacts
+        return ObservationStateValues.TRUE
+
+    def count_contacts(self) -> Counter[str]:
+        """
+        :return: How many contact points the physics finds between :attr:`graspable`
+            and each body of the gripper of :attr:`arm`, by the body's name.
+        """
+        graspable_name = self.graspable.root.name.name
+        gripper_names = [
+            body.name.name for body in self.arm.end_effector.bodies_with_collision
+        ]
+        contact_points = self.simulation.simulator.get_contact_points(
+            body_names=[graspable_name, *gripper_names], including_children=False
+        ).result
+        return Counter(
+            contact_point["linkNameB"]
+            if contact_point["linkNameA"] == graspable_name
+            else contact_point["linkNameA"]
+            for contact_point in contact_points
+            if graspable_name
+            in (contact_point["linkNameA"], contact_point["linkNameB"])
+        )
+
+
 # %% the demonstration
 
 
@@ -272,7 +339,7 @@ class LabMilkTransportDemonstration(RobotDemonstration):
                 connection_specification=Connection6DoFSpecification(),
             ),
         ).spawn(world)
-        ContactParameters.create_for_grasped_object().apply_to([milk.root])
+        ContactParameters.create_for_grasped_object(sliding_friction=20).apply_to([milk.root])
         milk.root.parent_connection.origin = self.milk_start.compute_milk_pose(
             milk.root
         ).homogeneous_matrix
@@ -338,15 +405,15 @@ class LabMilkTransportDemonstration(RobotDemonstration):
                     NavigateAction(target_location=taking_pose),
                     MoveTorsoAction(torso_state=TorsoState.HIGH),
                     PickUpAction(grasp=self.find_grasp(milk, taking_pose), arm=arm),
-                    ParkArmsAction(arms=robot.all_arms),
-                    MoveTorsoAction(torso_state=TorsoState.LOW),
-                    NavigateAction(
-                        target_location=self._standing_pose_facing(target, taking_pose)
-                    ),
-                    MoveTorsoAction(torso_state=TorsoState.HIGH),
-                    PlaceAction(object_designator=milk, target_location=target),
-                    ParkArmsAction(arms=robot.all_arms),
-                    MoveTorsoAction(torso_state=TorsoState.LOW),
+                    self.parking_with_contact_log(robot.all_arms, milk, arm),
+                    # MoveTorsoAction(torso_state=TorsoState.LOW),
+                    # NavigateAction(
+                    #     target_location=self._standing_pose_facing(target, taking_pose)
+                    # ),
+                    # MoveTorsoAction(torso_state=TorsoState.HIGH),
+                    # PlaceAction(object_designator=milk, target_location=target),
+                    # ParkArmsAction(arms=robot.all_arms),
+                    # MoveTorsoAction(torso_state=TorsoState.LOW),
                 ]
             )
         )
@@ -365,11 +432,33 @@ class LabMilkTransportDemonstration(RobotDemonstration):
             noslip_iterations=self.no_slip_iterations,
         )
 
+    def parking_with_contact_log(
+        self, arms: list[Arm], graspable: HasGraspCandidates, holding_arm: Arm
+    ) -> StatechartNode:
+        """
+        :param arms: The arms to park.
+        :param graspable: The object `holding_arm` holds.
+        :param holding_arm: The arm holding `graspable`.
+        :return: A new step parking `arms`, while the contacts between `graspable` and
+            the gripper of `holding_arm` are logged, if the physics runs.
+        """
+        parking = ParkArmsAction(arms=arms)
+        if self.simulation is None:
+            return parking
+        return Parallel(
+            nodes=[
+                parking,
+                GripperContactLog(
+                    simulation=self.simulation, graspable=graspable, arm=holding_arm
+                ),
+            ]
+        )
+
     def find_grasp(
         self,
         graspable: HasGraspCandidates,
         standing_pose: Pose,
-        fraction_of_height: float = 4 / 6,
+        fraction_of_height: float = 2 / 6,
     ) -> GraspCandidate:
         """
         :param graspable: The object to take, standing upright.

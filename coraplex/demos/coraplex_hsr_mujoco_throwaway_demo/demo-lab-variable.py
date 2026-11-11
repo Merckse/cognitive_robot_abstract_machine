@@ -1,7 +1,7 @@
 """
-The HSR throws the milk from a table of the SuTuRo lab into the trash can, with the milk
-drawn onto one of several tables and the trash can around the desk or the coffee table
-anew on every run, to test the standing poses the robot works out to take and drop it.
+The HSR throws a milk carton from a table of the SuTuRo lab into the trash can, with the
+carton and the trash can drawn anew on every run, to test the standing poses the robot
+works out to take and drop it.
 
 Run it::
 
@@ -26,14 +26,15 @@ from coraplex.locations.locations import ReachabilityLocation
 from coraplex.plans.context_extensions import RobotAccess, StatementGrounding
 from coraplex.plans.executors import PhysicallySimulatedPlanExecutor, PlanExecutor
 from coraplex.querying.grasp_closeness import GraspsByCloseness
-from coraplex.robot_plans.actions.core.navigation import NavigateAction
+from coraplex.robot_plans.actions.core.navigation import (
+    NavigateAction,
+)
 from coraplex.robot_plans.actions.core.pick_up import PickUpAction
 from coraplex.robot_plans.actions.core.placing import PlaceAction
 from coraplex.robot_plans.actions.core.robot_body import MoveTorsoAction, ParkArmsAction
 from cramph.composites import Sequence
 from cramph.context import ContextExtension, StatechartContext
 from cramph.statechart import Statechart
-from krrood.entity_query_language.factories import an, entity, variable
 from krrood.exceptions import DataclassException
 from krrood.patterns.path_enumeration import PathEnumeration
 from krrood_spatial_math.spatial_types import (
@@ -76,7 +77,6 @@ from semantic_digital_twin.specifications.worlds import WorldSpecification
 from semantic_digital_twin.world import World
 from semantic_digital_twin.world_description.connections import FixedConnection
 from semantic_digital_twin.world_description.contact import ContactParameters
-from semantic_digital_twin.world_description.geometry import Scale
 from semantic_digital_twin.world_description.world_entity import Body
 
 if TYPE_CHECKING:
@@ -101,6 +101,11 @@ class LabBody(StrEnum):
     COUNTER_TOP = "counter_top"
     """
     The kitchen counter top, which marks whether the scene was already populated.
+    """
+
+    ROOM = "root"
+    """
+    The body the lab is laid out in, whose frame is the room frame.
     """
 
 
@@ -162,11 +167,14 @@ class Garbage:
     how it is let go of above the trash can.
     """
 
+    name: str
+    """
+    The name of the object's body and of its annotation, by which the plan finds it.
+    """
+
     semantic_annotation_type: type[HasRootKinematicStructureEntity]
     """
     What the object is.
-
-    Its body is named after it, so the plan can ask for it by type.
     """
 
     mesh: SceneFile
@@ -210,11 +218,6 @@ class Garbage:
     How far above the trash can's rim the bottom of the object is when it is let go.
     """
 
-    box_scale: Scale = field(default_factory=lambda: Scale(0.05, 0.05, 0.2))
-    """
-    The size of the box the object is simulated as.
-    """
-
     grasp_height: float = 0.05
     """
     How far above the grasp closest to the robot the object is taken hold of.
@@ -227,12 +230,11 @@ class Garbage:
         :param world: The world to spawn into.
         :param map_T_room: Where the frame the lab is laid out in lies in the map.
         """
-        name = self.semantic_annotation_type.__name__
         garbage = SemanticAnnotationWithRootSpecification(
-            name=name,
+            name=self.name,
             semantic_annotation_type=self.semantic_annotation_type,
             root_specification=BodySpecification.mesh(
-                name,
+                self.name,
                 str(self.mesh),
                 connection_specification=Connection6DoFSpecification(),
             ),
@@ -253,16 +255,7 @@ class Garbage:
         :param world: The world the object was spawned into.
         :return: The annotation naming the object, as the plan refers to it.
         """
-        return next(
-            an(
-                entity(
-                    variable(
-                        self.semantic_annotation_type,
-                        domain=world.semantic_annotations,
-                    )
-                )
-            ).evaluate()
-        )
+        return world.get_semantic_annotation_by_name(self.name)
 
     def drop_point(self, world: World, trash_can: TrashCan) -> Point3:
         """
@@ -307,8 +300,13 @@ class Garbage:
 @dataclass
 class NoFreeGarbageSpot(DataclassException):
     """
-    No spot drawn for the garbage had open floor for the robot to stand on in front of
-    it.
+    No spot drawn for the garbage on a piece of furniture had open floor for the robot to
+    stand on in front of it.
+    """
+
+    furniture: str
+    """
+    The name of the piece of furniture.
     """
 
     attempts: int
@@ -317,10 +315,16 @@ class NoFreeGarbageSpot(DataclassException):
     """
 
     def error_message(self) -> str:
-        return f"None of {self.attempts} spots drawn for the garbage was free."
+        return (
+            f"None of {self.attempts} spots drawn for the garbage on {self.furniture} "
+            f"was free."
+        )
 
     def suggest_correction(self) -> str:
-        return "Add surfaces the garbage may stand on, or lower the edge margin."
+        return (
+            f"Leave {self.furniture} out of the furniture the garbage stands on, or "
+            f"lower the edge margin."
+        )
 
 
 @dataclass
@@ -368,40 +372,66 @@ class GarbagePlacement:
         """
         :param garbage: The garbage to place.
         :param lab: The lab, holding its trash can, with nothing else spawned into it.
-        :param furniture: The pieces of furniture the garbage stands on the top of one
-            of.
+        :param furniture: The pieces of furniture the garbage is drawn to stand on the
+            top of one of.
         :param robot_start: Where the robot stands before the plan begins, in the frame
             of the lab's root.
         :param standing_pose: Where the robot stands to take something at its first
             argument, coming from its second.
-        :return: `garbage`, starting on the drawn spot and facing the way the robot faces
-            it while taking it.
-        :raises NoFreeGarbageSpot: If no spot drawn within :attr:`attempts` is free.
+        :return: A copy of `garbage` on a drawn one of `furniture`, named after it,
+            starting on a drawn spot and facing the way the robot faces it while taking
+            it.
+        :raises NoFreeGarbageSpot: If no spot drawn on that piece of furniture within
+            :attr:`attempts` is free.
         """
         [trash_can] = lab.get_semantic_annotations_by_type(TrashCan)
         floor_plan = FloorPlan.from_world(lab, trash_can.bodies)
-        tops = Footprints.from_bodies(furniture, lab.root)
-        top_heights = [
-            float(
-                body.collision.as_bounding_box_collection_in_frame(lab.root)
-                .bounding_box()
-                .max_z
-            )
-            for body in furniture
-        ]
         seed_sequence = np.random.SeedSequence(self.seed)
         generator = np.random.default_rng(seed_sequence)
+        logger.info(
+            f"Drawing the spot of the garbage with seed {seed_sequence.entropy}."
+        )
+        return self._sample_spot(
+            garbage,
+            furniture[int(generator.integers(len(furniture)))],
+            floor_plan,
+            generator,
+            lambda pose: standing_pose(pose, robot_start),
+        )
+
+    def _sample_spot(
+        self,
+        garbage: Garbage,
+        furniture: Body,
+        floor_plan: FloorPlan,
+        generator: np.random.Generator,
+        taking_pose_at: Callable[[Pose], Pose],
+    ) -> Garbage:
+        """
+        :param garbage: The garbage to place a copy of.
+        :param furniture: The piece of furniture the copy stands on the top of.
+        :param floor_plan: The floors of the lab and what stands on them.
+        :param generator: Draws the spot.
+        :param taking_pose_at: Where the robot stands to take something at the given
+            pose.
+        :return: A copy of `garbage` named after `furniture`, starting on a drawn spot
+            of its top and facing the way the robot faces it while taking it.
+        :raises NoFreeGarbageSpot: If no spot drawn within :attr:`attempts` is free.
+        """
+        room = floor_plan.frame
+        top = furniture.collision.as_bounding_box_collection_in_frame(
+            room
+        ).bounding_box()
+        bounds = top.to_array_bounds()
         for _ in range(self.attempts):
-            index = int(generator.integers(len(furniture)))
             middle = generator.uniform(
-                tops.lower[index] + self.edge_margin,
-                tops.upper[index] - self.edge_margin,
+                bounds.lower[:2] + self.edge_margin,
+                bounds.upper[:2] - self.edge_margin,
             )
-            taking_pose = standing_pose(
+            taking_pose = taking_pose_at(
                 Pose.from_xyz_rpy(
-                    x=float(middle[0]), y=float(middle[1]), reference_frame=lab.root
-                ),
-                robot_start,
+                    x=float(middle[0]), y=float(middle[1]), reference_frame=room
+                )
             )
             robot_footprint = Footprints.from_squares(
                 taking_pose.position.to_np()[:2], self.robot_radius + self.clearance
@@ -409,18 +439,18 @@ class GarbagePlacement:
             if not floor_plan.fits(robot_footprint)[0]:
                 continue
             logger.info(
-                f"Garbage placed on {furniture[index].name.name} at "
-                f"x={middle[0]:.3f}, y={middle[1]:.3f} in the room, drawn with seed "
-                f"{seed_sequence.entropy}."
+                f"Garbage placed on {furniture.name.name} at "
+                f"x={middle[0]:.3f}, y={middle[1]:.3f} in the room."
             )
             return replace(
                 garbage,
-                start_surface=top_heights[index],
+                name=f"{garbage.name}_on_{furniture.name.name}",
+                start_surface=float(top.max_z),
                 start_x=float(middle[0]),
                 start_y=float(middle[1]),
                 start_yaw=float(taking_pose.yaw),
             )
-        raise NoFreeGarbageSpot(attempts=self.attempts)
+        raise NoFreeGarbageSpot(furniture=furniture.name.name, attempts=self.attempts)
 
 
 # %% placing the trash can
@@ -511,6 +541,11 @@ class FloorPlan:
     The floors of a world and what stands on them, seen from above.
     """
 
+    frame: Body
+    """
+    The frame the footprints are given in.
+    """
+
     floors: Footprints
     """
     The floors the robot and the trash can stand on.
@@ -538,6 +573,7 @@ class FloorPlan:
             if body not in floor_bodies and body not in movable_bodies
         ]
         return cls(
+            world.root,
             Footprints.from_bodies(floor_bodies, world.root),
             Footprints.from_bodies(obstacle_bodies, world.root),
         )
@@ -554,8 +590,8 @@ class FloorPlan:
 @dataclass
 class NoFreeTrashCanPose(DataclassException):
     """
-    No pose drawn for the trash can was clear of the surroundings and of the robot's way
-    with room for the robot to stand beside it.
+    No pose drawn for the trash can was clear of the surroundings and of where the robot
+    stands, with room for the robot to stand beside it.
     """
 
     attempts: int
@@ -574,8 +610,8 @@ class NoFreeTrashCanPose(DataclassException):
 class TrashCanPlacement:
     """
     Draws where the trash can stands: on open floor around one of several pieces of
-    furniture, clear of the furniture, the walls and the robot's way, with a clear
-    straight way for the robot to drive on to it.
+    furniture, clear of the furniture, the walls and where the robot stands, with a clear
+    straight way for the robot to drive on to it from where it starts.
     """
 
     seed: int | None = None
@@ -591,7 +627,7 @@ class TrashCanPlacement:
 
     clearance: float = 0.1
     """
-    How far the trash can keeps from the surroundings and the robot's way, in meters.
+    How far the trash can keeps from the surroundings and the robot, in meters.
     """
 
     robot_radius: float = 0.3
@@ -614,14 +650,14 @@ class TrashCanPlacement:
         self,
         lab: World,
         furniture: list[Body],
-        robot_way: list[NDArray[np.float64]],
+        robot_stops: list[NDArray[np.float64]],
     ) -> HomogeneousTransformationMatrix:
         """
         :param lab: The lab, holding its trash can, with nothing else spawned into it.
         :param furniture: The pieces of furniture the trash can stands around one of.
-        :param robot_way: The positions the robot drives between in a straight line
-            before it carries the garbage on from the last of them to the trash can, in
-            the frame of the lab's root.
+        :param robot_stops: Where the robot stands before the plan begins, first, and
+            where it stands to take each piece of garbage, in the frame of the lab's
+            root.
         :return: Where the middle of the trash can's base stands relative to the lab's
             root.
         :raises NoFreeTrashCanPose: If no pose drawn within :attr:`attempts` is free.
@@ -637,7 +673,9 @@ class TrashCanPlacement:
                 max(abs(trash_can_box.min_y), abs(trash_can_box.max_y)),
             )
         )
-        robot_way_footprints = self._robot_way_footprints(robot_way)
+        robot_footprints = Footprints.from_squares(
+            np.array(robot_stops), self.robot_radius + self.clearance
+        )
         furniture_footprints = Footprints.from_bodies(furniture, lab.root)
         area = Footprints(
             furniture_footprints.lower - self.area_margin,
@@ -654,9 +692,9 @@ class TrashCanPlacement:
             )
             if not floor_plan.fits(trash_can_footprint)[0]:
                 continue
-            if robot_way_footprints.overlaps(trash_can_footprint)[0]:
+            if robot_footprints.overlaps(trash_can_footprint)[0]:
                 continue
-            if not self._has_clear_way(floor_plan, robot_way[-1], middle):
+            if not self._has_clear_way(floor_plan, robot_stops[0], middle):
                 continue
             yaw = generator.uniform(-np.pi, np.pi)
             logger.info(
@@ -782,6 +820,7 @@ class RandomSceneThrowAwayDemonstration(RobotDemonstration):
 
     garbage: Garbage = field(
         default_factory=lambda: Garbage(
+            "milk",
             Milk,
             SceneFile.MILK,
             LivingRoomSurfaceHeight.DESK,
@@ -859,7 +898,7 @@ class RandomSceneThrowAwayDemonstration(RobotDemonstration):
         room_T_trash_can = self.trash_can_placement.sample_pose(
             lab,
             [lab.get_body_by_name(body) for body in self.furniture_near_trash_can],
-            robot_way=[
+            robot_stops=[
                 robot_start.position.to_np()[:2],
                 taking_pose.position.to_np()[:2],
             ],
@@ -1124,6 +1163,7 @@ class RandomSceneThrowAwayDemonstration(RobotDemonstration):
                 ]
             )
         )
+
         return statechart
 
     def build_simulation(self, world: World) -> MujocoSim:

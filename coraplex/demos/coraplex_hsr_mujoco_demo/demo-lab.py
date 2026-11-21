@@ -8,6 +8,7 @@ Run it from this folder::
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -408,7 +409,7 @@ class LabMilkTransportDemonstration(RobotDemonstration):
         return Pose.from_xyz_rpy(
             x=standing_position.x,
             y=standing_position.y,
-            yaw=float(np.arctan2(offset.y, offset.x)),
+            yaw=math.atan2(offset.y, offset.x),
             reference_frame=target.reference_frame,
         )
 

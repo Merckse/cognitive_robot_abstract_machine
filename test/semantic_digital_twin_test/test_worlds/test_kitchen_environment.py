@@ -4,6 +4,8 @@ Geometric regression tests for the predefined kitchen environment.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from semantic_digital_twin.predefined_maps.kitchen_environment import (
@@ -12,7 +14,9 @@ from semantic_digital_twin.predefined_maps.kitchen_environment import (
 from semantic_digital_twin.semantic_annotations.semantic_annotations import (
     Cooktop,
     CounterTop,
+    Floor,
     KitchenIsland,
+    Room,
 )
 from semantic_digital_twin.world import World
 
@@ -131,3 +135,42 @@ def test_the_island_worktop_still_carries_its_cooktop() -> None:
     assert worktop.get_objects_of_type(Cooktop) == [
         world.get_semantic_annotation_by_name("sideboard_cooktop")
     ]
+
+
+# %% opacity
+
+
+def test_opacity_scales_the_opacity_of_every_visual_shape() -> None:
+    """
+    Every visual shape of a see-through kitchen keeps its color with its opacity scaled,
+    so parts that are already see-through stay more see-through than the rest.
+    """
+    opacity = 0.4
+    opaque_world = KitchenEnvironment().create_world()
+    see_through_world = KitchenEnvironment(opacity=opacity).create_world()
+
+    opaque_shapes = [
+        shape for body in opaque_world.bodies for shape in body.visual.shapes
+    ]
+    see_through_shapes = [
+        shape for body in see_through_world.bodies for shape in body.visual.shapes
+    ]
+
+    assert [
+        replace(shape.color, opacity=shape.color.opacity * opacity)
+        for shape in opaque_shapes
+    ] == [shape.color for shape in see_through_shapes]
+
+
+# %% floors
+
+
+def test_kitchen_without_floors_has_neither_floors_nor_rooms() -> None:
+    """
+    A kitchen built without floors leaves out the floor of every room and the rooms they
+    define.
+    """
+    world = KitchenEnvironment(includes_floors=False).create_world()
+
+    assert world.get_semantic_annotations_by_type(Floor) == []
+    assert world.get_semantic_annotations_by_type(Room) == []

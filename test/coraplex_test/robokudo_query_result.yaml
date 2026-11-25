@@ -1,0 +1,36 @@
+# The answer of the live_yolo RoboKudo pipeline to an object query, as `ros2 action
+# send_goal` printed it, with the poses of ClusterPoseBBAnnotator in the map frame.
+res:
+- uid: ''
+  type: Milk
+  shape_size:
+  - dimensions: {x: 0.10419682312011719, y: 0.060241294860839845, z: 0.23640162283640342}
+    radius: 0.0
+  pose:
+  - header: {stamp: {sec: 1795536823, nanosec: 457119166}, frame_id: map}
+    pose:
+      position: {x: 1.6286087957780415, y: 6.023015689112054, z: 0.8864961341936104}
+      orientation: {x: 1.612666279499986e-16, y: -5.859057729520953e-18, z: 0.17446653167177484, w: 0.9846631044811324}
+  pose_source: [ClusterPoseBBAnnotator]
+- uid: ''
+  type: Pear
+  shape_size:
+  - dimensions: {x: 0.07894802856445313, y: 0.029197587966918945, z: 0.08925267043010798}
+    radius: 0.0
+  pose:
+  - header: {stamp: {sec: 1795536823, nanosec: 457119166}, frame_id: map}
+    pose:
+      position: {x: 2.0147093095028037, y: 6.027634813548974, z: 0.8287929633597969}
+      orientation: {x: 7.024467638118577e-17, y: 6.642414973555807e-18, z: -0.05410886098152968, w: 0.9985350425314484}
+  pose_source: [ClusterPoseBBAnnotator]
+- uid: ''
+  type: Strawberry
+  shape_size:
+  - dimensions: {x: 0.07012068176269531, y: 0.03578424835205078, z: 0.03697938541274559}
+    radius: 0.0
+  pose:
+  - header: {stamp: {sec: 1795536823, nanosec: 457119166}, frame_id: map}
+    pose:
+      position: {x: 1.7752373692842238, y: 6.065554494549802, z: 0.7914813428066128}
+      orientation: {x: 3.874556430605392e-17, y: -3.449569536064146e-17, z: 0.21025373698707542, w: 0.9776468514156683}
+  pose_source: [ClusterPoseBBAnnotator]

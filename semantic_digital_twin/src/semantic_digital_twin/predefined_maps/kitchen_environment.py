@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 # %% Imports
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from enum import Enum, StrEnum
 from typing_extensions import cast
@@ -796,14 +796,41 @@ class KitchenEnvironment(WorldSource):
     Observed kitchen geometry with the existing flush-back construction constraint.
     """
 
+    opacity: float = 0.2
+    """
+    Factor from zero to one by which the opacity of every visual shape is multiplied.
+    """
+
+    includes_floors: bool = False
+    """
+    Whether the floor of every room, and the rooms the floors define, are built.
+
+    .. warning:: Navigation that plans its path on the floor below the robot, such as
+        :class:`~coraplex.robot_plans.actions.core.navigation.PathPlanningNavigateAction`,
+        needs the floors.
+    """
+
     def create_world(self) -> World:
         world = World.create_with_root_body("root")
 
         self._build_environment_walls(world)
         self._build_environment_furniture(world)
-        self._build_environment_rooms(world)
+        if self.includes_floors:
+            self._build_environment_rooms(world)
+        self._scale_visual_opacity(world)
 
         return world
+
+    def _scale_visual_opacity(self, world: World) -> None:
+        """
+        Multiply the opacity of every visual shape in ``world`` by :attr:`opacity`,
+        keeping parts that are already see-through more see-through than the rest.
+        """
+        for body in world.bodies:
+            for shape in body.visual.shapes:
+                shape.color = replace(
+                    shape.color, opacity=shape.color.opacity * self.opacity
+                )
 
     @staticmethod
     def _door_hinge_specification(

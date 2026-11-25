@@ -11,6 +11,7 @@ from uuid import UUID
 
 from std_msgs.msg import String
 from typing_extensions import TYPE_CHECKING
+from coraplex.exceptions import UnspawnableObservation
 from coraplex.scene_description import SceneDescription
 from krrood.entity_query_language.verbalization.fragments.base import (
     NounPhrase,
@@ -27,7 +28,14 @@ from krrood.entity_query_language.verbalization.rendering.realization import (
 from krrood.entity_query_language.verbalization.vocabulary.parts_of_speech import Noun
 from krrood_spatial_math.spatial_types import HomogeneousTransformationMatrix
 from semantic_digital_twin.reasoning.predicates import SupportedBy, InsideOf
-from semantic_digital_twin.semantic_annotations.mixins import HasSupportingSurface
+from semantic_digital_twin.reasoning.queries import annotation_class_by_label
+from semantic_digital_twin.semantic_annotations.mixins import (
+    HasSupportingSurface,
+    IsPerceivable,
+)
+from semantic_digital_twin.specifications.connections import (
+    Connection6DoFSpecification,
+)
 from semantic_digital_twin.specifications.kinematic_structure_entities import (
     BodySpecification,
 )
@@ -76,6 +84,50 @@ class ObservedObject:
     """Measured pose with its reference frame, when localization succeeded."""
     dimensions: Scale | None = None
     """Measured box extents; absent dimensions cannot establish contact."""
+
+    @property
+    def semantic_annotation_type(self) -> type[IsPerceivable] | None:
+        """
+        The perceivable annotation whose class name :attr:`category` contains, None when
+        it names none.
+        """
+        return annotation_class_by_label(self.category)
+
+    @property
+    def is_spawnable(self) -> bool:
+        """
+        Whether the object can be added to a world: it was localized, measured and
+        identified as a perceivable annotation.
+        """
+        return (
+            self.pose is not None
+            and self.dimensions is not None
+            and self.semantic_annotation_type is not None
+        )
+
+    def spawn(self, world: World, name: str) -> IsPerceivable:
+        """
+        Add the object to ``world`` as a box of :attr:`dimensions` at :attr:`pose`, free
+        to move and annotated as :attr:`semantic_annotation_type`.
+
+        :param world: The world holding the frame of :attr:`pose`.
+        :param name: The name of the annotation and of its body.
+        :return: The annotation of the added object.
+        :raises UnspawnableObservation: If the object is not :attr:`is_spawnable`.
+        """
+        if not self.is_spawnable:
+            raise UnspawnableObservation(self.category)
+        return self.semantic_annotation_type.get_annotation_specification(
+            name=name,
+            root_specification=BodySpecification.box(
+                name,
+                self.dimensions,
+                connection_specification=Connection6DoFSpecification(),
+            ),
+        ).spawn(
+            world,
+            parent_T_self=world.transform(self.pose, world.root).homogeneous_matrix,
+        )
 
 
 class SceneSentence(StrEnum):
@@ -188,6 +240,31 @@ class SceneObservation:
             )
             sentences.append(sentence.format(objects=phrase, location=suffix))
         return " ".join(sentences)
+
+    def spawn_objects(
+        self, world: World, name_prefix: str = "perceived"
+    ) -> list[IsPerceivable]:
+        """
+        Add every :attr:`ObservedObject.is_spawnable` object of this batch to ``world``,
+        see :meth:`ObservedObject.spawn`, and leave the others out.
+
+        :param world: The world holding the frames of the objects' poses.
+        :param name_prefix: The start of every added name, which goes on with the
+            annotation and how many of it the world held before.
+        :return: The annotations of the added objects, in the order of the batch.
+        """
+        spawned = []
+        for observation in self.objects:
+            if not observation.is_spawnable:
+                continue
+            annotation_type = observation.semantic_annotation_type
+            count = len(world.get_semantic_annotations_by_type(annotation_type))
+            spawned.append(
+                observation.spawn(
+                    world, f"{name_prefix}_{annotation_type.__name__.lower()}_{count}"
+                )
+            )
+        return spawned
 
     def locate(
         self,

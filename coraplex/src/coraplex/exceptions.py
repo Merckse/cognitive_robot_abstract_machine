@@ -415,6 +415,31 @@ class ScenePerceptionFailed(DataclassException):
         return "Check the perception pipeline and its action result before requesting another report."
 
 
+@dataclass
+class UnspawnableObservation(DataclassException):
+    """
+    An observed object was to be added to a world without its pose, its size or a
+    perceivable annotation its category names.
+    """
+
+    category: str
+    """
+    The category the perception source reported for the object.
+    """
+
+    def error_message(self) -> str:
+        return (
+            f"The observed object of category {self.category!r} lacks a pose, a size or "
+            f"a perceivable annotation its category names, so it cannot be spawned."
+        )
+
+    def suggest_correction(self) -> str:
+        return (
+            "spawn only objects whose is_spawnable is true, or add a perceivable "
+            "annotation named like the category."
+        )
+
+
 # %% robot speech transport
 
 

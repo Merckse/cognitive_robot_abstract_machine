@@ -4,8 +4,13 @@ RoboKudo's complete action result is preserved as an unrestricted observation ba
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import Mock
 from threading import Event, Thread
+
+import numpy as np
+import yaml
+from rosidl_runtime_py import set_message_fields
 from rclpy.action import ActionServer
 from rclpy.action.server import ServerGoalHandle
 from rclpy.node import Node
@@ -16,11 +21,15 @@ from rclpy.task import Future
 from robokudo_msgs.action import Query
 from robokudo_msgs.msg import ObjectDesignator, ShapeSize
 from geometry_msgs.msg import PoseStamped
-from semantic_digital_twin.semantic_annotations.semantic_annotations import Table
+from semantic_digital_twin.semantic_annotations.semantic_annotations import (
+    Milk,
+    Table,
+)
+from semantic_digital_twin.world_description.connections import Connection6DoF
 from semantic_digital_twin.world_description.geometry import Scale
 
 from coraplex.ros_scene_perception import RoboKudoScenePerception
-from coraplex.scene_perception import SceneQuery, SceneReport
+from coraplex.scene_perception import SceneObservation, SceneQuery, SceneReport
 from coraplex.exceptions import ScenePerceptionFailed
 from semantic_digital_twin.world import World
 
@@ -202,3 +211,88 @@ def test_local_action_completes_before_any_report_is_published(
     assert [call.args[0].data for call in publisher.publish.call_args_list] == [
         "I detected a cup."
     ]
+
+
+# %% spawning the detected objects
+
+
+@pytest.fixture
+def detected_objects() -> list[ObjectDesignator]:
+    """
+    The objects the live_yolo pipeline answered an object query with on the real robot.
+    """
+    result = Query.Result()
+    set_message_fields(
+        result,
+        yaml.safe_load(
+            Path(__file__).with_name("robokudo_query_result.yaml").read_text()
+        ),
+    )
+    return list(result.res)
+
+
+@pytest.fixture
+def map_world() -> World:
+    """
+    An empty world whose root is the map frame the real robot localizes in.
+    """
+    return World.create_with_root_body("map")
+
+
+@pytest.fixture
+def detected_scene(
+    detected_objects: list[ObjectDesignator], map_world: World
+) -> SceneObservation:
+    """
+    The parsed answer of :func:`detected_objects`, with its poses in :func:`map_world`.
+    """
+    query = SceneQuery(world=map_world)
+    return SceneObservation(
+        objects=[
+            RoboKudoScenePerception.parse_object(designator, query)
+            for designator in detected_objects
+        ]
+    )
+
+
+def test_detected_milk_is_spawned_as_milk_where_it_was_seen(
+    detected_scene: SceneObservation, map_world: World
+) -> None:
+    """
+    A detected object of a known annotation becomes a free body of its measured size at
+    its measured pose, annotated as what it was detected as.
+    """
+    world = map_world
+    observed_milk = detected_scene.objects[0]
+
+    milk = detected_scene.spawn_objects(world)[0]
+
+    assert type(milk) is Milk
+    assert isinstance(milk.root.parent_connection, Connection6DoF)
+    assert milk.root.collision.shapes[0].scale == observed_milk.dimensions
+    np.testing.assert_allclose(
+        milk.root.global_transform.to_np(),
+        world.transform(observed_milk.pose, world.root).homogeneous_matrix.to_np(),
+        atol=1e-9,
+    )
+
+
+def test_detected_objects_without_annotation_are_not_spawned(
+    detected_scene: SceneObservation, map_world: World
+) -> None:
+    """
+    Detected objects whose type names no perceivable annotation are left out of the
+    world.
+    """
+    world = map_world
+    unknown_objects = SceneObservation(
+        objects=[
+            observed
+            for observed in detected_scene.objects
+            if observed.semantic_annotation_type is None
+        ]
+    )
+
+    assert unknown_objects.objects == detected_scene.objects[1:]
+    assert unknown_objects.spawn_objects(world) == []
+    assert world.bodies == [world.root]

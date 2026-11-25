@@ -21,7 +21,7 @@ from semantic_digital_twin.robots.robot_parts import Camera, EndEffector
 from semantic_digital_twin.robots.tracy import Tracy
 from semantic_digital_twin.semantic_annotations.semantic_annotations import Milk
 from krrood_spatial_math.spatial_types import HomogeneousTransformationMatrix
-from krrood_spatial_math.spatial_types import Point3, Vector3
+from krrood_spatial_math.spatial_types import Point3, Pose, Vector3
 from semantic_digital_twin.world_description.connections import (
     ActiveConnection1DOF,
     FixedConnection,
@@ -382,6 +382,46 @@ def test_the_goal_for_a_grasp_turns_the_gripper_the_same_way_as_the_tool_frame_g
         pr2_gripper.tool_frame_goal(grasp).rotation_matrix.to_np(),
         atol=1e-9,
     )
+
+
+# %% how low a gripper reaches once closed at a grasp
+
+
+def test_a_gripper_closed_at_the_grasp_it_stands_at_reaches_down_to_its_own_geometry(
+    pr2_gripper,
+):
+    """
+    Closed where it already stands, the gripper's lowest point is the lowest point of
+    its collision geometry in the world.
+    """
+    world = pr2_gripper._world
+    pr2_gripper.get_joint_state_by_type(GripperState.CLOSE).apply_to(world)
+    world_T_tool = pr2_gripper.tool_frame.global_transform
+    grasp_it_stands_at = HomogeneousTransformationMatrix.from_point_rotation_matrix(
+        point=world_T_tool @ pr2_gripper.tool_P_grasp_when_closed,
+        rotation_matrix=world_T_tool.rotation_matrix @ pr2_gripper.tool_R_grasp,
+        reference_frame=world.root,
+    ).pose
+    lowest_point_in_world = min(
+        shape.mesh_in_frame(world.root).bounds[0][2]
+        for body in pr2_gripper.bodies_with_collision
+        for shape in body.collision.shapes
+    )
+
+    assert pr2_gripper.lowest_height_when_closed(
+        grasp_pose=grasp_it_stands_at
+    ) == pytest.approx(lowest_point_in_world)
+
+
+def test_reading_how_low_a_closed_gripper_reaches_stands_the_world_back_up(
+    pr2_gripper,
+):
+    world = pr2_gripper._world
+    positions_before = world.state.positions.copy()
+
+    pr2_gripper.lowest_height_when_closed(grasp_pose=Pose(reference_frame=world.root))
+
+    np.testing.assert_array_equal(world.state.positions, positions_before)
 
 
 # %% how wide the fingers stand

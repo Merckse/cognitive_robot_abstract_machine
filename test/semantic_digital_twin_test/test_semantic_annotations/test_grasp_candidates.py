@@ -44,6 +44,7 @@ from semantic_digital_twin.semantic_annotations.semantic_annotations import (
     Bowl,
     Cabinet,
     Dishwasher,
+    DishwasherTab,
     Floor,
     Handle,
     Milk,
@@ -487,6 +488,34 @@ def test_cutlery_without_a_shape_offers_no_grasp():
 
     with pytest.raises(NoGraspGeometry):
         spoon.grasp_candidates()
+
+
+# %% dishwasher tab grasp poses
+
+
+def test_a_dishwasher_tab_is_grasped_from_above_across_its_narrower_side():
+    """
+    A tab lies flat, so the fingers come down onto it and close across the narrower of
+    its two horizontal sides.
+    """
+    extents = Scale(0.035, 0.026, 0.019)
+    body = Body(
+        name=PrefixedName("dishwasher_tab", prefix="grasp_candidates"),
+        collision=ShapeCollection(
+            [Box(origin=HomogeneousTransformationMatrix(), scale=extents)]
+        ),
+    )
+    tab = DishwasherTab(root=body)
+    world = World()
+    with world.modify_world():
+        world.add_kinematic_structure_entity(body)
+        world.add_semantic_annotation(tab)
+
+    [grasp] = tab.grasp_candidates()
+    axes = axes_of(grasp.grasp_pose)
+
+    np.testing.assert_allclose(axes[:, 0], [0, 0, -1], atol=1e-9)
+    np.testing.assert_allclose(np.abs(axes[:, 1]), [0, 1, 0], atol=1e-9)
 
 
 # %% grasping at a handle

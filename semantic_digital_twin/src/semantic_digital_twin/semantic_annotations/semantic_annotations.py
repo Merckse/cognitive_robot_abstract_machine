@@ -47,6 +47,7 @@ from semantic_digital_twin.semantic_annotations.mixins import (
     HasGraspCandidates,
     HasRim,
     HasDrawnGraspsByDefault,
+    HasGraspFromAboveByDefault,
 )
 from semantic_digital_twin.grasping.grasp_candidates import GraspCandidate
 from semantic_digital_twin.grasping.grasp_strategies import (
@@ -1411,36 +1412,10 @@ class SaltPepperShaker(SaltContainer):
 
 
 @dataclass(eq=False)
-class Cutlery(HasHandle, Tableware):
+class Cutlery(HasGraspFromAboveByDefault, HasHandle, Tableware):
     """
     A piece of cutlery, lying flat, grasped from above and across its length.
     """
-
-    def default_grasp_candidates(self) -> list[GraspCandidate]:
-        """
-        :return: The grasp from above that closes across the piece, which lies flat.
-        :raises NoGraspGeometry: If the root body has no collision geometry to tell
-            which way the piece lies.
-        """
-        if not self.root.has_collision():
-            raise NoGraspGeometry(self)
-        bounding_box = self.root.collision.as_bounding_box_collection_in_frame(
-            self.root
-        ).bounding_box()
-        along_x = bounding_box.x_interval.upper - bounding_box.x_interval.lower
-        along_y = bounding_box.y_interval.upper - bounding_box.y_interval.lower
-        finger_axis = Vector3.NEGATIVE_Y() if along_x >= along_y else Vector3.X()
-        return [
-            GraspCandidate(
-                self,
-                Pose(
-                    orientation=RotationMatrix.from_vectors(
-                        x=Vector3.NEGATIVE_Z(), y=finger_axis
-                    ).quaternion,
-                    reference_frame=self.root,
-                ),
-            )
-        ]
 
     @classproperty
     def grasp_strategy(cls) -> GraspStrategy:
@@ -1479,9 +1454,9 @@ class Pen(HasGraspCandidates):
     """
 
 @dataclass(eq=False)
-class DishwasherTab(HasGraspCandidates):
+class DishwasherTab(HasGraspFromAboveByDefault):
     """
-    A Dishwashertab.
+    A tablet of dishwasher detergent, which lies flat.
     """
 
 @dataclass(eq=False)

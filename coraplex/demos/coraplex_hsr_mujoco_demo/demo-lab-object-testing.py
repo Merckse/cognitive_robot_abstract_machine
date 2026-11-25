@@ -42,7 +42,7 @@ from semantic_digital_twin.datastructures.definitions import TorsoState
 from semantic_digital_twin.grasping.grasp_candidates import GraspCandidate
 from semantic_digital_twin.predefined_maps.kitchen_environment import KitchenEnvironment
 from semantic_digital_twin.robots.hsrb import HSRB
-from semantic_digital_twin.semantic_annotations.semantic_annotations import Floor, Milk
+from semantic_digital_twin.semantic_annotations.semantic_annotations import Floor, Milk, DishwasherTab
 from semantic_digital_twin.specifications.connections import (
     Connection6DoFSpecification,
 )
@@ -58,13 +58,12 @@ from semantic_digital_twin.specifications.worlds import WorldSpecification
 from semantic_digital_twin.world_description.contact import ContactParameters
 from typing_extensions import TYPE_CHECKING
 
-from semantic_digital_twin.world_description.geometry import Scale
-
 if TYPE_CHECKING:
     from contextlib import AbstractContextManager
 
     from coraplex.plans.executors import PlanExecutor
     from cramph.context import ContextExtension, StatechartContext
+    from semantic_digital_twin.robots.robot_part_mixins import HasTwoFingers
     from semantic_digital_twin.robots.robot_parts import AbstractRobot
     from semantic_digital_twin.world import World
     from semantic_digital_twin.world_description.world_entity import Body
@@ -92,6 +91,15 @@ class SceneFile(PathEnumeration):
     The mesh of the cereal box.
     """
 
+    DISHWASHER_TAB = (
+            Path(__file__).resolve().parents[2]
+            / "resources"
+            / "objects"
+            / "dishwasher_tab.stl"
+    )
+    """
+    The mesh of the Dishwasher tab.
+    """
 
 class SceneBody(StrEnum):
     """
@@ -266,7 +274,7 @@ class LabObjectTransportDemonstration(RobotDemonstration):
 
     object_start: SurfaceSpot = field(
         default_factory=lambda: SurfaceSpot(
-            surface=SceneBody.COUNTER, x=2.6, y=-2.05, yaw=-np.pi / 2
+            surface=SceneBody.COUNTER, x=2.6, y=-1.7, yaw=-np.pi / 2
         )
     )
     """
@@ -309,9 +317,21 @@ class LabObjectTransportDemonstration(RobotDemonstration):
     fingers hold it.
     """
 
+    minimum_approach_tilt: float = 0.6
+    """
+    The smallest angle off vertical, in radians, at which the hand comes down onto an
+    object from above.
+    """
+
+    gripper_clearance: float = 0.003
+    """
+    How far above the surface an object stands on the closed gripper stays at the
+    grasp, in meters.
+    """
+
     transported_object: TransportedObject = field(
         default_factory=lambda: TransportedObject(
-            name=SceneBody.MILK, annotation_type=Milk, mesh=SceneFile.MILK
+            name=SceneBody.DISHWASHER_TAB, annotation_type=DishwasherTab, mesh=SceneFile.DISHWASHER_TAB
         )
     )
     """
@@ -345,7 +365,6 @@ class LabObjectTransportDemonstration(RobotDemonstration):
                 transported_object.name,
                 str(transported_object.mesh),
                 connection_specification=Connection6DoFSpecification(),
-                scale=Scale(0.2,0.2,0.2)
             ),
         ).spawn(world)
         ContactParameters.create_for_grasped_object().apply_to([graspable.root])
@@ -420,7 +439,12 @@ class LabObjectTransportDemonstration(RobotDemonstration):
                     NavigateAction(target_location=taking_pose),
                     MoveTorsoAction(torso_state=TorsoState.HIGH),
                     PickUpAction(
-                        grasp=self.find_grasp(graspable, taking_pose), arm=arm
+                        grasp=self.find_grasp(
+                            graspable=graspable,
+                            standing_pose=taking_pose,
+                            gripper=arm.end_effector,
+                        ),
+                        arm=arm,
                     ),
                     ParkArmsAction(arms=robot.all_arms),
                     MoveTorsoAction(torso_state=TorsoState.LOW),
@@ -451,16 +475,22 @@ class LabObjectTransportDemonstration(RobotDemonstration):
 
     def find_grasp(
         self,
+        *,
         graspable: HasGraspCandidates,
         standing_pose: Pose,
+        gripper: HasTwoFingers,
         fraction_of_height: float = 4 / 6,
     ) -> GraspCandidate:
         """
         :param graspable: The object to take, standing upright.
         :param standing_pose: Where the robot stands while it takes the object.
+        :param gripper: The gripper that takes the object.
         :param fraction_of_height: How far up the object's bounding box the grasp is,
             from 0 at its bottom to 1 at its top; by default where its upper third begins.
-        :return: The object's grasp closest to `standing_pose`, moved up to that height.
+        :return: The object's grasp closest to `standing_pose`, tilted as
+            :meth:`tilt_grasp_pose` does and moved up to that height, or higher where
+            the closed `gripper` would come closer than :attr:`gripper_clearance` to the
+            object's bottom.
         """
         box = graspable.root.collision.as_bounding_box_collection_in_frame(
             graspable.root
@@ -468,9 +498,46 @@ class LabObjectTransportDemonstration(RobotDemonstration):
         [closest] = GraspsByCloseness(
             graspable=graspable, standing_position=standing_pose, number_of_grasps=1
         )()
-        grasp_pose = deepcopy(closest.grasp_pose)
-        grasp_pose.z = box.min_z + fraction_of_height * (box.max_z - box.min_z)
+        grasp_pose = self.tilt_grasp_pose(
+            grasp_pose=closest.grasp_pose, standing_pose=standing_pose
+        )
+        height = box.min_z + fraction_of_height * (box.max_z - box.min_z)
+        grasp_pose.z = height
+        gripper_gap = (
+            gripper.lowest_height_when_closed(grasp_pose=grasp_pose) - box.min_z
+        )
+        grasp_pose.z = height + max(0.0, self.gripper_clearance - gripper_gap)
         return GraspCandidate(graspable=graspable, grasp_pose=grasp_pose)
+
+    def tilt_grasp_pose(self, *, grasp_pose: Pose, standing_pose: Pose) -> Pose:
+        """
+        :param grasp_pose: A grasp on an upright object, in the object's frame.
+        :param standing_pose: Where the robot stands while it takes the grasp.
+        :return: A copy of `grasp_pose`, turned about its closing axis to lean away from
+            `standing_pose` by :attr:`minimum_approach_tilt` off vertical where it came
+            down steeper than that.
+        """
+        object_T_grasp = grasp_pose.to_np()
+        off_vertical = float(np.arccos(np.clip(-object_T_grasp[2, 0], -1.0, 1.0)))
+        if off_vertical >= self.minimum_approach_tilt:
+            return deepcopy(grasp_pose)
+        world = grasp_pose.reference_frame._world
+        object_V_away_from_standing = (
+            object_T_grasp[:3, 3]
+            - world.transform(standing_pose, grasp_pose.reference_frame).to_np()[:3, 3]
+        )
+        tilt = self.minimum_approach_tilt - off_vertical
+        tilted_poses = [
+            (
+                grasp_pose.homogeneous_matrix
+                @ HomogeneousTransformationMatrix.from_xyz_rpy(pitch=direction * tilt)
+            ).pose
+            for direction in (1.0, -1.0)
+        ]
+        return max(
+            tilted_poses,
+            key=lambda pose: float(pose.to_np()[:3, 0] @ object_V_away_from_standing),
+        )
 
     def _standing_pose_facing(self, target: Pose, approach_from: Pose) -> Pose:
         """
@@ -495,7 +562,7 @@ class LabObjectTransportDemonstration(RobotDemonstration):
 
 def main(
     executor_type: type[PlanExecutor] = PhysicallySimulatedPlanExecutor,
-    collision_avoidance: bool = True,
+    collision_avoidance: bool = False,
     event_segmentation: bool = False,
     debug: bool = False,
     headless: bool = False,

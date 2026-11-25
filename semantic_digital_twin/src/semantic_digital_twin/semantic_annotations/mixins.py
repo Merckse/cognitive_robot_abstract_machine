@@ -549,6 +549,41 @@ class HasDrawnGraspsByDefault(HasGraspCandidates, Mixin):
 
 
 @dataclass(eq=False)
+class HasGraspFromAboveByDefault(HasGraspCandidates, Mixin):
+    """
+    A mixin class for semantic annotations of objects lying flat, which, while no model
+    is given, are grasped from above, closing across their narrower horizontal extent.
+    """
+
+    def default_grasp_candidates(self) -> list[GraspCandidate]:
+        """
+        :return: The grasp that comes down onto the object's origin and closes across
+            it.
+        :raises NoGraspGeometry: If the root body has no collision geometry to tell
+            which way the object lies.
+        """
+        if not self.root.has_collision():
+            raise NoGraspGeometry(self)
+        bounding_box = self.root.collision.as_bounding_box_collection_in_frame(
+            self.root
+        ).bounding_box()
+        along_x = bounding_box.x_interval.upper - bounding_box.x_interval.lower
+        along_y = bounding_box.y_interval.upper - bounding_box.y_interval.lower
+        finger_axis = Vector3.NEGATIVE_Y() if along_x >= along_y else Vector3.X()
+        return [
+            GraspCandidate(
+                self,
+                Pose(
+                    orientation=RotationMatrix.from_vectors(
+                        x=Vector3.NEGATIVE_Z(), y=finger_axis
+                    ).quaternion,
+                    reference_frame=self.root,
+                ),
+            )
+        ]
+
+
+@dataclass(eq=False)
 class HasRootRegion(HasRootKinematicStructureEntity[Region], Mixin):
     """
     A mixin class for semantic annotations that have a region.

@@ -478,6 +478,28 @@ class HasTwoFingers(
         """
         return self.held_body_T_grasp_at(self.tool_P_grasp_when_closed)
 
+    def lowest_height_when_closed(self, *, grasp_pose: Pose) -> float:
+        """
+        :param grasp_pose: A grasp frame the gripper is brought to, as
+            :meth:`tool_frame_goal_for_grasp` aims it.
+        :return: How high the gripper's lowest point stands once it is closed at
+            ``grasp_pose``, along the z-axis of the frame ``grasp_pose`` is expressed
+            in, in meters.
+        """
+        reference_T_tool = self.tool_frame_goal_for_grasp(grasp_pose).to_np()
+        world = self._world
+        with world.reset_state_context():
+            self.get_joint_state_by_type(GripperState.CLOSE).apply_to(world)
+            lowest_heights = []
+            for body in self.bodies_with_collision:
+                mesh = body.collision.combined_mesh.copy()
+                mesh.apply_transform(
+                    reference_T_tool
+                    @ world.compute_forward_kinematics_np(self.tool_frame, body)
+                )
+                lowest_heights.append(mesh.bounds[0][2])
+        return float(min(lowest_heights))
+
 
 @dataclass(eq=False)
 class HasSensors(

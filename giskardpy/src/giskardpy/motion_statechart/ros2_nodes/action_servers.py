@@ -4,6 +4,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
+from action_msgs.msg import GoalStatus
 from control_msgs.action import ParallelGripperCommand
 from geometry_msgs.msg import (
     PoseStamped as ROSPoseStamped,
@@ -26,6 +27,7 @@ from cramph.context import ContextExtension
 from cramph.data_types import ObservationStateValues
 from giskardpy.motion_statechart.graph_node import MotionStatechartNode
 from cramph.node import NodeArtifacts
+from giskardpy.middleware.ros2.navigation_path_preview import NavigationPathPreview
 from giskardpy.motion_statechart.ros_context import RosContextExtension
 from krrood_spatial_math.spatial_types import Pose
 from semantic_digital_twin.world_description.world_entity import Body
@@ -153,6 +155,48 @@ class NavigateActionServerTask(
     Base link of the robot, used for estimating the distance to the goal.
     """
 
+    preview_path_action: str | None = None
+    """
+    Planner action (``nav2_msgs/action/ComputePathToPose``) that is asked for the path to
+    the target when navigation starts; the path is published on :attr:`preview_path_topic`
+    for RViz. ``None`` disables the preview.
+    """
+
+    preview_path_topic: str = "planned_path_preview"
+    """
+    Topic the previewed path is published on (``nav_msgs/Path``, latched).
+    """
+
+    _path_preview: NavigationPathPreview | None = field(init=False, default=None)
+    """
+    Path preview helper, created in :meth:`set_up` when :attr:`preview_path_action` is set.
+    """
+
+    def set_up(self) -> None:
+        """
+        Creates the action client and, if enabled, the path preview.
+        """
+        super().set_up()
+        if self.preview_path_action is None:
+            return
+        ros_context_extension = self.context.require_extension(
+            extension_type=RosContextExtension
+        )
+        self._path_preview = NavigationPathPreview(
+            ros_node=ros_context_extension.ros_node,
+            planner_action=self.preview_path_action,
+            path_topic=self.preview_path_topic,
+        )
+        self._path_preview.wait_for_planner(timeout=2.0)
+
+    def on_start(self) -> None:
+        """
+        Requests the path preview (if enabled) and sends the navigation goal.
+        """
+        if self._path_preview is not None:
+            self._path_preview.request(self._action_goal.pose)
+        super().on_start()
+
     def build_action_goal(self) -> None:
         root_T_goal = self.context.world.transform(
             target_frame=self.context.world.root, spatial_object=self.target_pose
@@ -202,20 +246,26 @@ class NavigateActionServerTask(
         """
         Stores the navigation result returned by the action server.
         """
-        # TODO: Check the ._result.result calls against a running action server because I'm not sure if all of them are correct
         super().result_callback(future)
         logger.info(
-            f"Finished navigation with response status: {self._result.result.status} and result code: {self._result.error_code}"
+            f"Finished navigation with goal status {self._result.status} and "
+            f"error code {self._result.result.error_code}"
         )
 
     def on_tick(self) -> ObservationStateValues:
-        if self._result.result:
-            return (
-                ObservationStateValues.TRUE
-                if self._result.error_code == NavigateToPose.Result.NONE
-                else ObservationStateValues.FALSE
-            )
-        return ObservationStateValues.UNKNOWN
+        """
+        Unknown until the navigation server answered, then whether it reached the goal.
+
+        ``_result`` is the ``GetResult`` response of the action: its ``status`` is the goal
+        status and its ``result`` the ``NavigateToPose.Result`` with the ``error_code``.
+        """
+        if self._result is None:
+            return ObservationStateValues.UNKNOWN
+        succeeded = (
+            self._result.status == GoalStatus.STATUS_SUCCEEDED
+            and self._result.result.error_code == NavigateToPose.Result.NONE
+        )
+        return ObservationStateValues.TRUE if succeeded else ObservationStateValues.FALSE
 
 
 @dataclass(eq=False, repr=False, kw_only=True)
